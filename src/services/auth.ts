@@ -13,13 +13,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 
+// Default Google Auth Provider for basic login and Firestore access
 const provider = new GoogleAuthProvider();
-// Workspace Scopes for Google Sheets, Google Drive, Google Calendar, Google Docs, and Gmail
-provider.addScope('https://www.googleapis.com/auth/spreadsheets');
-provider.addScope('https://www.googleapis.com/auth/drive.file');
-provider.addScope('https://www.googleapis.com/auth/calendar.events');
-provider.addScope('https://www.googleapis.com/auth/documents');
-provider.addScope('https://www.googleapis.com/auth/gmail.send');
+provider.setCustomParameters({
+  prompt: 'select_account'
+});
 
 // Flag to indicate ongoing sign-in flow
 let isSigningIn = false;

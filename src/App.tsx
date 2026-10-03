@@ -329,8 +329,25 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Login error', err);
-      setLoginError(err.message || 'ไม่สามารถเข้าสู่ระบบ Google ได้ โปรดลองอีกครั้ง');
-      showToast('ไม่สามารถเข้าสู่ระบบ Google ได้');
+      let errorMsg = err.message || 'ไม่สามารถเข้าสู่ระบบ Google ได้ โปรดลองอีกครั้ง';
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+      
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        errorMsg = `auth/unauthorized-domain: โดเมน "${currentHost}" ยังไม่ได้รับการเพิ่มใน Authorized domains ของ Firebase Console`;
+      } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
+        errorMsg = 'auth/operation-not-allowed: โปรดไปที่ Firebase Console > Authentication > Sign-in method แล้วเปิดใช้งาน (Enable) "Google"';
+      } else if (err.code === 'auth/popup-blocked' || err.message?.includes('popup-blocked')) {
+        errorMsg = 'auth/popup-blocked: เบราว์เซอร์ของคุณบล็อกหน้าต่างป๊อปอัป โปรดกดอนุญาตป๊อปอัป (Pop-up allowed) ที่แถบ URL ด้านบน แล้วลองอีกครั้ง';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        errorMsg = 'หน้าต่างเข้าสู่ระบบถูกปิดก่อนทำรายการเสร็จสิ้น โปรดลองใหม่อีกครั้ง';
+      } else if (err.code === 'auth/network-request-failed') {
+        errorMsg = 'การเชื่อมต่อเครือข่ายขัดข้อง โปรดตรวจสอบอินเทอร์เน็ต';
+      } else {
+        errorMsg = `เกิดข้อผิดพลาด (${err.code || 'error'}): ${err.message || ''}`;
+      }
+      
+      setLoginError(errorMsg);
+      showToast('ไม่สามารถเข้าสู่ระบบได้ โปรดตรวจสอบข้อความแจ้งเตือน');
     } finally {
       setIsLoggingIn(false);
     }

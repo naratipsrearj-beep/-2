@@ -16,7 +16,13 @@ import { AppealCase, MonthlyDutyRoster, DailyJudgmentFollowUp } from '../types/a
 
 // Initialize Firebase App & Firestore singleton
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const customDbId =
+  firebaseConfig.firestoreDatabaseId &&
+  firebaseConfig.firestoreDatabaseId !== '(default)' &&
+  firebaseConfig.firestoreDatabaseId.trim() !== ''
+    ? firebaseConfig.firestoreDatabaseId
+    : undefined;
+export const db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 
 export const ADMIN_EMAIL = 'naratipsrearj@gmail.com';
 

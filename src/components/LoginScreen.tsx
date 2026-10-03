@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Scale, ShieldCheck, Users, Eye, Sparkles, AlertCircle, ArrowRight, Lock } from 'lucide-react';
+import { Scale, ShieldCheck, Users, Eye, Sparkles, AlertCircle, ArrowRight, Lock, Copy, Check, ExternalLink } from 'lucide-react';
 import { ADMIN_EMAIL } from '../services/firestoreService';
 
 interface LoginScreenProps {
@@ -13,6 +13,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   isLoggingIn,
   loginError,
 }) => {
+  const [hasCopied, setHasCopied] = useState(false);
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isUnauthorizedDomain = Boolean(loginError && loginError.includes('unauthorized-domain'));
+
+  const handleCopyHostname = () => {
+    if (!currentHostname) return;
+    navigator.clipboard.writeText(currentHostname);
+    setHasCopied(true);
+    setTimeout(() => setHasCopied(false), 3000);
+  };
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-850 to-slate-950 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8 py-12 relative overflow-hidden font-['Sarabun',sans-serif]">
       {/* Background Decorative Glows */}
@@ -74,9 +84,44 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
         {/* Error Alert */}
         {loginError && (
-          <div className="mb-5 bg-rose-500/15 border border-rose-500/40 rounded-xl p-3 text-xs text-rose-200 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
-            <span>{loginError}</span>
+          <div className="mb-5 bg-rose-500/15 border border-rose-500/40 rounded-xl p-3.5 text-xs text-rose-200 space-y-2.5">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{loginError}</span>
+            </div>
+
+            {isUnauthorizedDomain && currentHostname && (
+              <div className="bg-slate-950/70 border border-rose-500/30 rounded-lg p-2.5 space-y-2 mt-2">
+                <div className="text-[11px] text-slate-300 font-medium">
+                  คัดลอกโดเมนนี้เพื่อไปเพิ่มใน Firebase Console:
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="bg-slate-800 text-amber-300 text-[11px] px-2 py-1.5 rounded flex-1 select-all break-all border border-slate-700 font-mono">
+                    {currentHostname}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyHostname}
+                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1 transition flex-shrink-0 cursor-pointer"
+                  >
+                    {hasCopied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-950" />
+                        <span>คัดลอกแล้ว!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>คัดลอก</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  ไปที่ <strong>Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains</strong> แล้วกด <strong>Add domain</strong> วางโดเมนนี้ลงไปครับ
+                </p>
+              </div>
+            )}
           </div>
         )}
 
