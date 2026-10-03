@@ -1,0 +1,8 @@
+{
+  "name": " ระบบคุมระยะเวลาอุทธรณ์ (Appeal Deadline Tracker)",
+  "description": "ระบบติดตามและแจ้งเตือนระยะเวลาอุทธรณ์ 1 เดือน นับแต่วันมีคำพิพากษา เชื่อมต่อ Google Sheets จัดกลุ่มตามวันฟ้อง และป้องกันการขาดอายุความอุทธรณ์",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

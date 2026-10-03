@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "case": {
+      "title": "AppealCase",
+      "description": "สำนวนคดีคุมระยะเวลาอุทธรณ์ 1 เดือนและคดีที่ฟ้องประจำวัน",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "filingDate": { "type": "string" },
+        "blackCaseNo": { "type": "string" },
+        "redCaseNo": { "type": "string" },
+        "receivedNumberS1": { "type": "string" },
+        "filingNumberS4": { "type": "string" },
+        "prosecutorName": { "type": "string" },
+        "court": { "type": "string" },
+        "plaintiff": { "type": "string" },
+        "defendant": { "type": "string" },
+        "caseType": { "type": "string" },
+        "hasJudgment": { "type": "boolean" },
+        "defendantPlea": { "type": "string" },
+        "judgmentDate": { "type": "string" },
+        "appealDeadline": { "type": "string" },
+        "extendedDeadline": { "type": "string" },
+        "extensionCount": { "type": "number" },
+        "isCompleted": { "type": "boolean" },
+        "completedDate": { "type": "string" },
+        "completionReason": { "type": "string" },
+        "judgmentOutcome": { "type": "string" },
+        "fullJudgmentText": { "type": "string" },
+        "responsiblePerson": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "blackCaseNo", "court"]
+    },
+    "duty_roster": {
+      "title": "MonthlyDutyRoster",
+      "description": "ตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "monthYear": { "type": "string" },
+        "monthNameThai": { "type": "string" },
+        "title": { "type": "string" },
+        "uploadedFileName": { "type": "string" },
+        "uploadedAt": { "type": "string" },
+        "totalDays": { "type": "number" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "monthYear", "title"]
+    },
+    "project_setting": {
+      "title": "ProjectSetting",
+      "description": "การตั้งค่าโปรเจ็ค สิทธิ์ผู้ดูแลหลัก และผู้ที่ได้รับอนุญาตให้แก้ไข",
+      "type": "object",
+      "properties": {
+        "adminEmail": { "type": "string" },
+        "allowedEditors": {
+          "type": "array"
+        },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["adminEmail"]
+    }
+  },
+  "firestore": {
+    "/cases/{caseId}": {
+      "schema": "case",
+      "description": "ข้อมูลสำนวนคดีทั้งหมดที่อัปเดตเป็นปัจจุบันสำหรับทุกคนที่ได้รับลิงก์"
+    },
+    "/duty_rosters/{rosterId}": {
+      "schema": "duty_roster",
+      "description": "ข้อมูลตารางเวรชี้ประจำเดือน"
+    },
+    "/settings/permissions": {
+      "schema": "project_setting",
+      "description": "การตั้งค่าสิทธิ์แอดมินและผู้ใช้งานที่อนุญาตให้แก้ไขข้อมูล"
+    }
+  }
+}

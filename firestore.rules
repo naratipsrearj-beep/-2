@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isProjectAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'naratipsrearj@gmail.com'
+      );
+    }
+
+    function isEditor() {
+      return isProjectAdmin() || (
+        isAuthenticated() &&
+        exists(/databases/$(database)/documents/settings/permissions) &&
+        request.auth.token.email in get(/databases/$(database)/documents/settings/permissions).data.allowedEditors
+      );
+    }
+
+    // Cases collection: all logged in users can read; admin and permitted editors can write
+    match /cases/{caseId} {
+      allow read: if isAuthenticated();
+      allow write: if isEditor();
+    }
+
+    // Monthly duty rosters collection
+    match /duty_rosters/{rosterId} {
+      allow read: if isAuthenticated();
+      allow write: if isEditor();
+    }
+
+    // Settings collection (permissions, app configuration)
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isProjectAdmin();
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
