@@ -9,7 +9,7 @@ service cloud.firestore {
 
     function isProjectAdmin() {
       return isAuthenticated() && (
-        request.auth.token.email == 'naratipsrearj@gmail.com'
+        request.auth.token.email.lower() == 'naratipsrearj@gmail.com'
       );
     }
 

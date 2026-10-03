@@ -18,6 +18,8 @@ interface HeaderProps {
   onRequestEditPermission?: () => void;
   onSync: () => void;
   isSyncing: boolean;
+  onPushLocalToCloud?: () => void;
+  isPushingLocal?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -34,6 +36,8 @@ export const Header: React.FC<HeaderProps> = ({
   onRequestEditPermission,
   onSync,
   isSyncing,
+  onPushLocalToCloud,
+  isPushingLocal = false,
 }) => {
   // วันที่ปัจจุบันแบบไทย
   const todayDateThai = new Intl.DateTimeFormat('th-TH', {
@@ -134,6 +138,19 @@ export const Header: React.FC<HeaderProps> = ({
                     {pendingRequestsCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {/* Admin: Push Local to Cloud Button */}
+            {role === 'admin' && onPushLocalToCloud && (
+              <button
+                onClick={onPushLocalToCloud}
+                disabled={isPushingLocal}
+                className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+                title="ส่งข้อมูลสำนวนและเวรชี้จากเครื่องนี้ขึ้น Cloud Firestore ให้ทุกเครื่องเห็นพร้อมกัน"
+              >
+                <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isPushingLocal ? 'animate-spin' : ''}`} />
+                <span>{isPushingLocal ? 'กำลังส่งข้อมูล...' : 'ส่งข้อมูลขึ้น Cloud'}</span>
               </button>
             )}
 

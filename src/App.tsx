@@ -67,6 +67,7 @@ import {
   addAllowedEditor,
   removeAllowedEditor,
   seedInitialFirestoreDataIfEmpty,
+  uploadAllLocalDataToFirestore,
 } from './services/firestoreService';
 
 import { Header } from './components/Header';
@@ -109,6 +110,7 @@ export default function App() {
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [isRequestEditModalOpen, setIsRequestEditModalOpen] = useState(false);
   const [isProcessingPermissions, setIsProcessingPermissions] = useState(false);
+  const [isPushingLocal, setIsPushingLocal] = useState(false);
 
   // RBAC Roles: Admin (naratipsrearj@gmail.com) | Editor | Viewer
   const userRole = React.useMemo(
@@ -431,6 +433,21 @@ export default function App() {
       showToast('ไม่สามารถเพิกถอนสิทธิ์ได้: ' + err.message);
     } finally {
       setIsProcessingPermissions(false);
+    }
+  };
+
+  // Push all local data from this machine to Firestore
+  const handlePushLocalToCloud = async () => {
+    if (!user || userRole !== 'admin') return;
+    setIsPushingLocal(true);
+    try {
+      const res = await uploadAllLocalDataToFirestore(cases, dutyRosters, followUps);
+      showToast(`ส่งข้อมูลขึ้น Cloud สำเร็จ (${res.casesCount} สำนวน, ${res.rostersCount} ตารางเวร, ${res.followUpsCount} รายการตามคำพิพากษา)`);
+    } catch (err: any) {
+      console.error('Push to cloud error:', err);
+      showToast(`ส่งข้อมูลไม่สำเร็จ: ${err.message}`);
+    } finally {
+      setIsPushingLocal(false);
     }
   };
 
@@ -1112,6 +1129,8 @@ export default function App() {
         onRequestEditPermission={() => setIsRequestEditModalOpen(true)}
         onSync={handleSyncWithSheet}
         isSyncing={isSyncing}
+        onPushLocalToCloud={handlePushLocalToCloud}
+        isPushingLocal={isPushingLocal}
       />
 
       {/* Main Container */}
@@ -1283,6 +1302,7 @@ export default function App() {
             onOpenAppointmentModal={(caseItem) => setSelectedCaseForAppointment(caseItem)}
             onDeleteCase={handleDeleteCase}
             onAddNewCase={() => setIsAddCaseOpen(true)}
+            onToast={showToast}
           />
         )}
 
@@ -1292,6 +1312,8 @@ export default function App() {
             cases={cases}
             dutyRosters={dutyRosters}
             canEdit={canEdit}
+            token={token}
+            sheetConfig={sheetConfig}
             initialSelectedDate={addCaseInitialFilingDate}
             externalDateSearch={globalVoiceQuery}
             onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
@@ -1312,6 +1334,7 @@ export default function App() {
               setIsAddCaseOpen(true);
             }}
             onQuickAssignOfficer={handleQuickAssignOfficer}
+            onToast={showToast}
           />
         )}
 

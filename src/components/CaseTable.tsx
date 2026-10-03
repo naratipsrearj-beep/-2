@@ -18,12 +18,15 @@ import {
   Volume2,
   FileText,
   ExternalLink,
-  Mail
+  Mail,
+  Copy
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { getAppointmentLabel, getAppointmentBadgeStyle } from '../utils/appointmentUtils';
+import { CopyCaseDropdown } from './CopyCaseDropdown';
+import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCaseUtils';
 
 interface CaseTableProps {
   cases: AppealCase[];
@@ -37,6 +40,7 @@ interface CaseTableProps {
   onOpenAppointmentModal?: (caseItem: AppealCase) => void;
   onDeleteCase: (id: string) => void;
   onAddNewCase: () => void;
+  onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
 }
@@ -53,6 +57,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onOpenAppointmentModal,
   onDeleteCase,
   onAddNewCase,
+  onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
 }) => {
@@ -479,16 +484,29 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     {/* Judgment Date */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       {caseItem.judgmentDate ? (
-                        <>
-                          <div className="text-slate-800 font-medium">
-                            {formatThaiDate(caseItem.judgmentDate)}
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-800 font-medium">
+                              {formatThaiDate(caseItem.judgmentDate)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const ok = await copyTextToClipboard(formatJudgmentForClipboard(caseItem));
+                                if (ok && onToast) onToast(`คัดลอกคำพิพากษาคดีดำ ${caseItem.blackCaseNo} แล้ว`);
+                              }}
+                              className="text-amber-700 hover:text-amber-900 hover:bg-amber-100/80 p-0.5 rounded transition cursor-pointer"
+                              title="คลิกเพื่อคัดลอกคำพิพากษา เพื่อนำไปวางในระบบอื่นของสำนักงาน"
+                            >
+                              <Copy className="w-3.5 h-3.5 text-amber-600 hover:text-amber-800" />
+                            </button>
                           </div>
                           {caseItem.judgmentOutcome && (
-                            <div className="text-[10px] text-slate-500 truncate max-w-[120px]" title={caseItem.judgmentOutcome}>
+                            <div className="text-[10px] text-slate-600 truncate max-w-[130px] font-medium" title={caseItem.judgmentOutcome}>
                               {caseItem.judgmentOutcome}
                             </div>
                           )}
-                        </>
+                        </div>
                       ) : (
                         <div>
                           <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
@@ -650,6 +668,12 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                               </button>
                             )}
 
+                            {/* Copy Case Details & Judgment Dropdown */}
+                            <CopyCaseDropdown
+                              caseItem={caseItem}
+                              onToast={onToast}
+                            />
+
                             {onEditCase && (
                               <button
                                 onClick={() => onEditCase(caseItem)}
@@ -670,6 +694,12 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           </>
                         ) : (
                           <div className="flex items-center gap-1.5 text-xs">
+                            {/* Copy Case Details & Judgment Dropdown for viewers */}
+                            <CopyCaseDropdown
+                              caseItem={caseItem}
+                              onToast={onToast}
+                            />
+
                             {onOpenJudgmentDoc && (
                               <button
                                 onClick={() => onOpenJudgmentDoc(caseItem)}

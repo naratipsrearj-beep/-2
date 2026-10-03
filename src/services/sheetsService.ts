@@ -1,4 +1,6 @@
 import { AppealCase, DailyJudgmentFollowUp, CaseCompletionReason, FollowUpStatus } from '../types/appeal';
+import { DAILY_EXPORT_HEADERS, getDailyExportRows } from '../utils/dailyExportUtils';
+import { formatThaiDate } from '../utils/dateUtils';
 
 const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DRIVE_BASE = 'https://www.googleapis.com/drive/v3';
@@ -469,4 +471,282 @@ function formatCompletionReason(reason?: CaseCompletionReason): string {
     case 'other': return 'อื่นๆ';
     default: return '';
   }
+}
+
+/**
+ * นำออกข้อมูลคดีที่ฟ้องในแต่ละวัน เชื่อมไปยัง Google Sheet 
+ * 6 คอลัมน์ตามลำดับที่ผู้ใช้กำหนด:
+ * 1. ข้อมูล ส.1 และ ส.4
+ * 2. เลขคดีดำ
+ * 3. เลขคดีแดง
+ * 4. ชื่ออัยการเจ้าของสำนวน
+ * 5. ชื่อผู้ต้องหา
+ * 6. การดำเนินการ (สำนวนรับสารภาพ / สำนวนมีนัดต่อ)
+ */
+export async function exportDailyFilingCasesToGoogleSheet(
+  accessToken: string,
+  filingDate: string,
+  cases: AppealCase[],
+  options?: {
+    spreadsheetId?: string;
+    conciseProcedure?: boolean;
+    customTitle?: string;
+  }
+): Promise<{ id: string; url: string; title: string; sheetName: string; isNewSpreadsheet: boolean }> {
+  const rows = getDailyExportRows(cases, options?.conciseProcedure || false);
+  const sheetTabName = `ฟ้อง_${filingDate}`;
+
+  // 1. กรณีต้องการเพิ่มเป็นแท็บใหม่ใน Google Sheet ที่มีอยู่เดิม
+  if (options?.spreadsheetId) {
+    const spreadsheetId = options.spreadsheetId;
+    try {
+      // พยายามสร้างแท็บชีทใหม่
+      await fetch(`${SHEETS_BASE}/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: sheetTabName,
+                  gridProperties: {
+                    rowCount: Math.max(rows.length + 15, 30),
+                    columnCount: 10,
+                    frozenRowCount: 1,
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      });
+    } catch {
+      // หากมีชีทชื่อนี้อยู่แล้ว ให้เขียนต่อหรือทับ
+    }
+
+    // เขียน Header + ข้อมูล 7 คอลัมน์ (พร้อมหัวเรื่องวันที่ฟ้อง)
+    const titleRow = [`วันที่ฟ้อง: ${formatThaiDate(filingDate)}`];
+    const allValues = [titleRow, [...DAILY_EXPORT_HEADERS], ...rows];
+    const writeRes = await fetch(
+      `${SHEETS_BASE}/${spreadsheetId}/values/${encodeURIComponent(`'${sheetTabName}'!A1`)}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          values: allValues,
+        }),
+      }
+    );
+
+    if (!writeRes.ok) {
+      const errText = await writeRes.text();
+      throw new Error(`ไม่สามารถบันทึกข้อมูลลงใน Sheet ได้: ${errText}`);
+    }
+
+    const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+    return {
+      id: spreadsheetId,
+      url: sheetUrl,
+      title: options.customTitle || `คดีฟ้องประจำวันที่ ${filingDate}`,
+      sheetName: sheetTabName,
+      isNewSpreadsheet: false,
+    };
+  }
+
+  // 2. กรณีสร้างไฟล์ Google Spreadsheet ใหม่ใน Google Drive ของผู้ใช้
+  const defaultTitle = options?.customTitle || `บัญชีคดีฟ้องประจำวันที่_${filingDate} (${cases.length} คดี)`;
+  const createPayload = {
+    properties: {
+      title: defaultTitle,
+    },
+    sheets: [
+      {
+        properties: {
+          title: sheetTabName,
+          gridProperties: {
+            rowCount: Math.max(rows.length + 15, 35),
+            columnCount: 10,
+            frozenRowCount: 2,
+          },
+        },
+      },
+    ],
+  };
+
+  const createRes = await fetch(SHEETS_BASE, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(createPayload),
+  });
+
+  if (!createRes.ok) {
+    const errorText = await createRes.text();
+    throw new Error(`ไม่สามารถสร้าง Google Sheet ได้: ${errorText}`);
+  }
+
+  const createdData = await createRes.json();
+  const spreadsheetId = createdData.spreadsheetId;
+  const spreadsheetUrl = createdData.spreadsheetUrl;
+
+  // บันทึกหัวเรื่องวันที่ฟ้อง + Header 7 คอลัมน์ และแถวข้อมูล
+  const titleRow = [`วันที่ฟ้อง: ${formatThaiDate(filingDate)}`];
+  const allValues = [titleRow, [...DAILY_EXPORT_HEADERS], ...rows];
+  const writeRes = await fetch(
+    `${SHEETS_BASE}/${spreadsheetId}/values/${encodeURIComponent(`'${sheetTabName}'!A1`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: allValues,
+      }),
+    }
+  );
+
+  if (!writeRes.ok) {
+    const errText = await writeRes.text();
+    throw new Error(`สร้างไฟล์แล้ว แต่ไม่สามารถเขียนข้อมูลได้: ${errText}`);
+  }
+
+  // ตกแต่งหัวตาราง (แถวที่ 1: วันที่ฟ้อง, แถวที่ 2: 7 คอลัมน์สีเขียวมรกต, จัดความกว้างคอลัมน์)
+  try {
+    await fetch(`${SHEETS_BASE}/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          // 1. ผสานเซลล์แถวที่ 1 สำหรับหัวเรื่อง "วันที่ฟ้องในแต่ละวัน" (A1:G1)
+          {
+            mergeCells: {
+              range: {
+                sheetId: 0,
+                startRowIndex: 0,
+                endRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: 7,
+              },
+              mergeType: 'MERGE_ALL',
+            },
+          },
+          // จัดสีและตัวหนาแถวที่ 1 (Title Header: วันที่ฟ้อง)
+          {
+            repeatCell: {
+              range: {
+                sheetId: 0,
+                startRowIndex: 0,
+                endRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: 7,
+              },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: { red: 0.05, green: 0.35, blue: 0.18 }, // Deep Emerald 800
+                  textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 }, fontSize: 13 },
+                  horizontalAlignment: 'CENTER',
+                  verticalAlignment: 'MIDDLE',
+                },
+              },
+              fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)',
+            },
+          },
+          // 2. จัดสีและตัวหนาแถวที่ 2 (Header 7 คอลัมน์)
+          {
+            repeatCell: {
+              range: {
+                sheetId: 0,
+                startRowIndex: 1,
+                endRowIndex: 2,
+                startColumnIndex: 0,
+                endColumnIndex: 7,
+              },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: { red: 0.09, green: 0.48, blue: 0.24 }, // Emerald 700
+                  textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 }, fontSize: 11 },
+                  horizontalAlignment: 'CENTER',
+                  verticalAlignment: 'MIDDLE',
+                },
+              },
+              fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)',
+            },
+          },
+          // 3. ปรับความกว้าง 7 คอลัมน์
+          {
+            updateDimensionProperties: {
+              range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 },
+              properties: { pixelSize: 180 }, // 1. ส.1 และ ส.4
+              fields: 'pixelSize',
+            },
+          },
+          {
+            updateDimensionProperties: {
+              range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 },
+              properties: { pixelSize: 130 }, // 2. เลขคดีดำ
+              fields: 'pixelSize',
+            },
+          },
+          {
+            updateDimensionProperties: {
+              range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 },
+              properties: { pixelSize: 130 }, // 3. เลขคดีแดง
+              fields: 'pixelSize',
+            },
+          },
+          {
+            updateDimensionProperties: {
+              range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 },
+              properties: { pixelSize: 220 }, // 4. ชื่ออัยการเจ้าของสำนวน
+              fields: 'pixelSize',
+            },
+          },
+          {
+            updateDimensionProperties: {
+              range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 4, endIndex: 5 },
+              properties: { pixelSize: 200 }, // 5. ชื่อผู้ต้องหา
+              fields: 'pixelSize',
+            },
+          },
+          {
+            updateDimensionProperties: {
+              range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 5, endIndex: 6 },
+              properties: { pixelSize: 240 }, // 6. การดำเนินการ
+              fields: 'pixelSize',
+            },
+          },
+          {
+            updateDimensionProperties: {
+              range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 6, endIndex: 7 },
+              properties: { pixelSize: 230 }, // 7. วันที่เสร็จสิ้นสำนวน
+              fields: 'pixelSize',
+            },
+          },
+        ],
+      }),
+    });
+  } catch (formatErr) {
+    console.warn('Formatting spreadsheet headers encountered a non-fatal error:', formatErr);
+  }
+
+  return {
+    id: spreadsheetId,
+    url: spreadsheetUrl,
+    title: defaultTitle,
+    sheetName: sheetTabName,
+    isNewSpreadsheet: true,
+  };
 }

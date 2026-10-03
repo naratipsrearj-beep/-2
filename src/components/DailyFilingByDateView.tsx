@@ -24,19 +24,22 @@ import {
   Layers,
   Sparkles,
   UserCheck,
-  Undo2
+  Undo2,
+  FileSpreadsheet
 } from 'lucide-react';
-import { AppealCase, MonthlyDutyRoster } from '../types/appeal';
+import { AppealCase, MonthlyDutyRoster, SheetConfig } from '../types/appeal';
 import {
   formatThaiDate,
   getAppealUrgency,
   getDaysRemaining,
   getTodayString
 } from '../utils/dateUtils';
+import { CopyCaseDropdown } from './CopyCaseDropdown';
 import { getAppointmentLabel, getAppointmentBadgeStyle } from '../utils/appointmentUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate } from '../services/dutyService';
+import { DailyCasesToSheetsModal } from './DailyCasesToSheetsModal';
 
 function getUrgencyBadgeStyle(urgency: string) {
   switch (urgency) {
@@ -61,6 +64,8 @@ interface DailyFilingByDateViewProps {
   initialSelectedDate?: string;
   externalDateSearch?: string;
   canEdit?: boolean;
+  token?: string | null;
+  sheetConfig?: SheetConfig | null;
   onMarkComplete: (caseItem: AppealCase) => void;
   onReopenCase?: (caseId: string) => void;
   onExtendDeadline: (caseItem: AppealCase) => void;
@@ -71,6 +76,7 @@ interface DailyFilingByDateViewProps {
   onOpenAppointmentModal?: (caseItem: AppealCase) => void;
   onAddNewCaseForDate?: (dateStr: string) => void;
   onQuickAssignOfficer?: (caseId: string, officerName: string) => void;
+  onToast?: (message: string) => void;
 }
 
 export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
@@ -79,6 +85,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   initialSelectedDate,
   externalDateSearch = '',
   canEdit = true,
+  token,
+  sheetConfig,
   onMarkComplete,
   onReopenCase,
   onExtendDeadline,
@@ -89,6 +97,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onOpenAppointmentModal,
   onAddNewCaseForDate,
   onQuickAssignOfficer,
+  onToast,
 }) => {
   // วันที่เลือกเริ่มต้น
   const todayStr = getTodayString();
@@ -97,6 +106,17 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(false);
   const [dateSearch, setDateSearch] = useState<string>(externalDateSearch);
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+
+  // Google Sheets Export Modal state
+  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
+  const [sheetsExportDate, setSheetsExportDate] = useState<string>(selectedDate);
+  const [sheetsExportCases, setSheetsExportCases] = useState<AppealCase[]>([]);
+
+  const handleOpenSheetsExport = (dateStr: string, casesList: AppealCase[]) => {
+    setSheetsExportDate(dateStr);
+    setSheetsExportCases(casesList);
+    setIsSheetsModalOpen(true);
+  };
 
   // Duty Officer Picker state
   const [isDutyPickerOpen, setIsDutyPickerOpen] = useState(false);
@@ -559,6 +579,19 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   <span>สร้างบัญชีคดี Google Docs ({statsForSelectedDate.total} คดี)</span>
                 </button>
               )}
+
+              {/* Google Sheets 7-Columns Export Button */}
+              {casesOnSelectedDate.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenSheetsExport(selectedDate, casesOnSelectedDate)}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-emerald-500 flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                  title="นำออกข้อมูลคดีที่ฟ้องในวันนี้ เชื่อมไปยัง Google Sheet (7 คอลัมน์ พร้อมวันที่เสร็จสิ้น)"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-white" />
+                  <span>ส่งออก Google Sheets (7 คอลัมน์)</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -826,6 +859,13 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 <span>{caseItem.prosecutorName ? `⚖️ ${caseItem.prosecutorName}` : '⚖️ เลือกเวรชี้ (PDF)'}</span>
                               </button>
 
+                              {/* 3.8. Copy Case Details & Judgment */}
+                              <CopyCaseDropdown
+                                caseItem={caseItem}
+                                variant="button"
+                                onToast={onToast}
+                              />
+
                               {/* 4. Complete button */}
                               {!isCompleted && (
                                 <button
@@ -840,6 +880,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </>
                           ) : (
                             <div className="flex items-center gap-2">
+                              {/* Copy Case Details & Judgment for viewers */}
+                              <CopyCaseDropdown
+                                caseItem={caseItem}
+                                variant="button"
+                                onToast={onToast}
+                              />
                               {caseItem.prosecutorName && (
                                 <span className="text-xs bg-amber-50 text-amber-900 px-2 py-1 rounded-lg border border-amber-200 font-medium">
                                   ⚖️ เวรชี้: {caseItem.prosecutorName}
@@ -939,6 +985,18 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                         ดูเฉพาะวันนี้
                       </button>
 
+                      {casesInGroup.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSheetsExport(dateKey, casesInGroup)}
+                          className="text-xs text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer font-medium"
+                          title="นำออกข้อมูลคดีที่ฟ้องวันที่นี้ไปยัง Google Sheets (6 คอลัมน์)"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>ส่งออก Sheets</span>
+                        </button>
+                      )}
+
                       {canEdit && onAddNewCaseForDate && (
                         <button
                           type="button"
@@ -976,31 +1034,40 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </div>
                           </div>
 
-                          {canEdit && (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCaseForDutyPicker(caseItem);
-                                  setIsDutyPickerOpen(true);
-                                }}
-                                className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                                title="เลือกหรือเปลี่ยนเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
-                              >
-                                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-                                <span>{caseItem.prosecutorName ? 'เปลี่ยนเวรชี้' : 'เลือกเวรชี้ (PDF)'}</span>
-                              </button>
-                              {onEditCase && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Copy Case Details & Judgment */}
+                            <CopyCaseDropdown
+                              caseItem={caseItem}
+                              variant="compact"
+                              onToast={onToast}
+                            />
+
+                            {canEdit && (
+                              <>
                                 <button
                                   type="button"
-                                  onClick={() => onEditCase(caseItem)}
-                                  className="px-2.5 py-1 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition font-medium border border-indigo-200 cursor-pointer"
+                                  onClick={() => {
+                                    setCaseForDutyPicker(caseItem);
+                                    setIsDutyPickerOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  title="เลือกหรือเปลี่ยนเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
                                 >
-                                  แก้ไข
+                                  <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>{caseItem.prosecutorName ? 'เปลี่ยนเวรชี้' : 'เลือกเวรชี้ (PDF)'}</span>
                                 </button>
-                              )}
-                            </div>
-                          )}
+                                {onEditCase && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onEditCase(caseItem)}
+                                    className="px-2.5 py-1 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition font-medium border border-indigo-200 cursor-pointer"
+                                  >
+                                    แก้ไข
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1042,6 +1109,17 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
         subtitle={`วันที่ฟ้อง: ${formatThaiDate(
           caseForDutyPicker ? caseForDutyPicker.filingDate : selectedDate
         )}`}
+      />
+
+      {/* Daily Cases to Google Sheets Modal (6 Columns: ส.1/ส.4, คดีดำ, คดีแดง, อัยการ, ผู้ต้องหา, รับสารภาพ/มีนัด) */}
+      <DailyCasesToSheetsModal
+        isOpen={isSheetsModalOpen}
+        onClose={() => setIsSheetsModalOpen(false)}
+        filingDate={sheetsExportDate}
+        cases={sheetsExportCases}
+        token={token}
+        sheetConfig={sheetConfig}
+        onToast={onToast}
       />
     </div>
   );

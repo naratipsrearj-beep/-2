@@ -209,6 +209,30 @@ export async function saveCasesBatchToFirestore(cases: AppealCase[]): Promise<vo
 }
 
 /**
+ * Upload all local cases, rosters, and follow-ups to Firestore
+ */
+export async function uploadAllLocalDataToFirestore(
+  cases: AppealCase[],
+  dutyRosters: MonthlyDutyRoster[],
+  followUps: DailyJudgmentFollowUp[]
+): Promise<{ casesCount: number; rostersCount: number; followUpsCount: number }> {
+  if (cases.length > 0) {
+    await saveCasesBatchToFirestore(cases);
+  }
+  for (const r of dutyRosters) {
+    await saveDutyRosterToFirestore(r);
+  }
+  for (const f of followUps) {
+    await saveFollowUpToFirestore(f);
+  }
+  return {
+    casesCount: cases.length,
+    rostersCount: dutyRosters.length,
+    followUpsCount: followUps.length,
+  };
+}
+
+/**
  * Delete case from Firestore
  */
 export async function deleteCaseFromFirestore(caseId: string): Promise<void> {
