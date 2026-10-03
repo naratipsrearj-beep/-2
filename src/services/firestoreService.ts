@@ -464,6 +464,15 @@ export async function seedInitialFirestoreDataIfEmpty(
   initialFollowUps?: DailyJudgmentFollowUp[]
 ): Promise<boolean> {
   try {
+    const settingsDocRef = doc(db, 'settings', 'permissions');
+    const settingsDoc = await getDoc(settingsDocRef);
+    
+    // หากเคยตั้งค่าหรือบันทึกข้อมูลเริ่มต้นไปแล้ว จะไม่ทำการ seed ข้อมูลจำลองซ้ำอีก
+    // เพื่อป้องกันกรณีที่ผู้ใช้ตั้งใจลบข้อมูลทั้งหมดแล้วข้อมูลเดิมเด้งกลับมา
+    if (settingsDoc.exists() && settingsDoc.data()?.isInitialized) {
+      return false;
+    }
+
     const casesSnap = await getDocs(collection(db, 'cases'));
     if (casesSnap.empty && initialCases.length > 0) {
       await saveCasesBatchToFirestore(initialCases);
@@ -488,10 +497,16 @@ export async function seedInitialFirestoreDataIfEmpty(
       }
     }
 
-    const settingsDoc = await getDoc(doc(db, 'settings', 'permissions'));
-    if (!settingsDoc.exists()) {
-      await setDoc(doc(db, 'settings', 'permissions'), DEFAULT_SETTINGS);
-    }
+    // มาร์กไว้ว่าระบบเคยเริ่มต้นแล้ว
+    await setDoc(
+      settingsDocRef,
+      {
+        ...DEFAULT_SETTINGS,
+        isInitialized: true,
+        initializedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
     return true;
   } catch (err) {
     console.warn('Error during Firestore seed:', err);

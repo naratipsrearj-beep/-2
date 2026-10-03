@@ -228,10 +228,8 @@ export default function App() {
     // 2. Real-time subscribe to all cases (all clients sync instantly)
     const unsubCases = subscribeToCases(
       (remoteCases) => {
-        if (remoteCases.length > 0) {
-          setCases(remoteCases);
-          saveCases(remoteCases);
-        }
+        setCases(remoteCases);
+        saveCases(remoteCases);
       },
       (err) => console.warn('Real-time cases sync error:', err)
     );
@@ -239,12 +237,12 @@ export default function App() {
     // 3. Real-time subscribe to monthly duty rosters
     const unsubRosters = subscribeToDutyRosters(
       (remoteRosters) => {
-        if (remoteRosters.length > 0) {
-          setDutyRosters(remoteRosters);
-          saveDutyRosters(remoteRosters);
-          if (!activeDutyRosterId && remoteRosters[0]) {
-            setActiveDutyRosterId(remoteRosters[0].id);
-          }
+        setDutyRosters(remoteRosters);
+        saveDutyRosters(remoteRosters);
+        if (!activeDutyRosterId && remoteRosters[0]) {
+          setActiveDutyRosterId(remoteRosters[0].id);
+        } else if (remoteRosters.length === 0) {
+          setActiveDutyRosterId(undefined);
         }
       },
       (err) => console.warn('Real-time duty rosters sync error:', err)
@@ -253,10 +251,8 @@ export default function App() {
     // 4. Real-time subscribe to daily follow-ups
     const unsubFollowUps = subscribeToFollowUps(
       (remoteFollowUps) => {
-        if (remoteFollowUps.length > 0) {
-          setFollowUps(remoteFollowUps);
-          saveFollowUps(remoteFollowUps);
-        }
+        setFollowUps(remoteFollowUps);
+        saveFollowUps(remoteFollowUps);
       },
       (err) => console.warn('Real-time followups sync error:', err)
     );
