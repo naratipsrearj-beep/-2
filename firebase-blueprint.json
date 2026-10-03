@@ -62,6 +62,39 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["adminEmail"]
+    },
+    "follow_up": {
+      "title": "DailyJudgmentFollowUp",
+      "description": "รายการติดตามผลคำพิพากษาประจำวัน",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "followUpDate": { "type": "string" },
+        "caseNumber": { "type": "string" },
+        "court": { "type": "string" },
+        "plaintiff": { "type": "string" },
+        "defendant": { "type": "string" },
+        "responsiblePerson": { "type": "string" },
+        "status": { "type": "string" },
+        "judgmentSummary": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "followUpDate", "caseNumber", "court"]
+    },
+    "permission_request": {
+      "title": "PermissionRequest",
+      "description": "คำขอสิทธิ์แก้ไขข้อมูลจากผู้ใช้งานที่เข้าผ่านลิงก์",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "requestedAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "note": { "type": "string" }
+      },
+      "required": ["id", "email", "status"]
     }
   },
   "firestore": {
@@ -73,9 +106,17 @@
       "schema": "duty_roster",
       "description": "ข้อมูลตารางเวรชี้ประจำเดือน"
     },
+    "/follow_ups/{followUpId}": {
+      "schema": "follow_up",
+      "description": "รายการติดตามผลคำพิพากษาประจำวัน"
+    },
     "/settings/permissions": {
       "schema": "project_setting",
       "description": "การตั้งค่าสิทธิ์แอดมินและผู้ใช้งานที่อนุญาตให้แก้ไขข้อมูล"
+    },
+    "/permission_requests/{requestId}": {
+      "schema": "permission_request",
+      "description": "คำขอสิทธิ์แก้ไขข้อมูลส่งถึงแอดมิน"
     }
   }
 }

@@ -33,10 +33,23 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    // Daily judgment follow-ups collection
+    match /follow_ups/{followUpId} {
+      allow read: if isAuthenticated();
+      allow write: if isEditor();
+    }
+
     // Settings collection (permissions, app configuration)
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isProjectAdmin();
+    }
+
+    // Permission requests collection (users request edit rights from admin)
+    match /permission_requests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.email == request.auth.token.email;
+      allow update, delete: if isProjectAdmin();
     }
 
     // Default deny all other paths

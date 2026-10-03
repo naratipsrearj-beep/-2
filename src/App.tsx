@@ -15,7 +15,10 @@ import {
   Sparkles,
   Download,
   CalendarCheck,
-  UserCheck
+  UserCheck,
+  Eye,
+  ShieldAlert,
+  Users
 } from 'lucide-react';
 
 import { AppealCase, DailyJudgmentFollowUp, SheetConfig, CaseCompletionReason, MonthlyDutyRoster, DailyDutyRecord } from './types/appeal';
@@ -40,6 +43,31 @@ import {
   saveDutyRosters,
 } from './services/storageService';
 import { getTodayDuty } from './services/dutyService';
+import {
+  getUserRole,
+  canUserEdit,
+  ProjectSettings,
+  PermissionRequest,
+  DEFAULT_SETTINGS,
+  ADMIN_EMAIL,
+  subscribeToCases,
+  subscribeToDutyRosters,
+  subscribeToFollowUps,
+  subscribeToProjectSettings,
+  subscribeToPermissionRequests,
+  saveCaseToFirestore,
+  deleteCaseFromFirestore,
+  saveDutyRosterToFirestore,
+  deleteDutyRosterFromFirestore,
+  saveFollowUpToFirestore,
+  deleteFollowUpFromFirestore,
+  requestEditPermission,
+  approveEditPermission,
+  rejectEditPermission,
+  addAllowedEditor,
+  removeAllowedEditor,
+  seedInitialFirestoreDataIfEmpty,
+} from './services/firestoreService';
 
 import { Header } from './components/Header';
 import { StatsSummary } from './components/StatsSummary';
@@ -59,16 +87,35 @@ import { EmailAlertModal } from './components/EmailAlertModal';
 import { CourtAppointmentModal } from './components/CourtAppointmentModal';
 import { EditCaseModal } from './components/EditCaseModal';
 import { RecordJudgmentModal } from './components/RecordJudgmentModal';
+import { LoginScreen } from './components/LoginScreen';
+import { UserPermissionsModal } from './components/UserPermissionsModal';
+import { RequestEditModal } from './components/RequestEditModal';
 import { createDailyFilingDoc } from './services/docsService';
 import { checkAndSendAutomaticEmailAlerts } from './services/gmailService';
 import { CourtAppointmentType, CaseAppointment } from './types/appeal';
 import { getAppointmentLabel } from './utils/appointmentUtils';
 
 export default function App() {
-  // Auth state
+  // Auth & Roles state
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [authInitializing, setAuthInitializing] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Firestore Project Settings & Permissions
+  const [projectSettings, setProjectSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS);
+  const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  const [isRequestEditModalOpen, setIsRequestEditModalOpen] = useState(false);
+  const [isProcessingPermissions, setIsProcessingPermissions] = useState(false);
+
+  // RBAC Roles: Admin (naratipsrearj@gmail.com) | Editor | Viewer
+  const userRole = React.useMemo(
+    () => getUserRole(user?.email, projectSettings),
+    [user?.email, projectSettings]
+  );
+  const canEdit = React.useMemo(() => canUserEdit(userRole), [userRole]);
 
   // Main data state
   const [cases, setCases] = useState<AppealCase[]>([]);
@@ -131,7 +178,7 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Initial Load from localStorage
+  // Initial Load from localStorage & Initialize Auth
   useEffect(() => {
     const loadedCases = getSavedCases();
     setCases(loadedCases);
@@ -149,17 +196,93 @@ export default function App() {
     }
 
     // Initialize Auth Listener
-    initAuth(
+    const unsubscribe = initAuth(
       (currentUser, accessToken) => {
         setUser(currentUser);
-        setToken(accessToken);
+        setToken(accessToken || null);
+        setAuthInitializing(false);
       },
       () => {
         setUser(null);
         setToken(null);
+        setAuthInitializing(false);
       }
     );
+
+    return () => unsubscribe();
   }, []);
+
+  // Real-time Firestore Subscriptions (active whenever user is logged in)
+  useEffect(() => {
+    if (!user) return;
+
+    // 1. Seed initial data to Firestore if cloud collection is empty
+    seedInitialFirestoreDataIfEmpty(
+      getSavedCases(),
+      getSavedDutyRosters(),
+      getSavedFollowUps()
+    );
+
+    // 2. Real-time subscribe to all cases (all clients sync instantly)
+    const unsubCases = subscribeToCases(
+      (remoteCases) => {
+        if (remoteCases.length > 0) {
+          setCases(remoteCases);
+          saveCases(remoteCases);
+        }
+      },
+      (err) => console.warn('Real-time cases sync error:', err)
+    );
+
+    // 3. Real-time subscribe to monthly duty rosters
+    const unsubRosters = subscribeToDutyRosters(
+      (remoteRosters) => {
+        if (remoteRosters.length > 0) {
+          setDutyRosters(remoteRosters);
+          saveDutyRosters(remoteRosters);
+          if (!activeDutyRosterId && remoteRosters[0]) {
+            setActiveDutyRosterId(remoteRosters[0].id);
+          }
+        }
+      },
+      (err) => console.warn('Real-time duty rosters sync error:', err)
+    );
+
+    // 4. Real-time subscribe to daily follow-ups
+    const unsubFollowUps = subscribeToFollowUps(
+      (remoteFollowUps) => {
+        if (remoteFollowUps.length > 0) {
+          setFollowUps(remoteFollowUps);
+          saveFollowUps(remoteFollowUps);
+        }
+      },
+      (err) => console.warn('Real-time followups sync error:', err)
+    );
+
+    // 5. Real-time subscribe to project permissions
+    const unsubSettings = subscribeToProjectSettings(
+      (settings) => {
+        setProjectSettings(settings);
+      },
+      (err) => console.warn('Real-time settings sync error:', err)
+    );
+
+    // 6. Real-time subscribe to permission requests
+    const unsubRequests = subscribeToPermissionRequests(
+      (reqs) => {
+        setPermissionRequests(reqs);
+      },
+      (err) => console.warn('Real-time permission requests error:', err)
+    );
+
+    return () => {
+      unsubCases();
+      unsubRosters();
+      unsubFollowUps();
+      unsubSettings();
+      unsubRequests();
+    };
+  }, [user]);
 
   // Save to localStorage whenever data changes
   useEffect(() => {
@@ -196,6 +319,7 @@ export default function App() {
   // Auth Handlers
   const handleLogin = async () => {
     setIsLoggingIn(true);
+    setLoginError(null);
     try {
       const result = await googleSignIn();
       if (result) {
@@ -205,6 +329,7 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Login error', err);
+      setLoginError(err.message || 'ไม่สามารถเข้าสู่ระบบ Google ได้ โปรดลองอีกครั้ง');
       showToast('ไม่สามารถเข้าสู่ระบบ Google ได้');
     } finally {
       setIsLoggingIn(false);
@@ -216,6 +341,80 @@ export default function App() {
     setUser(null);
     setToken(null);
     showToast('ออกจากระบบเรียบร้อยแล้ว');
+  };
+
+  // Permission Request & Management Handlers
+  const handleRequestEdit = async (note: string) => {
+    if (!user || !user.email) return;
+    try {
+      await requestEditPermission(
+        {
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        },
+        note
+      );
+      showToast('ส่งคำขอสิทธิ์แก้ไขข้อมูลไปยังแอดมินแล้ว');
+    } catch (err: any) {
+      console.error('Request edit failed:', err);
+      showToast('ส่งคำขอไม่สำเร็จ: ' + err.message);
+    }
+  };
+
+  const handleApproveRequest = async (requestId: string, userEmail: string) => {
+    if (!user?.email) return;
+    setIsProcessingPermissions(true);
+    try {
+      await approveEditPermission(requestId, userEmail, projectSettings, user.email);
+      showToast(`อนุมัติสิทธิ์แก้ไขให้ "${userEmail}" เรียบร้อยแล้ว`);
+    } catch (err: any) {
+      console.error('Approve failed:', err);
+      showToast('อนุมัติไม่สำเร็จ: ' + err.message);
+    } finally {
+      setIsProcessingPermissions(false);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    setIsProcessingPermissions(true);
+    try {
+      await rejectEditPermission(requestId);
+      showToast('ปฏิเสธคำขอสิทธิ์เรียบร้อยแล้ว');
+    } catch (err: any) {
+      console.error('Reject failed:', err);
+      showToast('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+      setIsProcessingPermissions(false);
+    }
+  };
+
+  const handleAddEditor = async (email: string) => {
+    if (!user?.email) return;
+    setIsProcessingPermissions(true);
+    try {
+      await addAllowedEditor(email, projectSettings, user.email);
+      showToast(`เพิ่มสิทธิ์แก้ไขให้ "${email}" สำเร็จ`);
+    } catch (err: any) {
+      console.error('Add editor failed:', err);
+      showToast('ไม่สามารถเพิ่มผู้ใช้งานได้: ' + err.message);
+    } finally {
+      setIsProcessingPermissions(false);
+    }
+  };
+
+  const handleRemoveEditor = async (email: string) => {
+    if (!user?.email) return;
+    setIsProcessingPermissions(true);
+    try {
+      await removeAllowedEditor(email, projectSettings, user.email);
+      showToast(`เพิกถอนสิทธิ์ของ "${email}" เรียบร้อยแล้ว`);
+    } catch (err: any) {
+      console.error('Remove editor failed:', err);
+      showToast('ไม่สามารถเพิกถอนสิทธิ์ได้: ' + err.message);
+    } finally {
+      setIsProcessingPermissions(false);
+    }
   };
 
   // Synchronize live with Google Sheets
@@ -278,6 +477,7 @@ export default function App() {
     const updated = [newCase, ...cases];
     setCases(updated);
     saveCases(updated);
+    saveCaseToFirestore(newCase).catch((e) => console.warn('Firestore save case error:', e));
     showToast(`เพิ่มสำนวนดำ ${newCase.blackCaseNo} ครบกำหนด 1 เดือนเรียบร้อยแล้ว`);
 
     // Synchronize to Google Sheets if connected
@@ -331,6 +531,7 @@ export default function App() {
     const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore update case error:', e));
 
     showToast(`สำนวน ${targetCase.blackCaseNo} บันทึกเสร็จสิ้นแล้ว (หยุดการแจ้งเตือน)`);
 
@@ -361,6 +562,7 @@ export default function App() {
     const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore reopen error:', e));
     showToast(`เปิดสำนวน ${targetCase.blackCaseNo} ใหม่ (เริ่มการติดตามและแจ้งเตือนอีกครั้ง)`);
 
     const currentToken = token || (await getAccessToken());
@@ -394,6 +596,7 @@ export default function App() {
     const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore extend error:', e));
     showToast(`ขยายเวลาอุทธรณ์สำนวน ${targetCase.blackCaseNo} ถึง ${newDeadline} เรียบร้อยแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -421,6 +624,7 @@ export default function App() {
         const remaining = cases.filter((c) => c.id !== caseId);
         setCases(remaining);
         saveCases(remaining);
+        deleteCaseFromFirestore(caseId).catch((e) => console.warn('Firestore delete error:', e));
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         showToast(`ลบสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
       },
@@ -557,6 +761,9 @@ export default function App() {
     saveCases(updated);
 
     const targetCase = updated.find((c) => c.id === caseId);
+    if (targetCase) {
+      saveCaseToFirestore(targetCase).catch((e) => console.warn('Firestore appointment error:', e));
+    }
     showToast(`บันทึกขั้นตอนนัดของศาลสำหรับสำนวน ${targetCase?.blackCaseNo || ''} เรียบร้อยแล้ว`);
 
     // Update in Google Sheet if connected
@@ -591,6 +798,7 @@ export default function App() {
     const newCases = cases.map((c) => (c.id === updatedCase.id ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore update case error:', e));
     showToast(`บันทึกการแก้ไขข้อมูลสำนวน ${updatedCase.blackCaseNo} เรียบร้อยแล้ว`);
 
     // Update in Google Sheet if connected
@@ -622,6 +830,7 @@ export default function App() {
     const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore assign officer error:', e));
     showToast(`กำหนดเวรชี้ "${officerName}" ให้สำนวนคดีดำ ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -661,6 +870,7 @@ export default function App() {
     const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore record judgment error:', e));
     showToast(`บันทึกคำพิพากษาคดีดำ ${target.blackCaseNo} และเริ่มคุมอุทธรณ์ 1 เดือนแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -694,6 +904,7 @@ export default function App() {
     const updated = [newItem, ...followUps];
     setFollowUps(updated);
     saveFollowUps(updated);
+    saveFollowUpToFirestore(newItem).catch((e) => console.warn('Firestore followup save error:', e));
     showToast(`บันทึกคดีตามคำพิพากษา ${newItem.caseNumber} ประจำวันที่ ${newItem.followUpDate} แล้ว`);
 
     // Synchronize to Google Sheets
@@ -715,6 +926,7 @@ export default function App() {
     const updated = followUps.map((f) => (f.id === item.id ? item : f));
     setFollowUps(updated);
     saveFollowUps(updated);
+    saveFollowUpToFirestore(item).catch((e) => console.warn('Firestore update followup error:', e));
     showToast(`อัปเดตสถานะคดี ${item.caseNumber} เรียบร้อยแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -741,6 +953,7 @@ export default function App() {
         const remaining = followUps.filter((f) => f.id !== id);
         setFollowUps(remaining);
         saveFollowUps(remaining);
+        deleteFollowUpFromFirestore(id).catch((e) => console.warn('Firestore delete followup error:', e));
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         showToast('ลบรายการตามคำพิพากษาเรียบร้อยแล้ว');
       },
@@ -770,6 +983,7 @@ export default function App() {
     });
     setActiveDutyRosterId(newRoster.id);
     setActiveTab('duty_roster');
+    saveDutyRosterToFirestore(newRoster).catch((e) => console.warn('Firestore roster save error:', e));
     showToast(`เพิ่มตารางเวรชี้ "${newRoster.monthNameThai}" เรียบร้อยแล้ว`);
   };
 
@@ -787,6 +1001,7 @@ export default function App() {
         const remaining = dutyRosters.filter((r) => r.id !== rosterId);
         setDutyRosters(remaining);
         saveDutyRosters(remaining);
+        deleteDutyRosterFromFirestore(rosterId).catch((e) => console.warn('Firestore roster delete error:', e));
         if (remaining.length > 0) {
           setActiveDutyRosterId(remaining[0].id);
         }
@@ -808,6 +1023,10 @@ export default function App() {
     });
     setDutyRosters(updated);
     saveDutyRosters(updated);
+    const target = updated.find((r) => r.id === rosterId);
+    if (target) {
+      saveDutyRosterToFirestore(target).catch((e) => console.warn('Firestore duty record save error:', e));
+    }
   };
 
   const handleUseOfficerForNewCase = (officerName: string, date: string) => {
@@ -823,6 +1042,33 @@ export default function App() {
     showToast(`กรองดูสำนวนของ: ${officerName}`);
   };
 
+  // 1. Auth Initializing Loader
+  if (authInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-white font-['Sarabun',sans-serif]">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-4 animate-pulse">
+          <Scale className="w-8 h-8" />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm font-semibold tracking-wide">กำลังเชื่อมต่อระบบและตรวจสอบสิทธิ์...</span>
+        </div>
+        <p className="text-xs text-slate-400 mt-2">ระบบคุมระยะเวลาอุทธรณ์ 1 เดือนและสารบบคดีประจำวัน</p>
+      </div>
+    );
+  }
+
+  // 2. Authentication Gate: If not logged in, show LoginScreen
+  if (!user) {
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        isLoggingIn={isLoggingIn}
+        loginError={loginError}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-100 selection:text-amber-900 font-['Sarabun',sans-serif]">
       {/* Toast Notification */}
@@ -837,18 +1083,54 @@ export default function App() {
       <Header
         user={user}
         token={token}
+        role={userRole}
+        pendingRequestsCount={permissionRequests.filter((r) => r.status === 'pending').length}
         sheetConfig={sheetConfig}
         todayDutyOfficer={todayDutyOfficer}
         onOpenDutyRoster={() => setActiveTab('duty_roster')}
         onLogin={handleLogin}
         onLogout={handleLogout}
         onOpenSheetSettings={() => setIsSheetModalOpen(true)}
+        onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
+        onRequestEditPermission={() => setIsRequestEditModalOpen(true)}
         onSync={handleSyncWithSheet}
         isSyncing={isSyncing}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Viewer Mode Info Banner */}
+        {userRole === 'viewer' && (
+          <div className="mb-5 bg-gradient-to-r from-blue-900/90 via-slate-900 to-slate-900 text-white rounded-2xl p-4 border border-blue-500/30 shadow-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center flex-shrink-0 border border-blue-400/30">
+                <Eye className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-white font-['Prompt']">
+                    คุณกำลังเข้าชมในโหมดดูข้อมูล (Read-Only)
+                  </span>
+                  <span className="bg-blue-400/20 text-blue-200 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-400/30">
+                    Real-time Active
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  ข้อมูลสำนวนคดีและตารางเวรชี้อัปเดตเป็นปัจจุบันแบบเรียลไทม์จากแอดมิน ({ADMIN_EMAIL}) หากต้องการเพิ่มหรือแก้ไขข้อมูล สามารถกดขอสิทธิ์แก้ไขได้
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsRequestEditModalOpen(true)}
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 flex-shrink-0 cursor-pointer"
+            >
+              <ShieldAlert className="w-4 h-4" />
+              <span>🙋 ขอสิทธิ์แก้ไขข้อมูลจากแอดมิน</span>
+            </button>
+          </div>
+        )}
+
         {/* KPI Stats Overview */}
         <StatsSummary
           cases={cases}
@@ -949,17 +1231,19 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setAddCaseInitialFilingDate(undefined);
-                setAddCaseInitialResponsiblePerson(undefined);
-                setIsAddCaseOpen(true);
-              }}
-              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>เพิ่มสำนวนคุมอุทธรณ์ 1 เดือน</span>
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => {
+                  setAddCaseInitialFilingDate(undefined);
+                  setAddCaseInitialResponsiblePerson(undefined);
+                  setIsAddCaseOpen(true);
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>เพิ่มสำนวนคุมอุทธรณ์ 1 เดือน</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -967,6 +1251,7 @@ export default function App() {
         {activeTab === 'all' && (
           <CaseTable
             cases={cases}
+            canEdit={canEdit}
             initialFilter={statsFilter}
             externalSearchTerm={globalVoiceQuery}
             onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
@@ -989,6 +1274,7 @@ export default function App() {
           <DailyFilingByDateView
             cases={cases}
             dutyRosters={dutyRosters}
+            canEdit={canEdit}
             initialSelectedDate={addCaseInitialFilingDate}
             externalDateSearch={globalVoiceQuery}
             onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
@@ -1017,6 +1303,7 @@ export default function App() {
           <DutyRosterView
             rosters={dutyRosters}
             activeRosterId={activeDutyRosterId}
+            canEdit={canEdit}
             onSelectRoster={(id) => setActiveDutyRosterId(id)}
             onOpenUploadModal={() => setIsUploadDutyModalOpen(true)}
             onDeleteRoster={handleDeleteDutyRoster}
@@ -1037,7 +1324,7 @@ export default function App() {
             <span>(นับแต่วันมีคำพิพากษา ตาม ป.วิ.พ. ม.229 / ป.วิ.อ. ม.198)</span>
           </div>
           <div className="text-slate-400 text-[11px]">
-            เชื่อมต่อ Google Sheets และวิเคราะห์ตารางเวรชี้ประจำเดือน (PDF/ภาพ) ด้วย AI
+            เชื่อมต่อ Google Sheets และวิเคราะห์ตารางเวรชี้ประจำเดือน (PDF/ภาพ) ด้วย AI • ซิงค์แบบเรียลไทม์
           </div>
         </div>
       </footer>
@@ -1130,6 +1417,34 @@ export default function App() {
         }}
         onSaveJudgmentDate={handleSaveJudgmentDate}
       />
+
+      {/* User Permissions Management Modal (Admin only) */}
+      <UserPermissionsModal
+        isOpen={isPermissionsModalOpen}
+        onClose={() => setIsPermissionsModalOpen(false)}
+        settings={projectSettings}
+        requests={permissionRequests}
+        onApproveRequest={handleApproveRequest}
+        onRejectRequest={handleRejectRequest}
+        onAddEditor={handleAddEditor}
+        onRemoveEditor={handleRemoveEditor}
+        isProcessing={isProcessingPermissions}
+      />
+
+      {/* Request Edit Permission Modal (Viewers) */}
+      {user && (
+        <RequestEditModal
+          isOpen={isRequestEditModalOpen}
+          onClose={() => setIsRequestEditModalOpen(false)}
+          user={user}
+          onRequest={handleRequestEdit}
+          existingRequestStatus={
+            permissionRequests.find(
+              (r) => r.email.toLowerCase() === (user.email || '').toLowerCase()
+            )?.status || null
+          }
+        />
+      )}
 
       <SpreadsheetModal
         isOpen={isSheetModalOpen}

@@ -27,6 +27,16 @@ export interface ProjectSettings {
   updatedBy?: string;
 }
 
+export interface PermissionRequest {
+  id: string;
+  email: string;
+  displayName?: string;
+  photoURL?: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  note?: string;
+}
+
 // Default settings
 export const DEFAULT_SETTINGS: ProjectSettings = {
   adminEmail: ADMIN_EMAIL,
@@ -238,11 +248,190 @@ export async function updateProjectSettingsInFirestore(
 }
 
 /**
+ * Real-time subscription to daily judgment follow-ups
+ */
+export function subscribeToFollowUps(
+  onData: (followUps: DailyJudgmentFollowUp[]) => void,
+  onError?: (err: Error) => void
+) {
+  const followUpsCol = collection(db, 'follow_ups');
+  return onSnapshot(
+    followUpsCol,
+    (snapshot) => {
+      const list: DailyJudgmentFollowUp[] = [];
+      snapshot.forEach((d) => {
+        list.push({
+          id: d.id,
+          ...d.data(),
+        } as DailyJudgmentFollowUp);
+      });
+      list.sort((a, b) => b.followUpDate.localeCompare(a.followUpDate));
+      onData(list);
+    },
+    (err) => {
+      console.warn('Firestore follow_ups snapshot error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Save or update daily follow-up in Firestore
+ */
+export async function saveFollowUpToFirestore(followUp: DailyJudgmentFollowUp): Promise<void> {
+  const docRef = doc(db, 'follow_ups', followUp.id);
+  const cleanData = JSON.parse(JSON.stringify(followUp));
+  await setDoc(docRef, cleanData, { merge: true });
+}
+
+/**
+ * Delete follow-up from Firestore
+ */
+export async function deleteFollowUpFromFirestore(followUpId: string): Promise<void> {
+  const docRef = doc(db, 'follow_ups', followUpId);
+  await deleteDoc(docRef);
+}
+
+/**
+ * Real-time subscription to permission requests
+ */
+export function subscribeToPermissionRequests(
+  onData: (requests: PermissionRequest[]) => void,
+  onError?: (err: Error) => void
+) {
+  const requestsCol = collection(db, 'permission_requests');
+  return onSnapshot(
+    requestsCol,
+    (snapshot) => {
+      const list: PermissionRequest[] = [];
+      snapshot.forEach((d) => {
+        list.push({
+          id: d.id,
+          ...d.data(),
+        } as PermissionRequest);
+      });
+      list.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+      onData(list);
+    },
+    (err) => {
+      console.warn('Firestore permission requests snapshot error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Request edit permission from admin
+ */
+export async function requestEditPermission(
+  user: { email: string; displayName?: string | null; photoURL?: string | null },
+  note?: string
+): Promise<void> {
+  const cleanEmail = user.email.toLowerCase().trim();
+  // Safe document ID using encoded email
+  const docId = `req_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const docRef = doc(db, 'permission_requests', docId);
+  const payload: PermissionRequest = {
+    id: docId,
+    email: cleanEmail,
+    displayName: user.displayName || cleanEmail.split('@')[0],
+    photoURL: user.photoURL || undefined,
+    requestedAt: new Date().toISOString(),
+    status: 'pending',
+    note: note || 'ขอสิทธิ์เพื่อร่วมแก้ไขและบันทึกข้อมูลสำนวนคดี',
+  };
+  const cleanData = JSON.parse(JSON.stringify(payload));
+  await setDoc(docRef, cleanData, { merge: true });
+}
+
+/**
+ * Approve permission request and add user to allowedEditors
+ */
+export async function approveEditPermission(
+  requestId: string,
+  userEmail: string,
+  currentSettings: ProjectSettings,
+  adminEmail: string
+): Promise<void> {
+  const cleanEmail = userEmail.toLowerCase().trim();
+  const currentEditors = currentSettings.allowedEditors || [];
+  if (!currentEditors.some((e) => e.toLowerCase().trim() === cleanEmail)) {
+    const updatedEditors = [...currentEditors, cleanEmail];
+    await updateProjectSettingsInFirestore(
+      {
+        ...currentSettings,
+        allowedEditors: updatedEditors,
+      },
+      adminEmail
+    );
+  }
+
+  // Update request doc status
+  const reqDocRef = doc(db, 'permission_requests', requestId);
+  await setDoc(reqDocRef, { status: 'approved' }, { merge: true });
+}
+
+/**
+ * Reject permission request
+ */
+export async function rejectEditPermission(
+  requestId: string
+): Promise<void> {
+  const reqDocRef = doc(db, 'permission_requests', requestId);
+  await setDoc(reqDocRef, { status: 'rejected' }, { merge: true });
+}
+
+/**
+ * Directly add email to allowed editors
+ */
+export async function addAllowedEditor(
+  email: string,
+  currentSettings: ProjectSettings,
+  adminEmail: string
+): Promise<void> {
+  const cleanEmail = email.toLowerCase().trim();
+  const currentEditors = currentSettings.allowedEditors || [];
+  if (!currentEditors.some((e) => e.toLowerCase().trim() === cleanEmail)) {
+    const updatedEditors = [...currentEditors, cleanEmail];
+    await updateProjectSettingsInFirestore(
+      {
+        ...currentSettings,
+        allowedEditors: updatedEditors,
+      },
+      adminEmail
+    );
+  }
+}
+
+/**
+ * Remove email from allowed editors
+ */
+export async function removeAllowedEditor(
+  email: string,
+  currentSettings: ProjectSettings,
+  adminEmail: string
+): Promise<void> {
+  const cleanEmail = email.toLowerCase().trim();
+  const currentEditors = currentSettings.allowedEditors || [];
+  const updatedEditors = currentEditors.filter(
+    (e) => e.toLowerCase().trim() !== cleanEmail
+  );
+  await updateProjectSettingsInFirestore(
+    {
+      ...currentSettings,
+      allowedEditors: updatedEditors,
+    },
+    adminEmail
+  );
+}
+
+/**
  * Seed initial sample data to Firestore if collection is empty
  */
 export async function seedInitialFirestoreDataIfEmpty(
   initialCases: AppealCase[],
-  initialRosters: MonthlyDutyRoster[]
+  initialRosters: MonthlyDutyRoster[],
+  initialFollowUps?: DailyJudgmentFollowUp[]
 ): Promise<boolean> {
   try {
     const casesSnap = await getDocs(collection(db, 'cases'));
@@ -257,6 +446,16 @@ export async function seedInitialFirestoreDataIfEmpty(
         await saveDutyRosterToFirestore(r);
       }
       console.log('Seeded initial duty rosters to Firestore');
+    }
+
+    if (initialFollowUps && initialFollowUps.length > 0) {
+      const followUpsSnap = await getDocs(collection(db, 'follow_ups'));
+      if (followUpsSnap.empty) {
+        for (const f of initialFollowUps) {
+          await saveFollowUpToFirestore(f);
+        }
+        console.log('Seeded initial follow-ups to Firestore');
+      }
     }
 
     const settingsDoc = await getDoc(doc(db, 'settings', 'permissions'));

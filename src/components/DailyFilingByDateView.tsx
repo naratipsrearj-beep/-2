@@ -60,6 +60,7 @@ interface DailyFilingByDateViewProps {
   dutyRosters?: MonthlyDutyRoster[];
   initialSelectedDate?: string;
   externalDateSearch?: string;
+  canEdit?: boolean;
   onMarkComplete: (caseItem: AppealCase) => void;
   onReopenCase?: (caseId: string) => void;
   onExtendDeadline: (caseItem: AppealCase) => void;
@@ -77,6 +78,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   dutyRosters = [],
   initialSelectedDate,
   externalDateSearch = '',
+  canEdit = true,
   onMarkComplete,
   onReopenCase,
   onExtendDeadline,
@@ -530,7 +532,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
             {/* Actions for this specific date */}
             <div className="mt-5 flex flex-wrap items-center gap-2.5">
-              {onAddNewCaseForDate && (
+              {canEdit && onAddNewCaseForDate && (
                 <button
                   type="button"
                   onClick={() => onAddNewCaseForDate(selectedDate)}
@@ -539,6 +541,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   <Plus className="w-4 h-4" />
                   <span>เพิ่มสำนวนที่ฟ้องในวันที่ {formatThaiDate(selectedDate, { short: true })}</span>
                 </button>
+              )}
+
+              {!canEdit && (
+                <div className="bg-white/10 text-slate-300 text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 border border-white/10">
+                  <span>👁️ สิทธิ์ดูข้อมูลอย่างเดียว (อัปเดตแบบ Real-time จากเจ้าของระบบ)</span>
+                </div>
               )}
 
               {onExportDailyDoc && statsForSelectedDate.total > 0 && (
@@ -764,68 +772,83 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
                         {/* Action Buttons */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          {/* 1. Edit Case Button */}
-                          {onEditCase && (
-                            <button
-                              type="button"
-                              onClick={() => onEditCase(caseItem)}
-                              className="px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition flex items-center gap-1 cursor-pointer"
-                              title="แก้ไขหรือเพิ่มเติมข้อมูลสำนวนนี้"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                              <span>แก้ไขข้อมูล</span>
-                            </button>
-                          )}
+                          {canEdit ? (
+                            <>
+                              {/* 1. Edit Case Button */}
+                              {onEditCase && (
+                                <button
+                                  type="button"
+                                  onClick={() => onEditCase(caseItem)}
+                                  className="px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                                  title="แก้ไขหรือเพิ่มเติมข้อมูลสำนวนนี้"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>แก้ไขข้อมูล</span>
+                                </button>
+                              )}
 
-                          {/* 2. Record Judgment Button */}
-                          {!caseItem.judgmentDate && onRecordJudgment && (
-                            <button
-                              type="button"
-                              onClick={() => onRecordJudgment(caseItem)}
-                              className="px-2.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer"
-                              title="ศาลตัดสินแล้ว บันทึกคำพิพากษาเพื่อเริ่มคุมอุทธรณ์ 1 เดือน"
-                            >
-                              <Scale className="w-3.5 h-3.5" />
-                              <span>บันทึกคำพิพากษา</span>
-                            </button>
-                          )}
+                              {/* 2. Record Judgment Button */}
+                              {!caseItem.judgmentDate && onRecordJudgment && (
+                                <button
+                                  type="button"
+                                  onClick={() => onRecordJudgment(caseItem)}
+                                  className="px-2.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                                  title="ศาลตัดสินแล้ว บันทึกคำพิพากษาเพื่อเริ่มคุมอุทธรณ์ 1 เดือน"
+                                >
+                                  <Scale className="w-3.5 h-3.5" />
+                                  <span>บันทึกคำพิพากษา</span>
+                                </button>
+                              )}
 
-                          {/* 3. Court Appointment Modal */}
-                          {onOpenAppointmentModal && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenAppointmentModal(caseItem)}
-                              className="p-1.5 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
-                              title="จัดการวันนัดศาล"
-                            >
-                              <Calendar className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                              {/* 3. Court Appointment Modal */}
+                              {onOpenAppointmentModal && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenAppointmentModal(caseItem)}
+                                  className="p-1.5 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
+                                  title="จัดการวันนัดศาล"
+                                >
+                                  <Calendar className="w-3.5 h-3.5" />
+                                </button>
+                              )}
 
-                          {/* 3.5. Duty Officer Picker Button */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCaseForDutyPicker(caseItem);
-                              setIsDutyPickerOpen(true);
-                            }}
-                            className="px-2.5 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                            title="เลือกเวรชี้ตามตารางเวรชี้แต่ละเดือนที่อัปโหลดไฟล์ PDF"
-                          >
-                            <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-                            <span>{caseItem.prosecutorName ? `⚖️ ${caseItem.prosecutorName}` : '⚖️ เลือกเวรชี้ (PDF)'}</span>
-                          </button>
+                              {/* 3.5. Duty Officer Picker Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCaseForDutyPicker(caseItem);
+                                  setIsDutyPickerOpen(true);
+                                }}
+                                className="px-2.5 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                title="เลือกเวรชี้ตามตารางเวรชี้แต่ละเดือนที่อัปโหลดไฟล์ PDF"
+                              >
+                                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                                <span>{caseItem.prosecutorName ? `⚖️ ${caseItem.prosecutorName}` : '⚖️ เลือกเวรชี้ (PDF)'}</span>
+                              </button>
 
-                          {/* 4. Complete button */}
-                          {!isCompleted && (
-                            <button
-                              type="button"
-                              onClick={() => onMarkComplete(caseItem)}
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 border border-emerald-200 rounded-lg transition"
-                              title="บันทึกเสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            </button>
+                              {/* 4. Complete button */}
+                              {!isCompleted && (
+                                <button
+                                  type="button"
+                                  onClick={() => onMarkComplete(caseItem)}
+                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 border border-emerald-200 rounded-lg transition"
+                                  title="บันทึกเสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {caseItem.prosecutorName && (
+                                <span className="text-xs bg-amber-50 text-amber-900 px-2 py-1 rounded-lg border border-amber-200 font-medium">
+                                  ⚖️ เวรชี้: {caseItem.prosecutorName}
+                                </span>
+                              )}
+                              <span className="text-[11px] text-slate-400 italic">
+                                [โหมดดูข้อมูลแบบเรียลไทม์]
+                              </span>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -916,7 +939,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                         ดูเฉพาะวันนี้
                       </button>
 
-                      {onAddNewCaseForDate && (
+                      {canEdit && onAddNewCaseForDate && (
                         <button
                           type="button"
                           onClick={() => onAddNewCaseForDate(dateKey)}
@@ -953,29 +976,31 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCaseForDutyPicker(caseItem);
-                                setIsDutyPickerOpen(true);
-                              }}
-                              className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                              title="เลือกหรือเปลี่ยนเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
-                            >
-                              <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-                              <span>{caseItem.prosecutorName ? 'เปลี่ยนเวรชี้' : 'เลือกเวรชี้ (PDF)'}</span>
-                            </button>
-                            {onEditCase && (
+                          {canEdit && (
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => onEditCase(caseItem)}
-                                className="px-2.5 py-1 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition font-medium border border-indigo-200 cursor-pointer"
+                                onClick={() => {
+                                  setCaseForDutyPicker(caseItem);
+                                  setIsDutyPickerOpen(true);
+                                }}
+                                className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                title="เลือกหรือเปลี่ยนเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
                               >
-                                แก้ไข
+                                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                                <span>{caseItem.prosecutorName ? 'เปลี่ยนเวรชี้' : 'เลือกเวรชี้ (PDF)'}</span>
                               </button>
-                            )}
-                          </div>
+                              {onEditCase && (
+                                <button
+                                  type="button"
+                                  onClick={() => onEditCase(caseItem)}
+                                  className="px-2.5 py-1 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition font-medium border border-indigo-200 cursor-pointer"
+                                >
+                                  แก้ไข
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

@@ -1,29 +1,37 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
 
 interface HeaderProps {
   user: User | null;
   token: string | null;
+  role?: 'admin' | 'editor' | 'viewer';
+  pendingRequestsCount?: number;
   sheetConfig: SheetConfig | null;
   todayDutyOfficer?: string;
   onOpenDutyRoster?: () => void;
   onLogin: () => void;
   onLogout: () => void;
   onOpenSheetSettings: () => void;
+  onOpenPermissionsModal?: () => void;
+  onRequestEditPermission?: () => void;
   onSync: () => void;
   isSyncing: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   user,
+  role = 'viewer',
+  pendingRequestsCount = 0,
   sheetConfig,
   todayDutyOfficer,
   onOpenDutyRoster,
   onLogin,
   onLogout,
   onOpenSheetSettings,
+  onOpenPermissionsModal,
+  onRequestEditPermission,
   onSync,
   isSyncing,
 }) => {
@@ -45,12 +53,13 @@ export const Header: React.FC<HeaderProps> = ({
               <Scale className="w-5 h-5 text-white" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-lg sm:text-xl font-bold font-['Prompt'] tracking-tight text-white">
                   ระบบคุมระยะเวลาอุทธรณ์ 1 เดือน
                 </h1>
-                <span className="bg-amber-500/20 text-amber-300 text-[11px] font-medium px-2 py-0.5 rounded-full border border-amber-500/30">
-                  นับแต่พิพากษา
+                <span className="bg-amber-500/20 text-amber-300 text-[11px] font-medium px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>Real-time Sync</span>
                 </span>
               </div>
               <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
@@ -111,9 +120,38 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Google Account */}
+            {/* Admin: Manage Permissions Button */}
+            {role === 'admin' && onOpenPermissionsModal && (
+              <button
+                onClick={onOpenPermissionsModal}
+                className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/45 text-indigo-200 border border-indigo-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition"
+                title="จัดการสิทธิ์ผู้ใช้งานและอนุมัติคำขอแก้ไข"
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-400" />
+                <span>จัดการสิทธิ์</span>
+                {pendingRequestsCount > 0 && (
+                  <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-bounce">
+                    {pendingRequestsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Viewer: Request Edit Button */}
+            {role === 'viewer' && onRequestEditPermission && (
+              <button
+                onClick={onRequestEditPermission}
+                className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition"
+                title="ขอสิทธิ์แก้ไขข้อมูลจากแอดมิน"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                <span>ขอสิทธิ์แก้ไข</span>
+              </button>
+            )}
+
+            {/* Google Account & Role Badge */}
             {user ? (
-              <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg pl-1.5 pr-2.5 py-1 text-xs">
+              <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg pl-1.5 pr-2 py-1 text-xs">
                 {user.photoURL ? (
                   <img
                     src={user.photoURL}
@@ -126,13 +164,29 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 )}
                 <div className="hidden sm:block text-left">
-                  <div className="text-[11px] font-medium text-slate-200 truncate max-w-[120px]">
+                  <div className="text-[11px] font-medium text-slate-200 truncate max-w-[120px]" title={user.email || ''}>
                     {user.displayName || user.email?.split('@')[0]}
+                  </div>
+                  {/* Role pill */}
+                  <div className="text-[9px] font-bold tracking-wide">
+                    {role === 'admin' ? (
+                      <span className="text-amber-400 flex items-center gap-0.5">
+                        <span>👑 แอดมินหลัก</span>
+                      </span>
+                    ) : role === 'editor' ? (
+                      <span className="text-emerald-400 flex items-center gap-0.5">
+                        <span>✍️ ผู้ร่วมแก้ไข</span>
+                      </span>
+                    ) : (
+                      <span className="text-blue-300 flex items-center gap-0.5">
+                        <span>👁️ ดูอย่างเดียว</span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
                   onClick={onLogout}
-                  className="text-slate-400 hover:text-rose-400 p-1 ml-0.5 transition"
+                  className="text-slate-400 hover:text-rose-400 p-1 ml-0.5 transition rounded hover:bg-slate-700/50"
                   title="ออกจากระบบ"
                 >
                   <LogOut className="w-3.5 h-3.5" />

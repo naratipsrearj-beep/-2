@@ -27,6 +27,7 @@ import { formatThaiDateLong } from '../services/dutyService';
 interface DutyRosterViewProps {
   rosters: MonthlyDutyRoster[];
   activeRosterId?: string;
+  canEdit?: boolean;
   onSelectRoster: (rosterId: string) => void;
   onOpenUploadModal: () => void;
   onDeleteRoster: (rosterId: string) => void;
@@ -39,6 +40,7 @@ interface DutyRosterViewProps {
 export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
   rosters,
   activeRosterId,
+  canEdit = true,
   onSelectRoster,
   onOpenUploadModal,
   onDeleteRoster,
@@ -155,15 +157,17 @@ export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
             </div>
           )}
 
-          <button
-            onClick={onOpenUploadModal}
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>อัพโหลดภาพ/PDF ตารางเวรใหม่</span>
-          </button>
+          {canEdit && (
+            <button
+              onClick={onOpenUploadModal}
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>อัพโหลดภาพ/PDF ตารางเวรใหม่</span>
+            </button>
+          )}
 
-          {currentRoster && (
+          {canEdit && currentRoster && (
             <button
               onClick={() => onDeleteRoster(currentRoster.id)}
               className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-slate-200 transition"
