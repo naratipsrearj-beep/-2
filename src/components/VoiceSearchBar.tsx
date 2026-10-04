@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mic, MicOff, Search, Sparkles, X, Volume2, Calendar, FileText, ArrowRight } from 'lucide-react';
+import { Mic, MicOff, Search, X, Volume2 } from 'lucide-react';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 
 interface VoiceSearchBarProps {
@@ -73,15 +73,6 @@ export const VoiceSearchBar: React.FC<VoiceSearchBarProps> = ({
     setInputValue('');
     setActiveVoicePrompt(null);
     onSearch('', 'all');
-  };
-
-  const handleQuickVoiceSample = (sample: string, type: 'all' | 'black' | 'red' | 'filing_date') => {
-    setInputValue(sample);
-    setActiveVoicePrompt(sample);
-    onSearch(sample, type);
-    if (type === 'filing_date' && onSelectFilingDate) {
-      onSelectFilingDate(sample);
-    }
   };
 
   return (
@@ -163,54 +154,6 @@ export const VoiceSearchBar: React.FC<VoiceSearchBarProps> = ({
           ⚠️ {errorMessage}
         </div>
       )}
-
-      {/* Quick Voice / Tag Suggestions */}
-      <div className="mt-3 flex items-center gap-1.5 flex-wrap text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1 text-slate-400 font-medium mr-1">
-          <Sparkles className="w-3 h-3 text-amber-500" />
-          <span>ตัวอย่างคำสั่งเสียง:</span>
-        </span>
-
-        <button
-          type="button"
-          onClick={() => handleQuickVoiceSample('คดีดำ 452', 'black')}
-          className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1 font-medium"
-        >
-          <span>🎙️ คดีดำ 452</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleQuickVoiceSample('คดีแดง 891', 'red')}
-          className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1 font-medium"
-        >
-          <span>🎙️ คดีแดง 891</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleQuickVoiceSample('ฟ้องวันที่ 15', 'filing_date')}
-          className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1 font-medium"
-        >
-          <span>🎙️ ฟ้องวันที่ 15</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleQuickVoiceSample('ศาลอาญา', 'all')}
-          className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1 font-medium"
-        >
-          <span>🎙️ ศาลอาญา</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleQuickVoiceSample('ใกล้ครบกำหนด', 'all')}
-          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1 font-medium"
-        >
-          <span>🎙️ ใกล้ครบกำหนด</span>
-        </button>
-      </div>
 
       {/* Active Search Badge */}
       {activeVoicePrompt && (

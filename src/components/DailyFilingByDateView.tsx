@@ -25,7 +25,10 @@ import {
   Sparkles,
   UserCheck,
   Undo2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ShieldAlert,
+  HelpCircle,
+  Check
 } from 'lucide-react';
 import { AppealCase, MonthlyDutyRoster, SheetConfig } from '../types/appeal';
 import {
@@ -40,6 +43,51 @@ import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate } from '../services/dutyService';
 import { DailyCasesToSheetsModal } from './DailyCasesToSheetsModal';
+
+export type DailyProcedureFilter = 'all' | 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending';
+
+export function getCaseProcedureCategory(c: AppealCase): 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending' {
+  // 1. รับสารภาพ: มีคำพิพากษา หรือระบุคำให้การรับสารภาพ
+  const isConfessed =
+    c.defendantPlea === 'confessed' ||
+    (c.judgmentOutcome && c.judgmentOutcome.toLowerCase().includes('รับสารภาพ')) ||
+    Boolean(c.hasJudgment && c.judgmentDate);
+
+  if (isConfessed) {
+    return 'confessed';
+  }
+
+  // 2. ปฏิเสธมีนัดต่อ: จำเลยปฏิเสธ หรือมีนัดสืบพยาน/นัดพร้อมตรวจพยาน
+  const isDenied =
+    c.defendantPlea === 'denied' ||
+    c.appointmentType === 'witness_examination' ||
+    c.appointmentType === 'pre_trial';
+
+  if (isDenied && c.appointmentType && c.appointmentType !== 'none') {
+    return 'denied_scheduled';
+  }
+  if (c.defendantPlea === 'denied') {
+    return 'denied_scheduled';
+  }
+
+  // 3. มีนัดอื่นๆ: เช่น นัดพร้อม, นัดไกล่เกลี่ย, นัดฟังคำสั่ง
+  if (c.appointmentType && c.appointmentType !== 'none') {
+    return 'other_scheduled';
+  }
+
+  // 4. ยังไม่ทราบผล / รอรายงานผล
+  return 'unknown_pending';
+}
+
+export function getProcedureFilterLabel(filter: DailyProcedureFilter): string {
+  switch (filter) {
+    case 'confessed': return 'จำเลยรับสารภาพ';
+    case 'denied_scheduled': return 'จำเลยปฏิเสธ - มีนัดต่อ';
+    case 'other_scheduled': return 'สำนวนมีนัดอื่นๆ';
+    case 'unknown_pending': return 'ยังไม่ทราบผล / รอความคืบหน้า';
+    default: return 'ทั้งหมด';
+  }
+}
 
 function getUrgencyBadgeStyle(urgency: string) {
   switch (urgency) {
@@ -76,6 +124,7 @@ interface DailyFilingByDateViewProps {
   onOpenAppointmentModal?: (caseItem: AppealCase) => void;
   onAddNewCaseForDate?: (dateStr: string) => void;
   onQuickAssignOfficer?: (caseId: string, officerName: string) => void;
+  onBatchAssignOfficerToDate?: (filingDate: string, officerName: string) => void;
   onToast?: (message: string) => void;
 }
 
@@ -97,6 +146,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onOpenAppointmentModal,
   onAddNewCaseForDate,
   onQuickAssignOfficer,
+  onBatchAssignOfficerToDate,
   onToast,
 }) => {
   // วันที่เลือกเริ่มต้น
@@ -104,6 +154,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(initialSelectedDate || todayStr);
   const [viewMode, setViewMode] = useState<'single_date' | 'all_dates'>('single_date');
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(false);
+  const [procedureFilter, setProcedureFilter] = useState<DailyProcedureFilter>('all');
   const [dateSearch, setDateSearch] = useState<string>(externalDateSearch);
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
@@ -151,10 +202,20 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return Object.keys(groupedByFilingDate).sort((a, b) => b.localeCompare(a));
   }, [groupedByFilingDate]);
 
-  // Cases filed on the currently selected date
+  // Count unassigned cases on selected date
+  const unassignedCasesOnSelectedDate = useMemo(() => {
+    const list = groupedByFilingDate[selectedDate] || [];
+    return list.filter((c) => !c.prosecutorName && !c.responsiblePerson);
+  }, [groupedByFilingDate, selectedDate]);
+
+  // Cases filed on the currently selected date (filtered by search, active, and procedureFilter)
   const casesOnSelectedDate = useMemo(() => {
     return (groupedByFilingDate[selectedDate] || []).filter((c) => {
       if (filterOnlyActive && c.isCompleted) return false;
+      if (procedureFilter !== 'all') {
+        const cat = getCaseProcedureCategory(c);
+        if (cat !== procedureFilter) return false;
+      }
       if (dateSearch.trim()) {
         const q = dateSearch.toLowerCase().trim();
         return (
@@ -162,6 +223,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
           Boolean(c.redCaseNo && c.redCaseNo.toLowerCase().includes(q)) ||
           Boolean(c.receivedNumberS1 && c.receivedNumberS1.toLowerCase().includes(q)) ||
           Boolean(c.filingNumberS4 && c.filingNumberS4.toLowerCase().includes(q)) ||
+          Boolean(c.prosecutorName && c.prosecutorName.toLowerCase().includes(q)) ||
+          Boolean(c.responsiblePerson && c.responsiblePerson.toLowerCase().includes(q)) ||
           c.court.toLowerCase().includes(q) ||
           c.plaintiff.toLowerCase().includes(q) ||
           c.defendant.toLowerCase().includes(q)
@@ -169,12 +232,17 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       }
       return true;
     });
-  }, [groupedByFilingDate, selectedDate, filterOnlyActive, dateSearch]);
+  }, [groupedByFilingDate, selectedDate, filterOnlyActive, procedureFilter, dateSearch]);
 
-  // Statistics for selected date
+  // Statistics for selected date (สถิติฟ้องรายวัน: รับสารภาพ / ปฏิเสธมีนัด / มีนัดอื่นๆ / ยังไม่ทราบผล)
   const statsForSelectedDate = useMemo(() => {
     const list = groupedByFilingDate[selectedDate] || [];
     const total = list.length;
+    const confessed = list.filter((c) => getCaseProcedureCategory(c) === 'confessed').length;
+    const deniedScheduled = list.filter((c) => getCaseProcedureCategory(c) === 'denied_scheduled').length;
+    const otherScheduled = list.filter((c) => getCaseProcedureCategory(c) === 'other_scheduled').length;
+    const unknownPending = list.filter((c) => getCaseProcedureCategory(c) === 'unknown_pending').length;
+
     const criminal = list.filter((c) => c.caseType.includes('อาญา')).length;
     const civil = list.filter((c) => !c.caseType.includes('อาญา')).length;
     const withJudgment = list.filter((c) => c.hasJudgment || c.judgmentDate).length;
@@ -186,7 +254,19 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       return u === 'critical' || u === 'overdue' || u === 'warning';
     }).length;
 
-    return { total, criminal, civil, withJudgment, pendingTrial, completed, urgent };
+    return {
+      total,
+      confessed,
+      deniedScheduled,
+      otherScheduled,
+      unknownPending,
+      criminal,
+      civil,
+      withJudgment,
+      pendingTrial,
+      completed,
+      urgent,
+    };
   }, [groupedByFilingDate, selectedDate]);
 
   // Quick navigation handlers
@@ -470,85 +550,225 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
               </div>
             </div>
 
-            {/* Sub-metrics breakdown */}
-            <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                <span className="text-slate-400 block text-[11px]">คดีอาญา / คดีแพ่ง</span>
-                <span className="font-bold text-white text-sm mt-0.5 block">
-                  อาญา {statsForSelectedDate.criminal} | แพ่ง {statsForSelectedDate.civil}
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                <span className="text-slate-400 block text-[11px]">🛡️ จำเลยปฏิเสธ / มีนัด</span>
-                <span className="font-bold text-amber-300 text-sm mt-0.5 block">
-                  {statsForSelectedDate.pendingTrial} สำนวน
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                <span className="text-slate-400 block text-[11px]">⚖️ มีคำพิพากษา (คุมอุทธรณ์)</span>
-                <span className="font-bold text-emerald-300 text-sm mt-0.5 block">
-                  {statsForSelectedDate.withJudgment} สำนวน
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                <span className="text-slate-400 block text-[11px]">เตือนด่วน / เสร็จสิ้น</span>
-                <span className="font-bold text-white text-sm mt-0.5 block">
-                  เตือนด่วน {statsForSelectedDate.urgent} | เสร็จ {statsForSelectedDate.completed}
-                </span>
-              </div>
-            </div>
-
-            {/* Duty Officers on this filing date (from uploaded monthly PDF roster) */}
-            {officersOnSelectedDate.length > 0 ? (
-              <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 bg-white/5 rounded-xl p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                    <UserCheck className="w-4 h-4 text-amber-400" />
-                    <span>เวรชี้ตรงตามวันที่ฟ้องนี้ (จากไฟล์ PDF):</span>
+            {/* หัวข้อให้เลือก สรุปสถิติที่ฟ้องรายวัน (ตามคำขอที่ 6) */}
+            <div className="mt-5 pt-4 border-t border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    สรุปสถิติผลการดำเนินคดีที่ฟ้องในวันนี้ (คลิกเลือกหัวข้อเพื่อกรองสำนวน)
                   </span>
-                  {officersOnSelectedDate.map((off, oIdx) => (
-                    <span
-                      key={oIdx}
-                      className="text-xs bg-amber-500/20 text-amber-200 border border-amber-400/30 px-2 py-0.5 rounded-lg font-medium flex items-center gap-1"
-                    >
-                      <span>⚖️ {off.name}</span>
-                      <span className="text-[10px] text-amber-300/80">({off.role})</span>
-                      {off.courtRoom && <span className="text-[10px] text-amber-200/60">• {off.courtRoom}</span>}
-                    </span>
-                  ))}
                 </div>
-                {dutyRosters.length > 0 && (
+                {procedureFilter !== 'all' && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setCaseForDutyPicker(null);
-                      setIsDutyPickerOpen(true);
-                    }}
-                    className="text-xs font-bold text-amber-300 hover:text-white underline underline-offset-2 transition cursor-pointer flex items-center gap-1"
+                    onClick={() => setProcedureFilter('all')}
+                    className="text-xs text-amber-300 hover:text-white underline underline-offset-2 flex items-center gap-1 self-start sm:self-auto cursor-pointer"
                   >
-                    <span>ดูรายชื่อเวรชี้ทุกเดือนที่อัปโหลด (PDF) →</span>
+                    <span>✕ ล้างตัวกรอง (แสดงทั้งหมด {statsForSelectedDate.total} สำนวน)</span>
                   </button>
                 )}
               </div>
-            ) : dutyRosters.length > 0 ? (
-              <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 bg-white/5 rounded-xl p-3 text-xs">
-                <span className="text-slate-300 flex items-center gap-1.5">
-                  <UserCheck className="w-4 h-4 text-amber-400" />
-                  <span>ตารางเวรชี้ประจำเดือน: มีข้อมูลเวรชี้จากไฟล์ PDF {dutyRosters.length} รอบเดือน</span>
-                </span>
+
+              {/* 5 Selectable Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                {/* 1. ทั้งหมด */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setCaseForDutyPicker(null);
-                    setIsDutyPickerOpen(true);
-                  }}
-                  className="text-xs font-bold text-amber-300 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
+                  onClick={() => setProcedureFilter('all')}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                    procedureFilter === 'all'
+                      ? 'bg-indigo-600/40 border-indigo-400 text-white ring-2 ring-indigo-400/50 shadow-md'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                  }`}
+                  title="คลิกเพื่อดูคดีที่ฟ้องในวันนี้ทั้งหมด"
                 >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  <span>เปิดดูรายชื่อเวรชี้ประจำเดือน (PDF)</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-slate-300">คดีทั้งหมด</span>
+                    <Scale className="w-3.5 h-3.5 text-indigo-300" />
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold font-['Prompt'] text-white">
+                      {statsForSelectedDate.total}
+                    </span>
+                    <span className="text-xs text-slate-300">สำนวน</span>
+                  </div>
+                </button>
+
+                {/* 2. จำเลยรับสารภาพ */}
+                <button
+                  type="button"
+                  onClick={() => setProcedureFilter(procedureFilter === 'confessed' ? 'all' : 'confessed')}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                    procedureFilter === 'confessed'
+                      ? 'bg-emerald-600/40 border-emerald-400 text-white ring-2 ring-emerald-400/50 shadow-md'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                  }`}
+                  title="คลิกเพื่อกรองเฉพาะสำนวนที่จำเลยรับสารภาพหรือมีคำพิพากษา"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-emerald-300 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      <span>จำเลยรับสารภาพ</span>
+                    </span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold font-['Prompt'] text-emerald-300">
+                      {statsForSelectedDate.confessed}
+                    </span>
+                    <span className="text-xs text-emerald-200/80">ราย</span>
+                  </div>
+                </button>
+
+                {/* 3. ปฏิเสธมีนัดต่อ */}
+                <button
+                  type="button"
+                  onClick={() => setProcedureFilter(procedureFilter === 'denied_scheduled' ? 'all' : 'denied_scheduled')}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                    procedureFilter === 'denied_scheduled'
+                      ? 'bg-amber-600/40 border-amber-400 text-white ring-2 ring-amber-400/50 shadow-md'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                  }`}
+                  title="คลิกเพื่อกรองเฉพาะสำนวนที่จำเลยปฏิเสธและมีนัดสืบพยาน/ตรวจพยาน"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-amber-300 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                      <span>ปฏิเสธมีนัด</span>
+                    </span>
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold font-['Prompt'] text-amber-300">
+                      {statsForSelectedDate.deniedScheduled}
+                    </span>
+                    <span className="text-xs text-amber-200/80">ราย</span>
+                  </div>
+                </button>
+
+                {/* 4. มีนัดอื่นๆ */}
+                <button
+                  type="button"
+                  onClick={() => setProcedureFilter(procedureFilter === 'other_scheduled' ? 'all' : 'other_scheduled')}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                    procedureFilter === 'other_scheduled'
+                      ? 'bg-sky-600/40 border-sky-400 text-white ring-2 ring-sky-400/50 shadow-md'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                  }`}
+                  title="คลิกเพื่อกรองสำนวนที่มีนัดพร้อม นัดไกล่เกลี่ย หรือนัดฟังคำสั่ง"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-sky-300 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-sky-400"></span>
+                      <span>มีนัดอื่นๆ</span>
+                    </span>
+                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold font-['Prompt'] text-sky-300">
+                      {statsForSelectedDate.otherScheduled}
+                    </span>
+                    <span className="text-xs text-sky-200/80">ราย</span>
+                  </div>
+                </button>
+
+                {/* 5. ยังไม่ทราบผล */}
+                <button
+                  type="button"
+                  onClick={() => setProcedureFilter(procedureFilter === 'unknown_pending' ? 'all' : 'unknown_pending')}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between col-span-2 sm:col-span-1 ${
+                    procedureFilter === 'unknown_pending'
+                      ? 'bg-slate-600/50 border-slate-300 text-white ring-2 ring-slate-300/50 shadow-md'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                  }`}
+                  title="คลิกเพื่อกรองสำนวนที่ยังไม่ระบุผลหรือยังอยู่ระหว่างรอความคืบหน้า"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                      <span>ยังไม่ทราบผล</span>
+                    </span>
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold font-['Prompt'] text-slate-200">
+                      {statsForSelectedDate.unknownPending}
+                    </span>
+                    <span className="text-xs text-slate-400">ราย</span>
+                  </div>
                 </button>
               </div>
-            ) : null}
+            </div>
+
+            {/* ส่วนระบุอัยการเวรชี้ประจำวันยื่นฟ้อง (ระบุอัยการเวรชี้ในวันนั้นด้วย) */}
+            <div className="mt-4 pt-3.5 border-t border-white/10 bg-white/5 rounded-2xl p-4 border border-white/10">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-amber-300 uppercase tracking-wide">
+                      อัยการเวรชี้ประจำวันยื่นฟ้อง ({formatThaiDate(selectedDate, { short: true })})
+                    </span>
+                  </div>
+                  {officersOnSelectedDate.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {officersOnSelectedDate.map((off, oIdx) => (
+                        <span
+                          key={oIdx}
+                          className="text-xs bg-amber-500/20 text-amber-100 border border-amber-400/40 px-3 py-1 rounded-xl font-medium flex items-center gap-1.5 shadow-xs"
+                        >
+                          <span>⚖️ <strong>{off.name}</strong></span>
+                          <span className="text-[11px] text-amber-300/80">({off.role})</span>
+                          {off.courtRoom && <span className="text-[11px] text-amber-200/70">• {off.courtRoom}</span>}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-300 pt-0.5">
+                      ยังไม่มีข้อมูลเวรชี้ตรงตามวันที่นี้ในตาราง PDF (คุณสามารถคลิกเพื่อเลือกจากรายชื่อเวรชี้ประจำเดือนได้)
+                    </p>
+                  )}
+                </div>
+
+                {/* Duty Prosecutor Actions & Quick Link */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {officersOnSelectedDate.length > 0 && unassignedCasesOnSelectedDate.length > 0 && canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetName = officersOnSelectedDate[0].name;
+                        if (onBatchAssignOfficerToDate) {
+                          onBatchAssignOfficerToDate(selectedDate, targetName);
+                        } else if (onQuickAssignOfficer) {
+                          unassignedCasesOnSelectedDate.forEach((c) => onQuickAssignOfficer(c.id, targetName));
+                          if (onToast) onToast(`เชื่อมโยงอัยการเวรชี้ "${targetName}" ให้ ${unassignedCasesOnSelectedDate.length} สำนวนเรียบร้อยแล้ว`);
+                        }
+                      }}
+                      className="text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                      title="เชื่อมโยงชื่ออัยการเวรชี้ท่านนี้ให้สำนวนที่ยังไม่มีอัยการในวันนี้ทั้งหมด"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+                      <span>⚡ เชื่อมโยงอัยการเวรชี้ให้คดีในวันนี้ ({unassignedCasesOnSelectedDate.length} สำนวน)</span>
+                    </button>
+                  )}
+
+                  {dutyRosters.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCaseForDutyPicker(null);
+                        setIsDutyPickerOpen(true);
+                      }}
+                      className="text-xs font-semibold text-amber-200 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>ดูตารางเวรชี้ประจำเดือน (PDF)</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
 
             {/* Actions for this specific date */}
             <div className="mt-5 flex flex-wrap items-center gap-2.5">
@@ -598,6 +818,25 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
           {/* List of Cases filed on this date */}
           {casesOnSelectedDate.length > 0 ? (
             <div className="space-y-3">
+              {/* Active Filter Bar if filtered */}
+              {procedureFilter !== 'all' && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center justify-between text-xs text-indigo-950">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-indigo-600" />
+                    <span>
+                      กำลังกรองแสดงเฉพาะ: <strong className="text-indigo-900">{getProcedureFilterLabel(procedureFilter)}</strong> ({casesOnSelectedDate.length} สำนวน)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setProcedureFilter('all')}
+                    className="font-bold text-indigo-700 hover:text-indigo-900 underline underline-offset-2 cursor-pointer"
+                  >
+                    ✕ แสดงสำนวนทั้งหมดในวันนี้
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-xs text-slate-500 px-1">
                 <span>
                   รายการคดีที่ฟ้องวันที่ {formatThaiDate(selectedDate)} ทั้งหมด{' '}
@@ -614,6 +853,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 const daysLeft = getDaysRemaining(caseItem);
                 const urgency = getAppealUrgency(caseItem);
                 const isCompleted = caseItem.isCompleted;
+                const procCat = getCaseProcedureCategory(caseItem);
 
                 return (
                   <div
@@ -649,6 +889,32 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </span>
                           )}
 
+                          {/* สถิติผลการดำเนินคดี Badge */}
+                          {procCat === 'confessed' && (
+                            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span>🟢 จำเลยรับสารภาพ</span>
+                            </span>
+                          )}
+                          {procCat === 'denied_scheduled' && (
+                            <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1.5 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              <span>🟠 ปฏิเสธ - มีนัดสืบต่อ</span>
+                            </span>
+                          )}
+                          {procCat === 'other_scheduled' && (
+                            <span className="text-xs font-bold text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-lg border border-sky-200 flex items-center gap-1.5 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                              <span>🔵 มีนัดอื่นๆ</span>
+                            </span>
+                          )}
+                          {procCat === 'unknown_pending' && (
+                            <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                              <span>⚪ ยังไม่ทราบผล</span>
+                            </span>
+                          )}
+
                           {/* ส.1 Badge */}
                           {caseItem.receivedNumberS1 && (
                             <span
@@ -679,25 +945,37 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 setCaseForDutyPicker(caseItem);
                                 setIsDutyPickerOpen(true);
                               }}
-                              className="text-xs font-semibold text-amber-950 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1 transition cursor-pointer"
+                              className="text-xs font-semibold text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1 transition cursor-pointer"
                               title="คลิกเพื่อเลือกหรือเปลี่ยนเวรชี้จากตาราง PDF"
                             >
                               <span className="text-amber-700">⚖️ เวรชี้:</span> {caseItem.prosecutorName}
                               <UserCheck className="w-3 h-3 text-amber-600" />
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCaseForDutyPicker(caseItem);
-                                setIsDutyPickerOpen(true);
-                              }}
-                              className="text-xs font-semibold text-amber-800 bg-amber-50/80 hover:bg-amber-100 border border-dashed border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
-                              title="เลือกเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
-                            >
-                              <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-                              <span>+ เลือกเวรชี้ (PDF)</span>
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCaseForDutyPicker(caseItem);
+                                  setIsDutyPickerOpen(true);
+                                }}
+                                className="text-xs font-semibold text-amber-800 bg-amber-50/80 hover:bg-amber-100 border border-dashed border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
+                                title="เลือกเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
+                              >
+                                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                                <span>+ เลือกเวรชี้ (PDF)</span>
+                              </button>
+                              {officersOnSelectedDate.length > 0 && onQuickAssignOfficer && (
+                                <button
+                                  type="button"
+                                  onClick={() => onQuickAssignOfficer(caseItem.id, officersOnSelectedDate[0].name)}
+                                  className="text-[11px] font-semibold text-amber-900 bg-amber-200/70 hover:bg-amber-300 border border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
+                                  title={`กำหนดให้อัยการเวรชี้วันนี้ (${officersOnSelectedDate[0].name}) ทันที`}
+                                >
+                                  <span>⚡ ใช้เวรชี้วันนี้</span>
+                                </button>
+                              )}
+                            </div>
                           )}
 
                           <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">

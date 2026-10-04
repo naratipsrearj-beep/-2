@@ -248,6 +248,31 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setHasJudgment(true);
+                  if (!judgmentDate) setJudgmentDate(getTodayString());
+                }}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
+                  hasJudgment
+                    ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500/20 text-amber-950'
+                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 ${hasJudgment ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300'}`}>
+                  {hasJudgment && <Check className="w-3 h-3" />}
+                </div>
+                <div>
+                  <span className="text-xs font-bold block">
+                    ⚖️ ศาลมีคำพิพากษาแล้ว (จำเลยรับสารภาพ / พิพากษาในวันฟ้อง)
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
+                    ใส่วันที่ศาลพิพากษา เพื่อเริ่มนับเวลาอุทธรณ์ 1 เดือน
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setHasJudgment(false);
                   setDefendantPlea('denied');
                   if (appointmentType === 'none') {
@@ -269,31 +294,6 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   </span>
                   <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
                     ไม่บังคับใส่วันที่พิพากษา • ให้เลือกวันนัดต่อๆ ไปแทน
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setHasJudgment(true);
-                  if (!judgmentDate) setJudgmentDate(getTodayString());
-                }}
-                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
-                  hasJudgment
-                    ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500/20 text-amber-950'
-                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
-                }`}
-              >
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 ${hasJudgment ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300'}`}>
-                  {hasJudgment && <Check className="w-3 h-3" />}
-                </div>
-                <div>
-                  <span className="text-xs font-bold block">
-                    ⚖️ ศาลมีคำพิพากษาแล้ว (จำเลยรับสารภาพ / พิพากษาในวันฟ้อง)
-                  </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    ใส่วันที่ศาลพิพากษา เพื่อเริ่มนับเวลาอุทธรณ์ 1 เดือน
                   </span>
                 </div>
               </button>

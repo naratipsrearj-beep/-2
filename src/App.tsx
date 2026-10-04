@@ -56,6 +56,7 @@ import {
   subscribeToProjectSettings,
   subscribeToPermissionRequests,
   saveCaseToFirestore,
+  saveCasesBatchToFirestore,
   deleteCaseFromFirestore,
   saveDutyRosterToFirestore,
   deleteDutyRosterFromFirestore,
@@ -214,18 +215,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time Firestore Subscriptions (active whenever user is logged in)
+  // Real-time Firestore Subscriptions (active for all users, live sync across all devices)
   useEffect(() => {
-    if (!user) return;
-
-    // 1. Seed initial data to Firestore if cloud collection is empty
-    seedInitialFirestoreDataIfEmpty(
-      getSavedCases(),
-      getSavedDutyRosters(),
-      getSavedFollowUps()
-    );
-
-    // 2. Real-time subscribe to all cases (all clients sync instantly)
+    // 1. Real-time subscribe to all cases (all clients sync instantly)
     const unsubCases = subscribeToCases(
       (remoteCases) => {
         setCases(remoteCases);
@@ -234,7 +226,7 @@ export default function App() {
       (err) => console.warn('Real-time cases sync error:', err)
     );
 
-    // 3. Real-time subscribe to monthly duty rosters
+    // 2. Real-time subscribe to monthly duty rosters
     const unsubRosters = subscribeToDutyRosters(
       (remoteRosters) => {
         setDutyRosters(remoteRosters);
@@ -248,7 +240,7 @@ export default function App() {
       (err) => console.warn('Real-time duty rosters sync error:', err)
     );
 
-    // 4. Real-time subscribe to daily follow-ups
+    // 3. Real-time subscribe to daily follow-ups
     const unsubFollowUps = subscribeToFollowUps(
       (remoteFollowUps) => {
         setFollowUps(remoteFollowUps);
@@ -257,7 +249,7 @@ export default function App() {
       (err) => console.warn('Real-time followups sync error:', err)
     );
 
-    // 5. Real-time subscribe to project permissions
+    // 4. Real-time subscribe to project permissions
     const unsubSettings = subscribeToProjectSettings(
       (settings) => {
         setProjectSettings(settings);
@@ -265,28 +257,40 @@ export default function App() {
       (err) => console.warn('Real-time settings sync error:', err)
     );
 
-    // 6. Real-time subscribe to permission requests
-    const unsubRequests = subscribeToPermissionRequests(
-      (reqs) => {
-        setPermissionRequests(reqs);
-      },
-      (err) => console.warn('Real-time permission requests error:', err)
-    );
+    // 5. Permission requests (only when user is logged in)
+    let unsubRequests: (() => void) | undefined;
+    if (user) {
+      unsubRequests = subscribeToPermissionRequests(
+        (reqs) => {
+          setPermissionRequests(reqs);
+        },
+        (err) => console.warn('Real-time permission requests error:', err)
+      );
+    }
 
     return () => {
       unsubCases();
       unsubRosters();
       unsubFollowUps();
       unsubSettings();
-      unsubRequests();
+      if (unsubRequests) unsubRequests();
     };
   }, [user]);
 
+  // Seed initial sample data to cloud if admin and first time
+  useEffect(() => {
+    if (user && userRole === 'admin') {
+      seedInitialFirestoreDataIfEmpty(
+        getSavedCases(),
+        getSavedDutyRosters(),
+        getSavedFollowUps()
+      );
+    }
+  }, [user, userRole]);
+
   // Save to localStorage whenever data changes
   useEffect(() => {
-    if (cases.length > 0) {
-      saveCases(cases);
-    }
+    saveCases(cases);
   }, [cases]);
 
   useEffect(() => {
@@ -873,6 +877,44 @@ export default function App() {
     }
   };
 
+  // Batch Assign Duty Officer to All Cases filed on Date that lack a prosecutor
+  const handleBatchAssignOfficerToDate = async (filingDate: string, officerName: string) => {
+    const unassignedCases = cases.filter(
+      (c) => c.filingDate === filingDate && (!c.prosecutorName || !c.prosecutorName.trim())
+    );
+    if (unassignedCases.length === 0) {
+      showToast('ทุกสำนวนในวันนี้มีชื่ออัยการเจ้าของสำนวน/เวรชี้แล้ว');
+      return;
+    }
+
+    const updatedCases = cases.map((c) => {
+      if (c.filingDate === filingDate && (!c.prosecutorName || !c.prosecutorName.trim())) {
+        return {
+          ...c,
+          prosecutorName: officerName,
+          responsiblePerson:
+            c.responsiblePerson && c.responsiblePerson !== 'ผู้ดูแลสำนวน'
+              ? c.responsiblePerson
+              : officerName,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return c;
+    });
+
+    setCases(updatedCases);
+    saveCases(updatedCases);
+
+    const changedCases = updatedCases.filter(
+      (c) => c.filingDate === filingDate && c.prosecutorName === officerName
+    );
+    saveCasesBatchToFirestore(changedCases).catch((e: any) =>
+      console.warn('Firestore batch assign error:', e)
+    );
+
+    showToast(`เชื่อมโยงอัยการเวรชี้ "${officerName}" ให้ ${unassignedCases.length} สำนวนเรียบร้อยแล้ว`);
+  };
+
   // Record Judgment for case transitioning from pending hearings to appeal tracking
   const handleSaveJudgmentDate = async (
     caseId: string,
@@ -1330,6 +1372,7 @@ export default function App() {
               setIsAddCaseOpen(true);
             }}
             onQuickAssignOfficer={handleQuickAssignOfficer}
+            onBatchAssignOfficerToDate={handleBatchAssignOfficerToDate}
             onToast={showToast}
           />
         )}

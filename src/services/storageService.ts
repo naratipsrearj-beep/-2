@@ -25,7 +25,7 @@ export function saveSheetConfig(config: SheetConfig | null) {
 export function getSavedCases(): AppealCase[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CASES);
-    if (raw) {
+    if (raw !== null) {
       return JSON.parse(raw);
     }
   } catch (e) {
@@ -41,7 +41,7 @@ export function saveCases(cases: AppealCase[]) {
 export function getSavedFollowUps(): DailyJudgmentFollowUp[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_FOLLOWUPS);
-    if (raw) {
+    if (raw !== null) {
       return JSON.parse(raw);
     }
   } catch (e) {
@@ -57,7 +57,7 @@ export function saveFollowUps(items: DailyJudgmentFollowUp[]) {
 export function getSavedDutyRosters(): MonthlyDutyRoster[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DUTY_ROSTERS);
-    if (raw) {
+    if (raw !== null) {
       return JSON.parse(raw);
     }
   } catch (e) {
