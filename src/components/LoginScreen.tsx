@@ -1,21 +1,42 @@
 import React, { useState } from 'react';
-import { Scale, ShieldCheck, Users, Eye, Sparkles, AlertCircle, ArrowRight, Lock, Copy, Check, ExternalLink } from 'lucide-react';
+import {
+  Scale,
+  Sparkles,
+  AlertCircle,
+  ArrowRight,
+  Lock,
+  Copy,
+  Check,
+  ExternalLink,
+  ShieldAlert,
+  HelpCircle,
+  Smartphone,
+  Laptop
+} from 'lucide-react';
 import { ADMIN_EMAIL } from '../services/firestoreService';
 
 interface LoginScreenProps {
   onLogin: () => Promise<void>;
+  onLoginRedirect?: () => Promise<void>;
   isLoggingIn: boolean;
   loginError?: string | null;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLogin,
+  onLoginRedirect,
   isLoggingIn,
   loginError,
 }) => {
   const [hasCopied, setHasCopied] = useState(false);
   const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const isUnauthorizedDomain = Boolean(loginError && loginError.includes('unauthorized-domain'));
+  const isPopupBlocked = Boolean(
+    loginError &&
+      (loginError.includes('popup-blocked') ||
+        loginError.includes('ป๊อปอัป') ||
+        loginError.includes('บล็อกหน้าต่าง'))
+  );
 
   const handleCopyHostname = () => {
     if (!currentHostname) return;
@@ -23,6 +44,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setHasCopied(true);
     setTimeout(() => setHasCopied(false), 3000);
   };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-850 to-slate-950 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8 py-12 relative overflow-hidden font-['Sarabun',sans-serif]">
       {/* Background Decorative Glows */}
@@ -44,7 +66,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </p>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 border border-amber-500/30 rounded-full text-[11px] text-amber-300 font-medium mt-2">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>อัปเดตข้อมูลเป็นปัจจุบันแบบ Real-time</span>
+            <span>ศาลจังหวัดเพชรบุรี • อัปเดตข้อมูลแบบ Real-time</span>
           </div>
         </div>
 
@@ -63,7 +85,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <div>
                 <span className="font-semibold text-amber-300">แอดมิน / เจ้าของระบบ ({ADMIN_EMAIL})</span>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  มีสิทธิ์แก้ไขข้อมูล บันทึกคำพิพากษา มอบหมายเวรชี้ และอนุมัติสิทธิ์ผู้ใช้งาน
+                  มีสิทธิ์แก้ไขข้อมูล บันทึกคำพิพากษา ขอขยายเวลา และอนุมัติสิทธิ์ผู้ใช้งาน
                 </p>
               </div>
             </div>
@@ -75,21 +97,79 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <div>
                 <span className="font-semibold text-blue-300">ผู้ใช้งานทั่วไปที่ได้รับลิงก์</span>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  เข้าชมข้อมูลแบบ Real-time และสามารถกดขอสิทธิ์แก้ไขข้อมูลเพิ่มเติมจากแอดมินได้
+                  เข้าชมข้อมูลสำนวนคดีและตารางเวรชี้ และสามารถกดขอสิทธิ์แก้ไขข้อมูลเพิ่มเติมได้
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Error Alert */}
+        {/* Error Alert Box */}
         {loginError && (
-          <div className="mb-5 bg-rose-500/15 border border-rose-500/40 rounded-xl p-3.5 text-xs text-rose-200 space-y-2.5">
+          <div className="mb-5 bg-rose-500/15 border border-rose-500/40 rounded-xl p-3.5 text-xs text-rose-200 space-y-3">
             <div className="flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
-              <span className="leading-relaxed">{loginError}</span>
+              <span className="leading-relaxed font-medium">{loginError}</span>
             </div>
 
+            {/* Special Solution Box for popup-blocked */}
+            {isPopupBlocked && (
+              <div className="bg-slate-950/80 border border-amber-500/40 rounded-xl p-3.5 space-y-3 text-slate-200">
+                <div className="font-bold text-amber-300 text-xs flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-400" />
+                  <span>วิธีแก้ไขเพื่อให้เข้าสู่ระบบได้ทุกเครื่อง:</span>
+                </div>
+
+                {/* Option 1: Direct Redirect Sign-In (Best Solution) */}
+                <div className="bg-gradient-to-r from-emerald-950/70 to-teal-950/70 border border-emerald-500/40 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-bold text-[11px]">
+                      1
+                    </span>
+                    <strong className="text-emerald-300 text-xs">
+                      วิธีที่ 1 (แนะนำที่สุด): เข้าสู่ระบบแบบเปลี่ยนหน้า (Redirect)
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    ระบบจะนำไปยังหน้าล็อกอิน Google โดยตรงในหน้าต่างเดิม และพากลับมาหน้านี้อัตโนมัติ โดย<strong>ไม่ต้องเปิดป๊อปอัป</strong> จึงใช้งานได้ 100% บนมือถือ แท็บเล็ต และคอมพิวเตอร์ทุกเครื่อง
+                  </p>
+                  {onLoginRedirect && (
+                    <button
+                      type="button"
+                      onClick={onLoginRedirect}
+                      disabled={isLoggingIn}
+                      className="w-full mt-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer active:scale-[0.99]"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>กดที่นี่เพื่อเข้าสู่ระบบแบบเปลี่ยนหน้า (ไม่ใช้ป๊อปอัป)</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Option 2: How to unblock popup in browser */}
+                <div className="bg-slate-900/80 border border-slate-700/80 rounded-lg p-3 space-y-1.5 text-[11px] text-slate-300">
+                  <div className="flex items-center gap-2 text-slate-200 font-semibold">
+                    <span className="w-5 h-5 rounded-full bg-slate-700 text-slate-200 flex items-center justify-center font-bold text-[11px]">
+                      2
+                    </span>
+                    <span>วิธีที่ 2: ปลดล็อกป๊อปอัปใน Google Chrome / Edge</span>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-400 pl-1 leading-relaxed">
+                    <li>
+                      คลิกที่ไอคอน <strong>"ตั้งค่าเว็บไซต์" หรือรูปแม่กุญแจ 🔒 ที่อยู่ด้านหน้า (ซ้ายมือสุด) ของแถบ URL</strong>
+                    </li>
+                    <li>
+                      เลือกเมนู <strong>"การตั้งค่าไซต์" (Site settings)</strong> &gt; เลื่อนหาหัวข้อ <strong>"ป็อปอัปและการเปลี่ยนเส้นทาง" (Pop-ups and redirects)</strong>
+                    </li>
+                    <li>
+                      เปลี่ยนค่าเป็น <strong>"อนุญาต" (Allow)</strong> แล้วรีเฟรชหน้าเว็บกดเข้าสู่ระบบอีกครั้ง
+                    </li>
+                  </ol>
+                </div>
+              </div>
+            )}
+
+            {/* Unauthorized Domain Guide */}
             {isUnauthorizedDomain && currentHostname && (
               <div className="bg-slate-950/70 border border-rose-500/30 rounded-lg p-2.5 space-y-2 mt-2">
                 <div className="text-[11px] text-slate-300 font-medium">
@@ -125,12 +205,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </div>
         )}
 
-        {/* Google Sign-In Button */}
+        {/* Primary Google Sign-In Button (Popup) */}
         <button
           type="button"
           onClick={onLogin}
           disabled={isLoggingIn}
-          className="w-full bg-white hover:bg-slate-50 text-slate-800 font-medium py-3 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3 border border-slate-200 disabled:opacity-60 active:scale-[0.99] group"
+          className="w-full bg-white hover:bg-slate-50 text-slate-800 font-medium py-3.5 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3 border border-slate-200 disabled:opacity-60 active:scale-[0.99] group cursor-pointer"
         >
           {isLoggingIn ? (
             <div className="flex items-center gap-2">
@@ -152,9 +232,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           )}
         </button>
 
+        {/* Secondary Direct Redirect Option for Mobile / Locked Down PCs */}
+        {onLoginRedirect && (
+          <button
+            type="button"
+            onClick={onLoginRedirect}
+            disabled={isLoggingIn}
+            className="w-full mt-3 text-xs text-slate-400 hover:text-amber-300 underline font-medium py-1 transition flex items-center justify-center gap-1.5 cursor-pointer"
+            title="สำหรับเปิดใช้งานบนโทรศัพท์มือถือ แท็บเล็ต หรือเครื่องที่เบราว์เซอร์บล็อกป๊อปอัป"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-slate-500" />
+            <span>หรือ เข้าสู่ระบบแบบเปลี่ยนหน้า (สำหรับมือถือ / เครื่องที่บล็อกป๊อปอัป) ↗</span>
+          </button>
+        )}
+
         {/* Footer info */}
-        <div className="mt-6 text-center text-[11px] text-slate-400">
-          <p>เข้าสู่ระบบเพื่อความปลอดภัยและการซิงค์ข้อมูลแบบเรียลไทม์</p>
+        <div className="mt-6 text-center text-[11px] text-slate-400 border-t border-slate-800 pt-4 space-y-1">
+          <div className="flex items-center justify-center gap-3 text-slate-400">
+            <span className="flex items-center gap-1"><Laptop className="w-3 h-3" /> คอมพิวเตอร์</span>
+            <span>•</span>
+            <span className="flex items-center gap-1"><Smartphone className="w-3 h-3" /> มือถือ & แท็บเล็ต</span>
+          </div>
           <p className="mt-1 text-slate-400">
             เมื่อเข้าสู่ระบบแล้วจะแสดงข้อมูลสำนวนคดีและตารางเวรชี้ทันที
           </p>
@@ -163,7 +261,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       {/* Bottom watermark */}
       <div className="text-center mt-8 text-xs text-slate-400 relative z-10">
-        ระบบสารบบคดีและคุมระยะเวลาอุทธรณ์ 1 เดือน นับแต่วันมีคำพิพากษา
+        ระบบสารบบคดีและคุมระยะเวลาอุทธรณ์ 1 เดือน นับแต่วันมีคำพิพากษา • ศาลจังหวัดเพชรบุรี
       </div>
     </div>
   );

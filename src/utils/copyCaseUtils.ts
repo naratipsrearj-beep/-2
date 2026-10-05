@@ -2,51 +2,26 @@ import { AppealCase } from '../types/appeal';
 import { formatThaiDate } from './dateUtils';
 
 /**
- * Format judgment details for quick copying into office legal systems
+ * Format only the judgment text for clipboard copying
+ * ก๊อปปี้มาเฉพาะ ข้อความคำพิพากษาเท่านั้น
  */
 export function formatJudgmentForClipboard(c: AppealCase): string {
-  const lines: string[] = [];
-  lines.push('【ข้อมูลคำพิพากษา】');
-  lines.push(`คดีหมายเลขดำที่: ${c.blackCaseNo}`);
-  if (c.redCaseNo) {
-    lines.push(`คดีหมายเลขแดงที่: ${c.redCaseNo}`);
+  const parts: string[] = [];
+  if (c.judgmentOutcome && c.judgmentOutcome.trim()) {
+    parts.push(c.judgmentOutcome.trim());
   }
-  lines.push(`ศาล: ${c.court}`);
-  lines.push(`โจทก์: ${c.plaintiff}`);
-  lines.push(`จำเลย: ${c.defendant}`);
-
-  if (c.prosecutorName) {
-    lines.push(`พนักงานอัยการ/เวรชี้: ${c.prosecutorName}`);
-  }
-
-  if (c.judgmentDate) {
-    lines.push(`วันที่ศาลมีคำพิพากษา: ${formatThaiDate(c.judgmentDate)}`);
-  } else {
-    lines.push('วันที่ศาลมีคำพิพากษา: (ยังไม่มีคำพิพากษา)');
-  }
-
-  lines.push(`ผลคำพิพากษา: ${c.judgmentOutcome || 'ยังไม่ได้ระบุ'}`);
-
   if (c.fullJudgmentText && c.fullJudgmentText.trim()) {
-    lines.push('\n--- สรุป/เนื้อหาคำพิพากษา ---');
-    lines.push(c.fullJudgmentText.trim());
-    lines.push('-----------------------------');
+    const full = c.fullJudgmentText.trim();
+    if (!parts.includes(full)) {
+      parts.push(full);
+    }
   }
 
-  const deadline = c.extendedDeadline || c.appealDeadline;
-  if (deadline) {
-    lines.push(
-      `ครบกำหนดระยะเวลาอุทธรณ์ 1 เดือน: ${formatThaiDate(deadline)}${
-        c.extensionCount ? ` (ขอขยายเวลาครั้งที่ ${c.extensionCount})` : ''
-      }`
-    );
+  if (parts.length > 0) {
+    return parts.join('\n\n');
   }
 
-  if (c.isCompleted) {
-    lines.push(`สถานะ: เสร็จสิ้น (${c.completionReason || 'ยื่นอุทธรณ์แล้ว'}) เมื่อ ${c.completedDate ? formatThaiDate(c.completedDate) : '-'}`);
-  }
-
-  return lines.join('\n');
+  return 'ยังไม่มีคำพิพากษา';
 }
 
 /**
@@ -128,6 +103,67 @@ export function formatCompactCaseForClipboard(c: AppealCase): string {
   ].filter(Boolean);
 
   return parts.join(' | ');
+}
+
+/**
+ * Format case data as a Tab-Separated Value (TSV) row
+ * for direct pasting (Ctrl+V) into Excel, Google Sheets, or Office Registry systems
+ */
+export function formatCaseForOfficeTsv(c: AppealCase): string {
+  const values = [
+    c.blackCaseNo || '',
+    c.redCaseNo || '',
+    c.receivedNumberS1 || '',
+    c.filingNumberS4 || '',
+    c.filingDate || '',
+    c.court || '',
+    c.plaintiff || '',
+    c.defendant || '',
+    c.caseType || 'อาญา',
+    c.judgmentDate || '',
+    c.judgmentOutcome ? c.judgmentOutcome.replace(/\t|\n/g, ' ') : '',
+    c.appealDeadline || '',
+    c.extendedDeadline || '',
+    c.extensionCount ? String(c.extensionCount) : '',
+    c.prosecutorName || '',
+    c.responsiblePerson || '',
+    c.isCompleted ? 'เสร็จสิ้น' : (c.judgmentDate ? 'คุมอุทธรณ์' : 'พิจารณา'),
+    c.notes ? c.notes.replace(/\t|\n/g, ' ') : '',
+  ];
+
+  return values.join('\t');
+}
+
+/**
+ * Format multiple cases as TSV table with standard office header
+ */
+export function formatCasesBatchForOfficeTsv(cases: AppealCase[], includeHeader: boolean = true): string {
+  const header = [
+    'คดีดำ',
+    'คดีแดง',
+    'เลขรับ ส.1',
+    'เลขฟ้อง ส.4',
+    'วันที่ยื่นฟ้อง',
+    'ศาล',
+    'โจทก์',
+    'จำเลย',
+    'ประเภทคดี',
+    'วันพิพากษา',
+    'ผลคำพิพากษา',
+    'ครบกำหนดอุทธรณ์ 1 เดือน',
+    'วันขยายเวลาอุทธรณ์',
+    'ขยายครั้งที่',
+    'อัยการเจ้าของสำนวน/เวรชี้',
+    'ผู้รับผิดชอบ',
+    'สถานะสำนวน',
+    'หมายเหตุ',
+  ].join('\t');
+
+  const rows = cases.map((c) => formatCaseForOfficeTsv(c));
+  if (includeHeader) {
+    return [header, ...rows].join('\n');
+  }
+  return rows.join('\n');
 }
 
 /**

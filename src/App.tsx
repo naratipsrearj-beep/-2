@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 import { AppealCase, DailyJudgmentFollowUp, SheetConfig, CaseCompletionReason, MonthlyDutyRoster, DailyDutyRecord } from './types/appeal';
-import { initAuth, googleSignIn, logout, getAccessToken } from './services/auth';
+import { initAuth, googleSignIn, googleSignInRedirect, logout, getAccessToken } from './services/auth';
 import {
   fetchAppealCases,
   appendAppealCase,
@@ -81,6 +81,7 @@ import { UploadDutyRosterModal } from './components/UploadDutyRosterModal';
 import { AddCaseModal } from './components/AddCaseModal';
 import { CompleteModal } from './components/CompleteModal';
 import { ExtendDeadlineModal } from './components/ExtendDeadlineModal';
+import { formatThaiDate } from './utils/dateUtils';
 import { SpreadsheetModal } from './components/SpreadsheetModal';
 import { ConfirmationDialog } from './components/ConfirmationDialog';
 import { VoiceSearchBar } from './components/VoiceSearchBar';
@@ -92,6 +93,7 @@ import { RecordJudgmentModal } from './components/RecordJudgmentModal';
 import { LoginScreen } from './components/LoginScreen';
 import { UserPermissionsModal } from './components/UserPermissionsModal';
 import { RequestEditModal } from './components/RequestEditModal';
+import { CourtPetitionModal } from './components/CourtPetitionModal';
 import { createDailyFilingDoc } from './services/docsService';
 import { checkAndSendAutomaticEmailAlerts } from './services/gmailService';
 import { CourtAppointmentType, CaseAppointment } from './types/appeal';
@@ -142,6 +144,9 @@ export default function App() {
   const [addCaseInitialFilingDate, setAddCaseInitialFilingDate] = useState<string | undefined>();
   const [selectedCaseForComplete, setSelectedCaseForComplete] = useState<AppealCase | null>(null);
   const [selectedCaseForExtend, setSelectedCaseForExtend] = useState<AppealCase | null>(null);
+  const [selectedCaseForCourtPetition, setSelectedCaseForCourtPetition] = useState<AppealCase | null>(null);
+  const [petitionNewDeadline, setPetitionNewDeadline] = useState<string | undefined>();
+  const [petitionExtensionCount, setPetitionExtensionCount] = useState<number | undefined>();
   const [selectedCaseForJudgmentDoc, setSelectedCaseForJudgmentDoc] = useState<AppealCase | null>(null);
   const [selectedCaseForEmailAlert, setSelectedCaseForEmailAlert] = useState<AppealCase | null>(null);
   const [selectedCaseForAppointment, setSelectedCaseForAppointment] = useState<AppealCase | null>(null);
@@ -339,7 +344,16 @@ export default function App() {
       } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
         errorMsg = 'auth/operation-not-allowed: โปรดไปที่ Firebase Console > Authentication > Sign-in method แล้วเปิดใช้งาน (Enable) "Google"';
       } else if (err.code === 'auth/popup-blocked' || err.message?.includes('popup-blocked')) {
-        errorMsg = 'auth/popup-blocked: เบราว์เซอร์ของคุณบล็อกหน้าต่างป๊อปอัป โปรดกดอนุญาตป๊อปอัป (Pop-up allowed) ที่แถบ URL ด้านบน แล้วลองอีกครั้ง';
+        // เบราว์เซอร์บล็อกป๊อปอัป -> สลับไปใช้ Redirect อัตโนมัติทันที
+        console.warn('Popup blocked by browser, automatically falling back to redirect flow...');
+        showToast('เบราว์เซอร์บล็อกป๊อปอัป กำลังสลับไปหน้าเข้าสู่ระบบ Google ให้อัตโนมัติ...');
+        try {
+          await googleSignInRedirect();
+          return;
+        } catch (redirectErr: any) {
+          console.error('Auto redirect fallback failed:', redirectErr);
+          errorMsg = 'เบราว์เซอร์บล็อกหน้าต่างป๊อปอัป โปรดกดปุ่ม "เข้าสู่ระบบแบบเปลี่ยนหน้า" ด้านล่างเพื่อเข้าใช้งานทันที';
+        }
       } else if (err.code === 'auth/popup-closed-by-user') {
         errorMsg = 'หน้าต่างเข้าสู่ระบบถูกปิดก่อนทำรายการเสร็จสิ้น โปรดลองใหม่อีกครั้ง';
       } else if (err.code === 'auth/network-request-failed') {
@@ -351,6 +365,24 @@ export default function App() {
       setLoginError(errorMsg);
       showToast('ไม่สามารถเข้าสู่ระบบได้ โปรดตรวจสอบข้อความแจ้งเตือน');
     } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLoginRedirect = async () => {
+    setIsLoggingIn(true);
+    setLoginError(null);
+    try {
+      await googleSignInRedirect();
+    } catch (err: any) {
+      console.error('Login redirect error', err);
+      let errorMsg = err.message || 'ไม่สามารถเข้าสู่ระบบ Google ได้ โปรดลองอีกครั้ง';
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+        errorMsg = `auth/unauthorized-domain: โดเมน "${currentHost}" ยังไม่ได้รับการเพิ่มใน Authorized domains ของ Firebase Console`;
+      }
+      setLoginError(errorMsg);
+      showToast('ไม่สามารถเข้าสู่ระบบได้');
       setIsLoggingIn(false);
     }
   };
@@ -609,29 +641,40 @@ export default function App() {
     }
   };
 
-  // Extend Deadline
+  // Extend / Edit / Revert Appeal Deadline
   const handleConfirmExtend = async (
     caseId: string,
-    newDeadline: string,
+    newDeadline: string | null,
     extensionCount: number,
     notes?: string
   ) => {
     const targetCase = cases.find((c) => c.id === caseId);
     if (!targetCase) return;
 
-    const updatedCase: AppealCase = {
-      ...targetCase,
-      extendedDeadline: newDeadline,
-      extensionCount,
-      notes: notes ? `${targetCase.notes || ''} | ${notes}` : targetCase.notes,
-      updatedAt: new Date().toISOString(),
-    };
+    let updatedCase: AppealCase;
+    if (!newDeadline) {
+      const { extendedDeadline: _ed, extensionCount: _ec, ...rest } = targetCase;
+      updatedCase = {
+        ...rest,
+        notes: notes ? `${targetCase.notes || ''} | ${notes}` : targetCase.notes,
+        updatedAt: new Date().toISOString(),
+      };
+      showToast(`ยกเลิกการขยายเวลาสำนวน ${targetCase.blackCaseNo} คืนค่าวันครบกำหนดเดิมเรียบร้อยแล้ว`);
+    } else {
+      updatedCase = {
+        ...targetCase,
+        extendedDeadline: newDeadline,
+        extensionCount,
+        notes: notes ? `${targetCase.notes || ''} | ${notes}` : targetCase.notes,
+        updatedAt: new Date().toISOString(),
+      };
+      showToast(`บันทึกวันขยายเวลาอุทธรณ์สำนวน ${targetCase.blackCaseNo} เป็น ${formatThaiDate(newDeadline)} (ครั้งที่ ${extensionCount}) เรียบร้อยแล้ว`);
+    }
 
     const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore extend error:', e));
-    showToast(`ขยายเวลาอุทธรณ์สำนวน ${targetCase.blackCaseNo} ถึง ${newDeadline} เรียบร้อยแล้ว`);
 
     const currentToken = token || (await getAccessToken());
     if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
@@ -641,6 +684,17 @@ export default function App() {
         console.error('Failed to update sheet', err);
       }
     }
+  };
+
+  // Open Court Petition Modal (แบบพิมพ์ศาล ๗ กระดาษตราครุฑ)
+  const handleOpenCourtPetition = (
+    caseItem: AppealCase,
+    newDeadline?: string,
+    extensionCount?: number
+  ) => {
+    setSelectedCaseForCourtPetition(caseItem);
+    setPetitionNewDeadline(newDeadline);
+    setPetitionExtensionCount(extensionCount);
   };
 
   // Delete Case with confirmation modal (MANDATORY per Workspace skill destructive operation rule)
@@ -1135,6 +1189,7 @@ export default function App() {
     return (
       <LoginScreen
         onLogin={handleLogin}
+        onLoginRedirect={handleLoginRedirect}
         isLoggingIn={isLoggingIn}
         loginError={loginError}
       />
@@ -1340,6 +1395,7 @@ export default function App() {
             onOpenAppointmentModal={(caseItem) => setSelectedCaseForAppointment(caseItem)}
             onDeleteCase={handleDeleteCase}
             onAddNewCase={() => setIsAddCaseOpen(true)}
+            onOpenCourtPetition={handleOpenCourtPetition}
             onToast={showToast}
           />
         )}
@@ -1373,6 +1429,7 @@ export default function App() {
             }}
             onQuickAssignOfficer={handleQuickAssignOfficer}
             onBatchAssignOfficerToDate={handleBatchAssignOfficerToDate}
+            onOpenCourtPetition={handleOpenCourtPetition}
             onToast={showToast}
           />
         )}
@@ -1409,19 +1466,21 @@ export default function App() {
       </footer>
 
       {/* Modals */}
-      <AddCaseModal
-        isOpen={isAddCaseOpen}
-        onClose={() => {
-          setIsAddCaseOpen(false);
-          setAddCaseInitialResponsiblePerson(undefined);
-        }}
-        onSave={handleSaveNewCase}
-        initialFilingDate={addCaseInitialFilingDate}
-        initialResponsiblePerson={addCaseInitialResponsiblePerson}
-        suggestedDutyOfficer={todayDutyOfficer}
-        dutyRosters={dutyRosters}
-        hasSheetConnected={!!sheetConfig}
-      />
+      {isAddCaseOpen && (
+        <AddCaseModal
+          isOpen={isAddCaseOpen}
+          onClose={() => {
+            setIsAddCaseOpen(false);
+            setAddCaseInitialResponsiblePerson(undefined);
+          }}
+          onSave={handleSaveNewCase}
+          initialFilingDate={addCaseInitialFilingDate}
+          initialResponsiblePerson={addCaseInitialResponsiblePerson}
+          suggestedDutyOfficer={todayDutyOfficer}
+          dutyRosters={dutyRosters}
+          hasSheetConnected={!!sheetConfig}
+        />
+      )}
 
       <UploadDutyRosterModal
         isOpen={isUploadDutyModalOpen}
@@ -1443,6 +1502,20 @@ export default function App() {
         caseItem={selectedCaseForExtend}
         onClose={() => setSelectedCaseForExtend(null)}
         onConfirmExtend={handleConfirmExtend}
+        token={token}
+        onToast={showToast}
+        onOpenCourtPetition={handleOpenCourtPetition}
+      />
+
+      {/* Court Petition Modal (แบบพิมพ์ศาล ๗ พร้อมพิมพ์ลงกระดาษตราครุฑ) */}
+      <CourtPetitionModal
+        isOpen={!!selectedCaseForCourtPetition}
+        caseItem={selectedCaseForCourtPetition}
+        onClose={() => setSelectedCaseForCourtPetition(null)}
+        token={token}
+        onToast={showToast}
+        defaultNewDeadline={petitionNewDeadline}
+        defaultExtensionCount={petitionExtensionCount}
       />
 
       <JudgmentDocModal

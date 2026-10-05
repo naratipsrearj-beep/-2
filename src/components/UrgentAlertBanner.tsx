@@ -199,10 +199,18 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
 
                 <button
                   onClick={() => onExtendDeadline(caseItem)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs py-1.5 px-2.5 rounded-lg font-medium transition"
-                  title="ขอขยายระยะเวลาอุทธรณ์"
+                  className={`text-xs py-1.5 px-2.5 rounded-lg font-medium transition cursor-pointer ${
+                    caseItem.extendedDeadline
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title={
+                    caseItem.extendedDeadline
+                      ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
+                      : 'ขอขยายระยะเวลาอุทธรณ์'
+                  }
                 >
-                  ขยายเวลา
+                  {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยายเวลา'}
                 </button>
 
                 {onSyncCalendar && (

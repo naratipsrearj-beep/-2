@@ -9,7 +9,8 @@ import {
   onSnapshot,
   deleteDoc,
   writeBatch,
-  getDocFromServer
+  getDocFromServer,
+  deleteField
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { AppealCase, MonthlyDutyRoster, DailyJudgmentFollowUp } from '../types/appeal';
@@ -192,6 +193,12 @@ export async function saveCaseToFirestore(caseItem: AppealCase): Promise<void> {
   const docRef = doc(db, 'cases', caseItem.id);
   // Clean undefined properties before saving to Firestore
   const cleanData = JSON.parse(JSON.stringify(caseItem));
+  if (caseItem.extendedDeadline === undefined) {
+    cleanData.extendedDeadline = deleteField();
+  }
+  if (caseItem.extensionCount === undefined) {
+    cleanData.extensionCount = deleteField();
+  }
   await setDoc(docRef, cleanData, { merge: true });
 }
 

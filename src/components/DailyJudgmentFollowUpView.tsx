@@ -49,7 +49,7 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
   const [formData, setFormData] = useState({
     followUpDate: getTodayString(),
     caseNumber: '',
-    court: '',
+    court: 'ศาลจังหวัดเพชรบุรี',
     plaintiff: '',
     defendant: '',
     hearingTime: '09:00',
@@ -99,7 +99,7 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
     setFormData({
       followUpDate: selectedDate,
       caseNumber: '',
-      court: '',
+      court: 'ศาลจังหวัดเพชรบุรี',
       plaintiff: '',
       defendant: '',
       hearingTime: '09:00',
@@ -296,7 +296,7 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
                 <input
                   type="text"
                   required
-                  placeholder="เช่น ศาลอาญา บัลลังก์ 701"
+                  placeholder="เช่น ศาลจังหวัดเพชรบุรี, ศาลแขวงเพชรบุรี"
                   value={formData.court}
                   onChange={(e) => setFormData({ ...formData, court: e.target.value })}
                   className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"

@@ -49,7 +49,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   const [receivedNumberS1, setReceivedNumberS1] = useState('');
   const [filingNumberS4, setFilingNumberS4] = useState('');
   const [prosecutorName, setProsecutorName] = useState('');
-  const [court, setCourt] = useState('ศาลอาญา');
+  const [court, setCourt] = useState('ศาลจังหวัดเพชรบุรี');
   const [plaintiff, setPlaintiff] = useState('');
   const [defendant, setDefendant] = useState('');
   const [caseType, setCaseType] = useState('อาญา');
@@ -102,19 +102,33 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
     }
   }, [judgmentDate, hasJudgment]);
 
+  // Reset form inputs whenever modal opens for a new case entry (กรอกใหม่ทุกครั้ง ยกเว้นประเภทคดีอาญา)
   useEffect(() => {
-    if (initialFilingDate) {
-      setFilingDate(initialFilingDate);
+    if (isOpen) {
+      setBlackCaseNo('');
+      setRedCaseNo('');
+      setReceivedNumberS1('');
+      setFilingNumberS4('');
+      setPlaintiff('');
+      setDefendant('');
+      setJudgmentDate('');
+      setJudgmentOutcome('');
+      setNotes('');
+      setSaveToCalendar(false);
+      setAppointmentDate('');
+      setAppointmentNotes('');
+      setAppointmentCourtRoom('');
+      setSubsequentAppointments([]);
+      setHasJudgment(false);
+      setDefendantPlea('denied');
+      setAppointmentType('rights_protection');
+      setCaseType('อาญา'); // คงประเภทคดีอาญาไว้เช่นเดิม
+      setCourt('ศาลจังหวัดเพชรบุรี');
+      setFilingDate(initialFilingDate || getTodayString());
+      setResponsiblePerson(initialResponsiblePerson || suggestedDutyOfficer || '');
+      setProsecutorName(suggestedDutyOfficer || '');
     }
-  }, [initialFilingDate]);
-
-  useEffect(() => {
-    if (initialResponsiblePerson) {
-      setResponsiblePerson(initialResponsiblePerson);
-    } else if (suggestedDutyOfficer && !responsiblePerson) {
-      setResponsiblePerson(suggestedDutyOfficer);
-    }
-  }, [initialResponsiblePerson, suggestedDutyOfficer]);
+  }, [isOpen, initialFilingDate, initialResponsiblePerson, suggestedDutyOfficer]);
 
   if (!isOpen) return null;
 
@@ -207,6 +221,15 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
       },
       saveToCalendar
     );
+    setBlackCaseNo('');
+    setRedCaseNo('');
+    setReceivedNumberS1('');
+    setFilingNumberS4('');
+    setPlaintiff('');
+    setDefendant('');
+    setJudgmentDate('');
+    setJudgmentOutcome('');
+    setNotes('');
     onClose();
   };
 
@@ -417,7 +440,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="เช่น ศาลอาญา, ศาลจังหวัดเชียงใหม่"
+                placeholder="เช่น ศาลจังหวัดเพชรบุรี, ศาลแขวงเพชรบุรี"
                 value={court}
                 onChange={(e) => setCourt(e.target.value)}
                 className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"

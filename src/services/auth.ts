@@ -2,6 +2,8 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   signOut,
@@ -28,6 +30,23 @@ export const initAuth = (
   onAuthSuccess?: (user: User, token: string | null) => void,
   onAuthFailure?: () => void
 ) => {
+  // Capture redirect sign-in result if user returned from signInWithRedirect
+  getRedirectResult(auth)
+    .then((result) => {
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          cachedAccessToken = credential.accessToken;
+        }
+        if (onAuthSuccess) {
+          onAuthSuccess(result.user, cachedAccessToken);
+        }
+      }
+    })
+    .catch((err) => {
+      console.warn('Redirect sign-in check error:', err);
+    });
+
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
       if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
@@ -55,6 +74,21 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
+/**
+ * Sign in using redirect (does not require pop-ups, works on all browsers and mobile devices)
+ */
+export const googleSignInRedirect = async (): Promise<void> => {
+  try {
+    isSigningIn = true;
+    await signInWithRedirect(auth, provider);
+  } catch (error: any) {
+    console.error('Redirect sign-in error:', error);
+    throw error;
+  } finally {
+    isSigningIn = false;
+  }
+};
+
 export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
@@ -63,3 +97,4 @@ export const logout = async () => {
   await signOut(auth);
   cachedAccessToken = null;
 };
+

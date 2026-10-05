@@ -56,6 +56,9 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
   const [judgmentDate, setJudgmentDate] = useState<string>('');
   const [judgmentOutcome, setJudgmentOutcome] = useState('');
+  const [hasExtension, setHasExtension] = useState<boolean>(false);
+  const [extendedDeadline, setExtendedDeadline] = useState<string>('');
+  const [extensionCount, setExtensionCount] = useState<number>(1);
   const [responsiblePerson, setResponsiblePerson] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -95,7 +98,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setReceivedNumberS1(caseItem.receivedNumberS1 || '');
       setFilingNumberS4(caseItem.filingNumberS4 || '');
       setProsecutorName(caseItem.prosecutorName || '');
-      setCourt(caseItem.court || 'ศาลอาญา');
+      setCourt(caseItem.court || 'ศาลจังหวัดเพชรบุรี');
       setPlaintiff(caseItem.plaintiff || '');
       setDefendant(caseItem.defendant || '');
       setCaseType(caseItem.caseType || 'อาญา');
@@ -106,6 +109,9 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
       setJudgmentDate(caseItem.judgmentDate || '');
       setJudgmentOutcome(caseItem.judgmentOutcome || '');
+      setHasExtension(Boolean(caseItem.extendedDeadline));
+      setExtendedDeadline(caseItem.extendedDeadline || '');
+      setExtensionCount(caseItem.extensionCount || 1);
       setResponsiblePerson(caseItem.responsiblePerson || '');
       setNotes(caseItem.notes || '');
 
@@ -206,6 +212,8 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       defendantPlea: hasJudgment ? undefined : defendantPlea,
       judgmentDate: hasJudgment && judgmentDate ? judgmentDate : undefined,
       appealDeadline: hasJudgment && deadlineInfo.deadlineDate ? deadlineInfo.deadlineDate : (hasJudgment ? caseItem.appealDeadline : undefined),
+      extendedDeadline: hasJudgment && hasExtension && extendedDeadline ? extendedDeadline : undefined,
+      extensionCount: hasJudgment && hasExtension && extendedDeadline ? extensionCount : undefined,
       judgmentOutcome: hasJudgment ? judgmentOutcome.trim() : (appointmentType !== 'none' ? `อยู่ระหว่าง${appointmentType === 'rights_protection' ? 'นัดคุ้มครองสิทธิ' : 'นัดพิจารณา'} (จำเลยให้การปฏิเสธ)` : judgmentOutcome),
       responsiblePerson: responsiblePerson.trim() || 'ผู้ดูแลสำนวน',
       notes: notes.trim() || undefined,
@@ -430,7 +438,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="เช่น ศาลอาญา, ศาลจังหวัดเชียงใหม่"
+                placeholder="เช่น ศาลจังหวัดเพชรบุรี, ศาลแขวงเพชรบุรี"
                 value={court}
                 onChange={(e) => setCourt(e.target.value)}
                 className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
@@ -596,6 +604,80 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   onChange={(e) => setJudgmentOutcome(e.target.value)}
                   className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                 />
+              </div>
+
+              {/* การขยายระยะเวลาอุทธรณ์ */}
+              <div className="pt-3 border-t border-amber-200/80">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasExtension}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setHasExtension(checked);
+                        if (checked && !extendedDeadline) {
+                          try {
+                            const baseDate = deadlineInfo.deadlineDate || judgmentDate || getTodayString();
+                            const [y, m, d] = baseDate.split('-').map(Number);
+                            const dt = new Date(y, m - 1, d);
+                            dt.setDate(dt.getDate() + 30);
+                            setExtendedDeadline(dt.toISOString().slice(0, 10));
+                          } catch {
+                            setExtendedDeadline('');
+                          }
+                        }
+                      }}
+                      className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>มีการขอขยายระยะเวลาอุทธรณ์ (แก้ไขวันที่ขยายเวลาได้ที่นี่)</span>
+                    </span>
+                  </label>
+                  {hasExtension && (
+                    <span className="text-[10px] text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full font-bold">
+                      ขยายครั้งที่ {extensionCount}
+                    </span>
+                  )}
+                </div>
+
+                {hasExtension && (
+                  <div className="bg-white/90 p-3 rounded-xl border border-amber-300 space-y-3 mt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          วันครบกำหนดที่ขอขยายเวลา *
+                        </label>
+                        <input
+                          type="date"
+                          required={hasExtension}
+                          value={extendedDeadline}
+                          onChange={(e) => setExtendedDeadline(e.target.value)}
+                          className="w-full text-xs border border-amber-300 rounded-xl px-3 py-2 bg-amber-50/20 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-bold text-rose-800"
+                        />
+                        {extendedDeadline && (
+                          <span className="text-[10px] text-rose-700 font-bold block mt-1">
+                            วันครบกำหนดใหม่: {formatThaiDate(extendedDeadline, { short: false })}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          ขยายเวลาครั้งที่
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={extensionCount}
+                          onChange={(e) => setExtensionCount(parseInt(e.target.value, 10) || 1)}
+                          className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="text-[11px] text-amber-900 bg-amber-100/60 p-2.5 rounded-lg flex items-start gap-2">

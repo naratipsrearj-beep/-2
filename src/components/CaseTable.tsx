@@ -19,7 +19,8 @@ import {
   FileText,
   ExternalLink,
   Mail,
-  Copy
+  Copy,
+  QrCode
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
@@ -40,6 +41,8 @@ interface CaseTableProps {
   onOpenAppointmentModal?: (caseItem: AppealCase) => void;
   onDeleteCase: (id: string) => void;
   onAddNewCase: () => void;
+  onOpenFileLabel?: (caseItem: AppealCase) => void;
+  onOpenCourtPetition?: (caseItem: AppealCase) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -57,6 +60,8 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onOpenAppointmentModal,
   onDeleteCase,
   onAddNewCase,
+  onOpenFileLabel,
+  onOpenCourtPetition,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -520,18 +525,38 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     {/* Appeal Deadline (1 month) */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       {caseItem.appealDeadline || caseItem.extendedDeadline ? (
-                        <>
-                          <div className={`font-bold ${isCompleted ? 'text-slate-500' : 'text-rose-700'}`}>
-                            {formatThaiDate(caseItem.extendedDeadline || caseItem.appealDeadline)}
+                        <div
+                          onClick={() => !isCompleted && onExtendDeadline(caseItem)}
+                          className={`group inline-block text-left rounded-lg p-1.5 -m-1.5 transition ${
+                            !isCompleted
+                              ? 'cursor-pointer hover:bg-amber-50/80 hover:ring-1 hover:ring-amber-300'
+                              : ''
+                          }`}
+                          title={
+                            !isCompleted
+                              ? caseItem.extendedDeadline
+                                ? 'คลิกเพื่อแก้ไขวันขยายเวลา หรือขอขยายเวลาเพิ่ม'
+                                : 'คลิกเพื่อขอขยายระยะเวลาอุทธรณ์'
+                              : undefined
+                          }
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <div className={`font-bold ${isCompleted ? 'text-slate-500' : 'text-rose-700'}`}>
+                              {formatThaiDate(caseItem.extendedDeadline || caseItem.appealDeadline)}
+                            </div>
+                            {!isCompleted && (
+                              <Edit2 className="w-3 h-3 text-slate-300 group-hover:text-amber-600 transition" />
+                            )}
                           </div>
                           {caseItem.extendedDeadline ? (
-                            <span className="text-[10px] text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded">
-                              ขยายครั้งที่ {caseItem.extensionCount || 1}
+                            <span className="inline-flex items-center gap-1 text-[10px] text-amber-800 font-bold bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded shadow-2xs group-hover:bg-amber-100 mt-0.5">
+                              <span>ขยายครั้งที่ {caseItem.extensionCount || 1}</span>
+                              <span className="text-[9px] text-amber-600 underline font-normal">(แก้ไข)</span>
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-400">1 เดือนนับแต่พิพากษา</span>
+                            <span className="text-[10px] text-slate-400 block mt-0.5">1 เดือนนับแต่พิพากษา</span>
                           )}
-                        </>
+                        </div>
                       ) : (
                         <div>
                           <span className="text-xs text-slate-500 font-medium">รอนัดคำพิพากษา</span>
@@ -609,10 +634,18 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             {!isCompleted && (
                               <button
                                 onClick={() => onExtendDeadline(caseItem)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1 px-2 rounded-lg transition"
-                                title="ขอขยายเวลาอุทธรณ์"
+                                className={`text-[11px] py-1 px-2.5 rounded-lg transition font-medium cursor-pointer ${
+                                  caseItem.extendedDeadline
+                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold shadow-2xs'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                }`}
+                                title={
+                                  caseItem.extendedDeadline
+                                    ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
+                                    : 'ขอขยายเวลาอุทธรณ์'
+                                }
                               >
-                                ขยาย
+                                {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยาย'}
                               </button>
                             )}
 
@@ -672,6 +705,8 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <CopyCaseDropdown
                               caseItem={caseItem}
                               onToast={onToast}
+                              onOpenFileLabel={onOpenFileLabel}
+                              onOpenCourtPetition={onOpenCourtPetition}
                             />
 
                             {onEditCase && (
@@ -698,6 +733,8 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <CopyCaseDropdown
                               caseItem={caseItem}
                               onToast={onToast}
+                              onOpenFileLabel={onOpenFileLabel}
+                              onOpenCourtPetition={onOpenCourtPetition}
                             />
 
                             {onOpenJudgmentDoc && (

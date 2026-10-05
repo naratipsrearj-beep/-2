@@ -28,7 +28,11 @@ import {
   FileSpreadsheet,
   ShieldAlert,
   HelpCircle,
-  Check
+  Check,
+  QrCode,
+  Copy,
+  Table,
+  Loader2
 } from 'lucide-react';
 import { AppealCase, MonthlyDutyRoster, SheetConfig } from '../types/appeal';
 import {
@@ -43,6 +47,9 @@ import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate } from '../services/dutyService';
 import { DailyCasesToSheetsModal } from './DailyCasesToSheetsModal';
+import { formatCasesBatchForOfficeTsv, copyTextToClipboard } from '../utils/copyCaseUtils';
+import { createDailyDutySummaryDoc } from '../services/docsService';
+import { getAccessToken } from '../services/auth';
 
 export type DailyProcedureFilter = 'all' | 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending';
 
@@ -125,6 +132,8 @@ interface DailyFilingByDateViewProps {
   onAddNewCaseForDate?: (dateStr: string) => void;
   onQuickAssignOfficer?: (caseId: string, officerName: string) => void;
   onBatchAssignOfficerToDate?: (filingDate: string, officerName: string) => void;
+  onOpenFileLabel?: (caseItem: AppealCase) => void;
+  onOpenCourtPetition?: (caseItem: AppealCase) => void;
   onToast?: (message: string) => void;
 }
 
@@ -147,6 +156,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onAddNewCaseForDate,
   onQuickAssignOfficer,
   onBatchAssignOfficerToDate,
+  onOpenFileLabel,
+  onOpenCourtPetition,
   onToast,
 }) => {
   // วันที่เลือกเริ่มต้น
@@ -157,6 +168,10 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   const [procedureFilter, setProcedureFilter] = useState<DailyProcedureFilter>('all');
   const [dateSearch, setDateSearch] = useState<string>(externalDateSearch);
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+
+  // Batch office copy and Docs memo state
+  const [copiedBatchTsv, setCopiedBatchTsv] = useState(false);
+  const [isCreatingDailyMemo, setIsCreatingDailyMemo] = useState(false);
 
   // Google Sheets Export Modal state
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
@@ -289,6 +304,45 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       ...prev,
       [dateKey]: prev[dateKey] !== undefined ? !prev[dateKey] : false,
     }));
+  };
+
+  // Copy all cases on selected date as TSV for pasting into Excel / Office System
+  const handleCopyDayForOfficeTsv = async () => {
+    if (casesOnSelectedDate.length === 0) return;
+    const tsv = formatCasesBatchForOfficeTsv(casesOnSelectedDate, true);
+    const ok = await copyTextToClipboard(tsv);
+    if (ok) {
+      setCopiedBatchTsv(true);
+      if (onToast) onToast(`คัดลอกข้อมูล ${casesOnSelectedDate.length} สำนวน สำหรับวางลง Excel / โปรแกรมสารบบ (Ctrl+V) แล้ว`);
+      setTimeout(() => setCopiedBatchTsv(false), 2000);
+    }
+  };
+
+  // Create Google Docs Memo Report for Daily Duty Prosecutor & Statistics
+  const handleCreateDailyDutyMemo = async () => {
+    if (casesOnSelectedDate.length === 0) return;
+    const currentToken = token || (await getAccessToken());
+    if (!currentToken) {
+      if (onToast) onToast('โปรดเข้าสู่ระบบ Google เพื่อสร้างรายงานสรุป Google Docs');
+      return;
+    }
+    try {
+      setIsCreatingDailyMemo(true);
+      const dutyNames = officersOnSelectedDate.map((o) => o.name);
+      const res = await createDailyDutySummaryDoc(
+        currentToken,
+        selectedDate,
+        casesOnSelectedDate,
+        dutyNames
+      );
+      if (onToast) onToast(`สร้างบันทึกข้อความรายงานผลการชี้คดีประจำวันใน Google Docs เรียบร้อยแล้ว`);
+      window.open(res.docUrl, '_blank');
+    } catch (err: any) {
+      console.error('Failed to create daily summary doc:', err);
+      if (onToast) onToast(`ไม่สามารถสร้างเอกสารได้: ${err.message || 'เกิดข้อผิดพลาด'}`);
+    } finally {
+      setIsCreatingDailyMemo(false);
+    }
   };
 
   return (
@@ -812,6 +866,33 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   <span>ส่งออก Google Sheets (7 คอลัมน์)</span>
                 </button>
               )}
+
+              {/* Office / Excel TSV One-Click Copy */}
+              {casesOnSelectedDate.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleCopyDayForOfficeTsv}
+                  className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-amber-500 flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                  title="คัดลอกแถวข้อมูลทุกคดีในวันนี้ นำไปกด Ctrl+V วางใน Excel หรือโปรแกรมสารบบของสำนักงานได้ทันที"
+                >
+                  {copiedBatchTsv ? <Check className="w-4 h-4 text-emerald-300" /> : <Table className="w-4 h-4 text-amber-200" />}
+                  <span>{copiedBatchTsv ? 'คัดลอกแถวเรียบร้อยแล้ว!' : `คัดลอกวางลง Excel/สารบบ (${statsForSelectedDate.total} คดี)`}</span>
+                </button>
+              )}
+
+              {/* Daily Duty Memo Report in Google Docs */}
+              {casesOnSelectedDate.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleCreateDailyDutyMemo}
+                  disabled={isCreatingDailyMemo}
+                  className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-blue-500 flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+                  title="สร้างบันทึกข้อความสรุปผลการชี้คดีและผลคำพิพากษาประจำวันเสนออัยการจังหวัดลง Google Docs"
+                >
+                  {isCreatingDailyMemo ? <Loader2 className="w-4 h-4 animate-spin text-blue-200" /> : <FileText className="w-4 h-4 text-blue-200" />}
+                  <span>{isCreatingDailyMemo ? 'กำลังสร้างบันทึก...' : 'บันทึกรายงานผลชี้คดี (Docs)'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1061,11 +1142,28 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           </div>
                         ) : (
                           <div className="text-left sm:text-right">
-                            <div className="flex items-center gap-1.5 sm:justify-end">
+                            <div
+                              onClick={() => canEdit && onExtendDeadline(caseItem)}
+                              className={`flex items-center gap-1.5 sm:justify-end ${
+                                canEdit ? 'cursor-pointer group' : ''
+                              }`}
+                              title={
+                                canEdit
+                                  ? caseItem.extendedDeadline
+                                    ? 'คลิกเพื่อแก้ไขวันขยายเวลา หรือขอขยายเวลาเพิ่ม'
+                                    : 'คลิกเพื่อขอขยายระยะเวลาอุทธรณ์'
+                                  : undefined
+                              }
+                            >
                               <span className="text-[11px] text-slate-500">ครบอุทธรณ์ 1 ด.:</span>
-                              <span className="text-xs font-bold text-slate-800">
+                              <span className="text-xs font-bold text-slate-800 group-hover:text-amber-700 transition">
                                 {formatThaiDate(caseItem.extendedDeadline || caseItem.appealDeadline || '')}
                               </span>
+                              {caseItem.extendedDeadline && (
+                                <span className="text-[10px] text-amber-800 font-bold bg-amber-50 border border-amber-200 px-1 py-0.2 rounded">
+                                  ขยาย #{caseItem.extensionCount || 1}
+                                </span>
+                              )}
                             </div>
                             <div className="mt-1 flex items-center gap-1 sm:justify-end">
                               <span
@@ -1111,6 +1209,27 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 </button>
                               )}
 
+                              {/* 2.5. Extend / Edit Appeal Deadline Button */}
+                              {(caseItem.judgmentDate || caseItem.hasJudgment) && onExtendDeadline && (
+                                <button
+                                  type="button"
+                                  onClick={() => onExtendDeadline(caseItem)}
+                                  className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                                    caseItem.extendedDeadline
+                                      ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold shadow-2xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                                  }`}
+                                  title={
+                                    caseItem.extendedDeadline
+                                      ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
+                                      : 'ขอขยายระยะเวลาอุทธรณ์'
+                                  }
+                                >
+                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>{caseItem.extendedDeadline ? `แก้ไขขยายเวลา (#${caseItem.extensionCount || 1})` : 'ขยายเวลา'}</span>
+                                </button>
+                              )}
+
                               {/* 3. Court Appointment Modal */}
                               {onOpenAppointmentModal && (
                                 <button
@@ -1141,8 +1260,23 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                               <CopyCaseDropdown
                                 caseItem={caseItem}
                                 variant="button"
+                                onOpenFileLabel={onOpenFileLabel}
+                                onOpenCourtPetition={onOpenCourtPetition}
                                 onToast={onToast}
                               />
+
+                              {/* 3.9. File Label & QR Code */}
+                              {onOpenFileLabel && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenFileLabel(caseItem)}
+                                  className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  title="พิมพ์ป้ายติดหน้าซองสำนวนคดี & สแกน QR Code ประจำสำนวน"
+                                >
+                                  <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>ป้ายแฟ้ม (QR)</span>
+                                </button>
+                              )}
 
                               {/* 4. Complete button */}
                               {!isCompleted && (
@@ -1162,6 +1296,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                               <CopyCaseDropdown
                                 caseItem={caseItem}
                                 variant="button"
+                                onOpenFileLabel={onOpenFileLabel}
+                                onOpenCourtPetition={onOpenCourtPetition}
                                 onToast={onToast}
                               />
                               {caseItem.prosecutorName && (
@@ -1317,6 +1453,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             <CopyCaseDropdown
                               caseItem={caseItem}
                               variant="compact"
+                              onOpenFileLabel={onOpenFileLabel}
+                              onOpenCourtPetition={onOpenCourtPetition}
                               onToast={onToast}
                             />
 
