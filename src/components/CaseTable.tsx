@@ -20,7 +20,8 @@ import {
   ExternalLink,
   Mail,
   Copy,
-  QrCode
+  MoreHorizontal,
+  Scale
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
@@ -28,6 +29,103 @@ import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { getAppointmentLabel, getAppointmentBadgeStyle } from '../utils/appointmentUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCaseUtils';
+
+// Helper component for secondary tools (Google Docs, Calendar, Gmail)
+const CaseMoreActionsMenu: React.FC<{
+  caseItem: AppealCase;
+  onOpenJudgmentDoc?: (caseItem: AppealCase) => void;
+  onSyncCalendar?: (caseItem: AppealCase) => void;
+  onSendEmailAlert?: (caseItem: AppealCase) => void;
+}> = ({ caseItem, onOpenJudgmentDoc, onSyncCalendar, onSendEmailAlert }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  if (!onOpenJudgmentDoc && !onSyncCalendar && !onSendEmailAlert) return null;
+
+  return (
+    <div className="relative inline-block" ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 rounded-lg transition cursor-pointer"
+        title="เครื่องมือเสริม (Google Docs, Google Calendar, แจ้งเตือน Gmail)"
+      >
+        <MoreHorizontal className="w-3.5 h-3.5" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-1 w-56 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in-50 zoom-in-95 text-xs text-left">
+          <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+            เครื่องมือเสริม
+          </div>
+
+          {onOpenJudgmentDoc && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                onOpenJudgmentDoc(caseItem);
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 transition cursor-pointer"
+            >
+              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+              <div>
+                <div className="font-medium text-slate-800">Google Docs</div>
+                <div className="text-[10px] text-slate-400">
+                  {caseItem.googleDocUrl ? 'เปิดคำพิพากษาที่บันทึกไว้' : 'บันทึกคำพิพากษาลง Docs'}
+                </div>
+              </div>
+            </button>
+          )}
+
+          {onSyncCalendar && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                onSyncCalendar(caseItem);
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 transition cursor-pointer"
+            >
+              <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div>
+                <div className="font-medium text-slate-800">Google Calendar</div>
+                <div className="text-[10px] text-slate-400">แจ้งเตือนวันครบกำหนดลงปฏิทิน</div>
+              </div>
+            </button>
+          )}
+
+          {onSendEmailAlert && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                onSendEmailAlert(caseItem);
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 transition cursor-pointer"
+            >
+              <Mail className="w-4 h-4 text-rose-600 shrink-0" />
+              <div>
+                <div className="font-medium text-slate-800">ส่งอีเมลเตือน</div>
+                <div className="text-[10px] text-slate-400">ส่งรายละเอียดเข้า Gmail</div>
+              </div>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface CaseTableProps {
   cases: AppealCase[];
@@ -41,8 +139,6 @@ interface CaseTableProps {
   onOpenAppointmentModal?: (caseItem: AppealCase) => void;
   onDeleteCase: (id: string) => void;
   onAddNewCase: () => void;
-  onOpenFileLabel?: (caseItem: AppealCase) => void;
-  onOpenCourtPetition?: (caseItem: AppealCase) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -60,8 +156,6 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onOpenAppointmentModal,
   onDeleteCase,
   onAddNewCase,
-  onOpenFileLabel,
-  onOpenCourtPetition,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -337,30 +431,34 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-600 font-medium">
-              <th className="py-3 px-4 w-12 text-center">#</th>
-              <th className="py-3 px-4">วันที่ฟ้อง</th>
-              <th className="py-3 px-4">เลขคดีดำ / คดีแดง</th>
-              <th className="py-3 px-4">ศาล & คู่ความ</th>
-              <th className="py-3 px-4">วันที่พิพากษา</th>
-              <th className="py-3 px-4">
+            <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-700 font-semibold text-xs">
+              <th className="py-3 px-3.5 w-12 text-center text-slate-400">#</th>
+              <th className="py-3 px-3.5 whitespace-nowrap">วันที่ฟ้อง</th>
+              <th className="py-3 px-3.5 min-w-[170px]">เลขคดีดำ / คดีแดง</th>
+              <th className="py-3 px-3.5 min-w-[200px]">ศาล & คู่ความ</th>
+              <th className="py-3 px-3.5 whitespace-nowrap">คำพิพากษา</th>
+              <th className="py-3 px-3.5 whitespace-nowrap">
                 <button
                   onClick={() => setSortBy(sortBy === 'deadline' ? 'filing' : 'deadline')}
-                  className="inline-flex items-center gap-1 text-slate-700 hover:text-amber-600 font-semibold"
+                  className="inline-flex items-center gap-1 text-slate-700 hover:text-amber-600 font-semibold cursor-pointer"
                 >
                   <span>ครบกำหนดอุทธรณ์ 1 เดือน</span>
-                  <ArrowUpDown className="w-3 h-3" />
+                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
                 </button>
               </th>
-              <th className="py-3 px-4">สถานะ & การเตือน</th>
-              <th className="py-3 px-4 text-center w-36">การดำเนินการ</th>
+              <th className="py-3 px-3.5 whitespace-nowrap">สถานะ & การเตือน</th>
+              <th className="py-3 px-3.5 text-center min-w-[210px]">การดำเนินการ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredCases.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-12 text-center text-slate-400">
-                  ไม่พบข้อมูลสำนวนคดีที่ตรงกับเงื่อนไข
+                <td colSpan={8} className="py-16 text-center text-slate-400">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <Scale className="w-8 h-8 text-slate-300" />
+                    <p className="text-sm font-medium text-slate-500">ไม่พบข้อมูลสำนวนคดีที่ตรงกับเงื่อนไข</p>
+                    <p className="text-xs text-slate-400">สามารถค้นหาด้วยคำอื่น หรือกด "เพิ่มสำนวนคุมอุทธรณ์" เพื่อเริ่มต้นบันทึก</p>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -372,103 +470,117 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                 return (
                   <tr
                     key={caseItem.id}
-                    className={`hover:bg-slate-50/80 transition ${
+                    className={`hover:bg-slate-50/90 transition-colors ${
                       isCompleted
-                        ? 'bg-slate-50/30 text-slate-500'
+                        ? 'bg-slate-50/40 text-slate-500'
                         : urgency === 'critical' || urgency === 'overdue'
-                        ? 'bg-rose-50/20'
+                        ? 'bg-rose-50/25'
                         : ''
                     }`}
                   >
                     {/* Index */}
-                    <td className="py-3.5 px-4 text-center text-slate-400 font-mono">
+                    <td className="py-3.5 px-3.5 text-center text-slate-400 font-mono text-xs">
                       {idx + 1}
                     </td>
 
                     {/* Filing Date */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="font-medium text-slate-800">
+                    <td className="py-3.5 px-3.5 whitespace-nowrap">
+                      <div className="font-semibold text-slate-800 text-xs">
                         {formatThaiDate(caseItem.filingDate)}
                       </div>
                       <span className="text-[10px] text-slate-400">วันยื่นฟ้อง</span>
                     </td>
 
-                    {/* Case Numbers */}
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900 font-['Prompt'] text-xs">
-                        ดำ {caseItem.blackCaseNo}
-                      </div>
-                      {caseItem.redCaseNo ? (
-                        <div className="text-rose-700 font-semibold text-[11px]">
-                          แดง {caseItem.redCaseNo}
-                        </div>
-                      ) : (
-                        <div className="text-slate-400 text-[10px]">
-                          (ยังไม่มีเลขแดง)
-                        </div>
-                      )}
-                      {caseItem.receivedNumberS1 && (
-                        <div
-                          className="text-[10px] text-blue-700 font-medium bg-blue-50/80 border border-blue-200/60 rounded px-1.5 py-0.5 mt-0.5 flex items-center gap-1 truncate max-w-[170px]"
-                          title={`ข้อมูลเลขรับ ส.1: ${caseItem.receivedNumberS1}`}
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
-                          <span className="font-semibold text-blue-900">ส.1:</span> {caseItem.receivedNumberS1}
-                        </div>
-                      )}
-                      {caseItem.filingNumberS4 && (
-                        <div
-                          className="text-[10px] text-emerald-700 font-medium bg-emerald-50/80 border border-emerald-200/60 rounded px-1.5 py-0.5 mt-0.5 flex items-center gap-1 truncate max-w-[170px]"
-                          title={`ข้อมูลเลขฟ้อง ส.4: ${caseItem.filingNumberS4}`}
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-                          <span className="font-semibold text-emerald-900">ส.4:</span> {caseItem.filingNumberS4}
-                        </div>
-                      )}
-                      {caseItem.prosecutorName && (
-                        <div
-                          className="text-[11px] font-medium text-amber-950 bg-amber-50/90 border border-amber-200/80 rounded px-1.5 py-0.5 mt-1 truncate max-w-[170px]"
-                          title={`อัยการเจ้าของสำนวน: ${caseItem.prosecutorName}`}
-                        >
-                          <span className="text-amber-800 font-semibold">อัยการ:</span> {caseItem.prosecutorName}
-                        </div>
-                      )}
-                      <div className="mt-1">
-                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                          {caseItem.caseType}
+                    {/* Case Numbers (Black, Red, S.1, S.4, Type) */}
+                    <td className="py-3.5 px-3.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 font-['Prompt'] text-sm tracking-tight">
+                          ดำ {caseItem.blackCaseNo}
                         </span>
+                        {caseItem.redCaseNo ? (
+                          <span className="text-rose-700 font-semibold text-xs bg-rose-50 border border-rose-200/80 px-1.5 py-0.5 rounded">
+                            แดง {caseItem.redCaseNo}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px] bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/50">
+                            (ยังไม่มีเลขแดง)
+                          </span>
+                        )}
+                        <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                          {caseItem.caseType || 'อาญา'}
+                        </span>
+                      </div>
+
+                      {/* S.1 / S.4 / Prosecutor tags */}
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap text-[10px]">
+                        {caseItem.receivedNumberS1 && (
+                          <span
+                            className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 border border-blue-200/70 rounded px-1.5 py-0.5 font-mono"
+                            title={`เลขรับ ส.1: ${caseItem.receivedNumberS1}`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+                            <span className="font-semibold text-blue-900">ส.1:</span> {caseItem.receivedNumberS1}
+                          </span>
+                        )}
+                        {caseItem.filingNumberS4 && (
+                          <span
+                            className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200/70 rounded px-1.5 py-0.5 font-mono"
+                            title={`เลขฟ้อง ส.4: ${caseItem.filingNumberS4}`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                            <span className="font-semibold text-emerald-900">ส.4:</span> {caseItem.filingNumberS4}
+                          </span>
+                        )}
                       </div>
                     </td>
 
-                    {/* Court & Parties */}
-                    <td className="py-3.5 px-4 max-w-xs">
-                      <div className="font-medium text-slate-800 truncate" title={caseItem.court}>
-                        📍 {caseItem.court}
+                    {/* Court & Parties & Responsible Officer */}
+                    <td className="py-3.5 px-3.5 max-w-xs">
+                      <div className="font-medium text-slate-800 flex items-center gap-1 text-xs truncate" title={caseItem.court}>
+                        <span className="text-rose-500 text-xs">📍</span>
+                        <span>{caseItem.court || 'ศาลจังหวัดเพชรบุรี'}</span>
                       </div>
-                      <div className="text-slate-500 truncate text-[11px]" title={`โจทก์: ${caseItem.plaintiff} / จำเลย: ${caseItem.defendant}`}>
-                        จ: {caseItem.plaintiff} | ล: {caseItem.defendant}
-                      </div>
-                      {caseItem.prosecutorName && (
-                        <div className="text-[11px] text-amber-800 font-semibold flex items-center gap-1 mt-0.5" title={`อัยการเวรชี้: ${caseItem.prosecutorName}`}>
-                          <span>⚖️ เวรชี้:</span>
-                          <span className="bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">{caseItem.prosecutorName}</span>
+
+                      {/* Parties - only display if filled */}
+                      {caseItem.plaintiff || caseItem.defendant ? (
+                        <div className="text-slate-600 text-[11px] mt-0.5 truncate" title={`โจทก์: ${caseItem.plaintiff || '-'} | จำเลย: ${caseItem.defendant || '-'}`}>
+                          {caseItem.plaintiff && (
+                            <span><strong className="text-slate-400 font-normal">จ:</strong> {caseItem.plaintiff}</span>
+                          )}
+                          {caseItem.plaintiff && caseItem.defendant && (
+                            <span className="text-slate-300 mx-1">|</span>
+                          )}
+                          {caseItem.defendant && (
+                            <span><strong className="text-slate-400 font-normal">ล:</strong> {caseItem.defendant}</span>
+                          )}
                         </div>
-                      )}
-                      <div className="text-[10px] text-slate-400">
-                        ผู้รับผิดชอบ: {caseItem.responsiblePerson}
+                      ) : null}
+
+                      {/* Prosecutor / Duty officer & Responsible person */}
+                      <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 flex-wrap">
+                        {caseItem.prosecutorName && (
+                          <span className="text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium">
+                            ⚖️ อัยการ: {caseItem.prosecutorName}
+                          </span>
+                        )}
+                        {caseItem.responsiblePerson && caseItem.responsiblePerson !== caseItem.prosecutorName && (
+                          <span className="text-slate-400">
+                            ผู้ดูแล: {caseItem.responsiblePerson}
+                          </span>
+                        )}
                       </div>
 
                       {/* Court Appointment Badge */}
                       {caseItem.appointmentType && caseItem.appointmentType !== 'none' && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getAppointmentBadgeStyle(caseItem.appointmentType).bg} ${getAppointmentBadgeStyle(caseItem.appointmentType).text} ${getAppointmentBadgeStyle(caseItem.appointmentType).border}`}
+                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${getAppointmentBadgeStyle(caseItem.appointmentType).bg} ${getAppointmentBadgeStyle(caseItem.appointmentType).text} ${getAppointmentBadgeStyle(caseItem.appointmentType).border}`}
                             title={caseItem.appointmentNotes || undefined}
                           >
                             <span>{getAppointmentBadgeStyle(caseItem.appointmentType).icon}</span>
                             <span>{getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)}</span>
                             {caseItem.appointmentDate && (
-                              <span className="font-bold">: {formatThaiDate(caseItem.appointmentDate)}</span>
+                              <span className="font-bold">: {formatThaiDate(caseItem.appointmentDate, { short: true })}</span>
                             )}
                           </span>
 
@@ -479,7 +591,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                               className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200"
                               title={appt.notes || undefined}
                             >
-                              <span>นัดถัดไป ({aIdx + 2}): {getAppointmentLabel(appt.type, appt.typeName)} {formatThaiDate(appt.date)}</span>
+                              <span>นัดถัดไป ({aIdx + 2}): {getAppointmentLabel(appt.type, appt.typeName)} {formatThaiDate(appt.date, { short: true })}</span>
                             </span>
                           ))}
                         </div>
@@ -487,11 +599,11 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Judgment Date */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-3.5 px-3.5 whitespace-nowrap">
                       {caseItem.judgmentDate ? (
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-slate-800 font-medium">
+                            <span className="text-slate-800 font-semibold text-xs">
                               {formatThaiDate(caseItem.judgmentDate)}
                             </span>
                             <button
@@ -501,33 +613,37 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                                 if (ok && onToast) onToast(`คัดลอกคำพิพากษาคดีดำ ${caseItem.blackCaseNo} แล้ว`);
                               }}
                               className="text-amber-700 hover:text-amber-900 hover:bg-amber-100/80 p-0.5 rounded transition cursor-pointer"
-                              title="คลิกเพื่อคัดลอกคำพิพากษา เพื่อนำไปวางในระบบอื่นของสำนักงาน"
+                              title="คลิกเพื่อคัดลอกคำพิพากษา"
                             >
                               <Copy className="w-3.5 h-3.5 text-amber-600 hover:text-amber-800" />
                             </button>
                           </div>
                           {caseItem.judgmentOutcome && (
-                            <div className="text-[10px] text-slate-600 truncate max-w-[130px] font-medium" title={caseItem.judgmentOutcome}>
+                            <div className="text-[10px] text-slate-500 truncate max-w-[130px] font-medium mt-0.5" title={caseItem.judgmentOutcome}>
                               {caseItem.judgmentOutcome}
                             </div>
                           )}
                         </div>
                       ) : (
                         <div>
-                          <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
-                            ยังไม่มีคำพิพากษา
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-md">
+                            ⚖️ ยังไม่มีคำพิพากษา
                           </span>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">จำเลยให้การปฏิเสธ</span>
+                          {caseItem.defendantPlea && (
+                            <span className="text-[10px] text-slate-400 block mt-0.5">
+                              {caseItem.defendantPlea === 'denied' ? 'จำเลยให้การปฏิเสธ' : caseItem.defendantPlea === 'confessed' ? 'จำเลยรับสารภาพ' : 'รอคำให้การ'}
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>
 
                     {/* Appeal Deadline (1 month) */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-3.5 px-3.5 whitespace-nowrap">
                       {caseItem.appealDeadline || caseItem.extendedDeadline ? (
                         <div
                           onClick={() => !isCompleted && onExtendDeadline(caseItem)}
-                          className={`group inline-block text-left rounded-lg p-1.5 -m-1.5 transition ${
+                          className={`group inline-block text-left rounded-lg p-1 -m-1 transition ${
                             !isCompleted
                               ? 'cursor-pointer hover:bg-amber-50/80 hover:ring-1 hover:ring-amber-300'
                               : ''
@@ -541,9 +657,9 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           }
                         >
                           <div className="flex items-center gap-1.5">
-                            <div className={`font-bold ${isCompleted ? 'text-slate-500' : 'text-rose-700'}`}>
+                            <span className={`font-bold text-xs ${isCompleted ? 'text-slate-500' : 'text-rose-700'}`}>
                               {formatThaiDate(caseItem.extendedDeadline || caseItem.appealDeadline)}
-                            </div>
+                            </span>
                             {!isCompleted && (
                               <Edit2 className="w-3 h-3 text-slate-300 group-hover:text-amber-600 transition" />
                             )}
@@ -559,14 +675,14 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                         </div>
                       ) : (
                         <div>
-                          <span className="text-xs text-slate-500 font-medium">รอนัดคำพิพากษา</span>
-                          <span className="text-[10px] text-slate-400 block">ยังไม่เริ่มนับระยะเวลา</span>
+                          <span className="text-xs text-slate-400 font-medium">— รอวันพิพากษา —</span>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">ยังไม่เริ่มนับระยะเวลา</span>
                         </div>
                       )}
                     </td>
 
                     {/* Urgency / Status Badge */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-3.5 px-3.5 whitespace-nowrap">
                       {isCompleted ? (
                         <div className="space-y-0.5">
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
@@ -575,7 +691,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           </span>
                           {caseItem.completedDate && (
                             <div className="text-[10px] text-slate-400">
-                              เมื่อ {formatThaiDate(caseItem.completedDate)}
+                              เมื่อ {formatThaiDate(caseItem.completedDate, { short: true })}
                             </div>
                           )}
                         </div>
@@ -600,7 +716,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           เหลืออีก {daysLeft} วัน
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
                           <Clock className="w-3 h-3 text-slate-400" />
                           เหลืออีก {daysLeft} วัน
                         </span>
@@ -608,36 +724,38 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <td className="py-3.5 px-3.5 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1">
                         {canEdit ? (
                           <>
+                            {/* 1. Mark complete status */}
                             {!isCompleted ? (
                               <button
                                 onClick={() => onMarkComplete(caseItem)}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-xs"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer"
                                 title="กดเสร็จสิ้นเมื่อยื่นอุทธรณ์แล้ว (จะหยุดเตือนทันที)"
                               >
-                                <CheckCircle2 className="w-3 h-3" />
+                                <CheckCircle2 className="w-3.5 h-3.5" />
                                 <span>เสร็จสิ้น</span>
                               </button>
                             ) : (
                               <button
                                 onClick={() => onMarkComplete(caseItem)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] py-1 px-2 rounded-lg transition"
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs py-1 px-2 rounded-lg transition cursor-pointer"
                                 title="แก้ไขสถานะเสร็จสิ้น"
                               >
-                                แก้ไข
+                                แก้ไขสถานะ
                               </button>
                             )}
 
-                            {!isCompleted && (
+                            {/* 2. Extend deadline button (if deadline exists) */}
+                            {!isCompleted && (caseItem.appealDeadline || caseItem.extendedDeadline) && (
                               <button
                                 onClick={() => onExtendDeadline(caseItem)}
-                                className={`text-[11px] py-1 px-2.5 rounded-lg transition font-medium cursor-pointer ${
+                                className={`text-xs py-1 px-2 rounded-lg transition font-medium cursor-pointer ${
                                   caseItem.extendedDeadline
-                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold shadow-2xs'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                                 }`}
                                 title={
                                   caseItem.extendedDeadline
@@ -645,111 +763,75 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                                     : 'ขอขยายเวลาอุทธรณ์'
                                 }
                               >
-                                {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยาย'}
+                                {caseItem.extendedDeadline ? 'แก้ไขขยาย' : 'ขยาย'}
                               </button>
                             )}
 
-                            {onOpenJudgmentDoc && (
-                              <button
-                                onClick={() => onOpenJudgmentDoc(caseItem)}
-                                className={`p-1.5 rounded-lg transition ${
-                                  caseItem.googleDocUrl
-                                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                                    : 'text-slate-500 hover:text-blue-700 hover:bg-slate-100'
-                                }`}
-                                title={caseItem.googleDocUrl ? 'เปิด/แก้ไขคำพิพากษาใน Google Docs' : 'กรอกคำพิพากษาลง Google Docs'}
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
+                            {/* 3. Court appointment modal */}
                             {onOpenAppointmentModal && (
                               <button
                                 onClick={() => onOpenAppointmentModal(caseItem)}
-                                className={`p-1.5 rounded-lg transition ${
+                                className={`p-1.5 rounded-lg transition cursor-pointer ${
                                   caseItem.appointmentType && caseItem.appointmentType !== 'none'
-                                    ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 ring-1 ring-indigo-200'
-                                    : 'text-slate-500 hover:text-indigo-700 hover:bg-indigo-50'
+                                    ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200'
+                                    : 'text-slate-500 hover:text-indigo-700 hover:bg-slate-100 border border-slate-200'
                                 }`}
                                 title={
                                   caseItem.appointmentType && caseItem.appointmentType !== 'none'
-                                    ? `นัดศาล: ${getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)} (${caseItem.appointmentDate ? formatThaiDate(caseItem.appointmentDate) : '-'}) - คลิกเพื่อแก้ไข`
-                                    : 'ระบุขั้นตอนนัดของศาล (นัดคุ้มครองสิทธิ, สืบเสาะ หรืออื่นๆ)'
+                                    ? `นัดศาล: ${getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)} - คลิกเพื่อแก้ไข`
+                                    : 'ระบุขั้นตอนนัดของศาล (นัดคุ้มครองสิทธิ, สืบเสาะ ฯลฯ)'
                                 }
                               >
                                 <Clock className="w-3.5 h-3.5" />
                               </button>
                             )}
 
-                            {onSyncCalendar && (
-                              <button
-                                onClick={() => onSyncCalendar(caseItem)}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
-                                title="บันทึกเตือนลง Google Calendar"
-                              >
-                                <Calendar className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {onSendEmailAlert && (
-                              <button
-                                onClick={() => onSendEmailAlert(caseItem)}
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                                title="ส่งอีเมลแจ้งเตือนคดีนี้ไปยัง Gmail"
-                              >
-                                <Mail className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Copy Case Details & Judgment Dropdown */}
-                            <CopyCaseDropdown
-                              caseItem={caseItem}
-                              onToast={onToast}
-                              onOpenFileLabel={onOpenFileLabel}
-                              onOpenCourtPetition={onOpenCourtPetition}
-                            />
-
+                            {/* 4. Edit case */}
                             {onEditCase && (
                               <button
                                 onClick={() => onEditCase(caseItem)}
-                                className="p-1.5 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-lg transition"
+                                className="p-1.5 text-slate-600 hover:text-amber-800 hover:bg-amber-50 border border-slate-200 rounded-lg transition cursor-pointer"
                                 title="แก้ไข / เพิ่มเติมข้อมูลสำนวนคดี"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                             )}
 
+                            {/* 5. Copy dropdown */}
+                            <CopyCaseDropdown
+                              caseItem={caseItem}
+                              onToast={onToast}
+                            />
+
+                            {/* 6. More tools (Google Docs, Calendar, Gmail) */}
+                            <CaseMoreActionsMenu
+                              caseItem={caseItem}
+                              onOpenJudgmentDoc={onOpenJudgmentDoc}
+                              onSyncCalendar={onSyncCalendar}
+                              onSendEmailAlert={onSendEmailAlert}
+                            />
+
+                            {/* 7. Delete case */}
                             <button
                               onClick={() => onDeleteCase(caseItem.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg transition cursor-pointer"
                               title="ลบสำนวน"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </>
                         ) : (
-                          <div className="flex items-center gap-1.5 text-xs">
-                            {/* Copy Case Details & Judgment Dropdown for viewers */}
+                          <div className="flex items-center gap-1 text-xs">
                             <CopyCaseDropdown
                               caseItem={caseItem}
                               onToast={onToast}
-                              onOpenFileLabel={onOpenFileLabel}
-                              onOpenCourtPetition={onOpenCourtPetition}
                             />
-
-                            {onOpenJudgmentDoc && (
-                              <button
-                                onClick={() => onOpenJudgmentDoc(caseItem)}
-                                className={`p-1.5 rounded-lg transition ${
-                                  caseItem.googleDocUrl
-                                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                                    : 'text-slate-500 hover:text-blue-700 hover:bg-slate-100'
-                                }`}
-                                title={caseItem.googleDocUrl ? 'เปิดคำพิพากษาใน Google Docs' : 'ดูคำพิพากษา'}
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <CaseMoreActionsMenu
+                              caseItem={caseItem}
+                              onOpenJudgmentDoc={onOpenJudgmentDoc}
+                              onSyncCalendar={onSyncCalendar}
+                              onSendEmailAlert={onSendEmailAlert}
+                            />
                             <span className="text-[11px] text-slate-400">
                               {isCompleted ? 'เสร็จสิ้นแล้ว' : 'กำลังคุม'}
                             </span>

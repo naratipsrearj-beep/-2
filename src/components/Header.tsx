@@ -22,6 +22,9 @@ interface HeaderProps {
   isSyncing: boolean;
   onPushLocalToCloud?: () => void;
   isPushingLocal?: boolean;
+  connectionStatus?: 'connected' | 'error' | 'connecting';
+  firebaseProjectId?: string;
+  onOpenRulesGuide?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -41,6 +44,9 @@ export const Header: React.FC<HeaderProps> = ({
   isSyncing,
   onPushLocalToCloud,
   isPushingLocal = false,
+  connectionStatus = 'connected',
+  firebaseProjectId = 'nrt555',
+  onOpenRulesGuide,
 }) => {
   // วันที่ปัจจุบันแบบไทย
   const todayDateThai = new Intl.DateTimeFormat('th-TH', {
@@ -66,10 +72,30 @@ export const Header: React.FC<HeaderProps> = ({
                 <h1 className="text-lg sm:text-xl font-bold font-['Prompt'] tracking-tight text-white">
                   ระบบคุมระยะเวลาอุทธรณ์ 1 เดือน
                 </h1>
-                <span className="bg-amber-500/20 text-amber-300 text-[11px] font-medium px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-amber-400" />
-                  <span>Real-time Sync</span>
-                </span>
+                {connectionStatus === 'connected' ? (
+                  <span
+                    className="bg-emerald-500/20 text-emerald-300 text-[11px] font-medium px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1.5"
+                    title={`เชื่อมต่อ Firebase Project ${firebaseProjectId} สำเร็จ ข้อมูลเรียลไทม์`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Real-time Live ({firebaseProjectId})</span>
+                  </span>
+                ) : connectionStatus === 'error' ? (
+                  <button
+                    type="button"
+                    onClick={onOpenRulesGuide}
+                    className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-rose-500/40 flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+                    title="คลิกเพื่อดูวิธีแก้ไข Security Rules ใน Firebase Console"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-400 animate-bounce" />
+                    <span>⚠️ Firebase ติดสิทธิ์ Rules (คลิกดูวิธีแก้)</span>
+                  </button>
+                ) : (
+                  <span className="bg-amber-500/20 text-amber-300 text-[11px] font-medium px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />
+                    <span>กำลังเชื่อมต่อ...</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
                 <span>{todayDateThai}</span>
