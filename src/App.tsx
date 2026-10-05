@@ -18,11 +18,12 @@ import {
   UserCheck,
   Eye,
   ShieldAlert,
-  Users
+  Users,
+  Lock
 } from 'lucide-react';
 
 import { AppealCase, DailyJudgmentFollowUp, SheetConfig, CaseCompletionReason, MonthlyDutyRoster, DailyDutyRecord } from './types/appeal';
-import { initAuth, googleSignIn, googleSignInRedirect, logout, getAccessToken } from './services/auth';
+import { initAuth, googleSignIn, googleSignInRedirect, logout, getAccessToken, loginWithAdminPin, isGuestModeEnabled, setGuestMode, AppAuthUser } from './services/auth';
 import {
   fetchAppealCases,
   appendAppealCase,
@@ -67,6 +68,7 @@ import {
   rejectEditPermission,
   addAllowedEditor,
   removeAllowedEditor,
+  updateAdminPinInFirestore,
   seedInitialFirestoreDataIfEmpty,
   uploadAllLocalDataToFirestore,
 } from './services/firestoreService';
@@ -91,6 +93,7 @@ import { CourtAppointmentModal } from './components/CourtAppointmentModal';
 import { EditCaseModal } from './components/EditCaseModal';
 import { RecordJudgmentModal } from './components/RecordJudgmentModal';
 import { LoginScreen } from './components/LoginScreen';
+import { AdminLoginModal } from './components/AdminLoginModal';
 import { UserPermissionsModal } from './components/UserPermissionsModal';
 import { RequestEditModal } from './components/RequestEditModal';
 import { CourtPetitionModal } from './components/CourtPetitionModal';
@@ -101,11 +104,14 @@ import { getAppointmentLabel } from './utils/appointmentUtils';
 
 export default function App() {
   // Auth & Roles state
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | AppAuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [authInitializing, setAuthInitializing] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isGuestMode, setIsGuestMode] = useState<boolean>(() => isGuestModeEnabled());
+  const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
+  const [adminLoginActionTitle, setAdminLoginActionTitle] = useState<string | undefined>();
 
   // Firestore Project Settings & Permissions
   const [projectSettings, setProjectSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS);
@@ -211,6 +217,9 @@ export default function App() {
         setAuthInitializing(false);
       },
       () => {
+        if (isGuestModeEnabled()) {
+          setIsGuestMode(true);
+        }
         setUser(null);
         setToken(null);
         setAuthInitializing(false);
@@ -332,6 +341,8 @@ export default function App() {
       if (result) {
         setUser(result.user);
         setToken(result.accessToken);
+        setIsGuestMode(false);
+        setIsAdminLoginModalOpen(false);
         showToast(`ยินดีต้อนรับ ${result.user.displayName || result.user.email}`);
       }
     } catch (err: any) {
@@ -344,18 +355,10 @@ export default function App() {
       } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
         errorMsg = 'auth/operation-not-allowed: โปรดไปที่ Firebase Console > Authentication > Sign-in method แล้วเปิดใช้งาน (Enable) "Google"';
       } else if (err.code === 'auth/popup-blocked' || err.message?.includes('popup-blocked')) {
-        // เบราว์เซอร์บล็อกป๊อปอัป -> สลับไปใช้ Redirect อัตโนมัติทันที
-        console.warn('Popup blocked by browser, automatically falling back to redirect flow...');
-        showToast('เบราว์เซอร์บล็อกป๊อปอัป กำลังสลับไปหน้าเข้าสู่ระบบ Google ให้อัตโนมัติ...');
-        try {
-          await googleSignInRedirect();
-          return;
-        } catch (redirectErr: any) {
-          console.error('Auto redirect fallback failed:', redirectErr);
-          errorMsg = 'เบราว์เซอร์บล็อกหน้าต่างป๊อปอัป โปรดกดปุ่ม "เข้าสู่ระบบแบบเปลี่ยนหน้า" ด้านล่างเพื่อเข้าใช้งานทันที';
-        }
+        errorMsg = 'เบราว์เซอร์บล็อกหน้าต่างป๊อปอัป Google กรุณาเลือกแท็บ "รหัส PIN แอดมิน" เพื่อเข้าใช้งานได้ทันที 100%';
+        showToast('ป๊อปอัป Google ถูกบล็อก โปรดใช้รหัส PIN แอดมิน');
       } else if (err.code === 'auth/popup-closed-by-user') {
-        errorMsg = 'หน้าต่างเข้าสู่ระบบถูกปิดก่อนทำรายการเสร็จสิ้น โปรดลองใหม่อีกครั้ง';
+        errorMsg = 'หน้าต่างเข้าสู่ระบบถูกปิดก่อนทำรายการเสร็จสิ้น โปรดลองใหม่อีกครั้ง หรือใช้รหัส PIN แอดมิน';
       } else if (err.code === 'auth/network-request-failed') {
         errorMsg = 'การเชื่อมต่อเครือข่ายขัดข้อง โปรดตรวจสอบอินเทอร์เน็ต';
       } else {
@@ -363,7 +366,7 @@ export default function App() {
       }
       
       setLoginError(errorMsg);
-      showToast('ไม่สามารถเข้าสู่ระบบได้ โปรดตรวจสอบข้อความแจ้งเตือน');
+      showToast('ไม่สามารถเข้าสู่ระบบ Google ได้ โปรดใช้รหัส PIN แอดมิน');
     } finally {
       setIsLoggingIn(false);
     }
@@ -382,15 +385,41 @@ export default function App() {
         errorMsg = `auth/unauthorized-domain: โดเมน "${currentHost}" ยังไม่ได้รับการเพิ่มใน Authorized domains ของ Firebase Console`;
       }
       setLoginError(errorMsg);
-      showToast('ไม่สามารถเข้าสู่ระบบได้');
+      showToast('ไม่สามารถเข้าสู่ระบบได้ โปรดใช้รหัส PIN แอดมิน');
       setIsLoggingIn(false);
     }
+  };
+
+  const handleLoginWithPin = (pin: string) => {
+    try {
+      const adminUser = loginWithAdminPin(pin, projectSettings.adminPin || '5555');
+      setUser(adminUser);
+      setIsGuestMode(false);
+      setIsAdminLoginModalOpen(false);
+      showToast(`เข้าสู่ระบบสำเร็จ: ${adminUser.displayName}`);
+    } catch (err: any) {
+      showToast(err.message || 'รหัสผ่าน PIN ไม่ถูกต้อง');
+      throw err;
+    }
+  };
+
+  const handleEnterGuestMode = () => {
+    setIsGuestMode(true);
+    setGuestMode(true);
+    showToast('เข้าใช้งานในโหมดผู้ตรวจดูสำนวน (Viewer)');
+  };
+
+  const handleOpenAdminLogin = (title?: string) => {
+    setAdminLoginActionTitle(title);
+    setIsAdminLoginModalOpen(true);
   };
 
   const handleLogout = async () => {
     await logout();
     setUser(null);
     setToken(null);
+    setIsGuestMode(false);
+    setGuestMode(false);
     showToast('ออกจากระบบเรียบร้อยแล้ว');
   };
 
@@ -463,6 +492,21 @@ export default function App() {
     } catch (err: any) {
       console.error('Remove editor failed:', err);
       showToast('ไม่สามารถเพิกถอนสิทธิ์ได้: ' + err.message);
+    } finally {
+      setIsProcessingPermissions(false);
+    }
+  };
+
+  const handleUpdateAdminPin = async (newPin: string) => {
+    if (!user?.email) return;
+    setIsProcessingPermissions(true);
+    try {
+      await updateAdminPinInFirestore(newPin, projectSettings, user.email);
+      showToast('เปลี่ยนรหัสผ่าน PIN แอดมินใหม่เรียบร้อยแล้ว');
+    } catch (err: any) {
+      console.error('Update pin failed:', err);
+      showToast('ไม่สามารถเปลี่ยนรหัส PIN ได้: ' + err.message);
+      throw err;
     } finally {
       setIsProcessingPermissions(false);
     }
@@ -1184,14 +1228,17 @@ export default function App() {
     );
   }
 
-  // 2. Authentication Gate: If not logged in, show LoginScreen
-  if (!user) {
+  // 2. Authentication Gate: If not logged in and not in guest mode, show LoginScreen
+  if (!user && !isGuestMode) {
     return (
       <LoginScreen
         onLogin={handleLogin}
         onLoginRedirect={handleLoginRedirect}
+        onLoginWithPin={handleLoginWithPin}
+        onEnterGuestMode={handleEnterGuestMode}
         isLoggingIn={isLoggingIn}
         loginError={loginError}
+        adminPin={projectSettings.adminPin || '5555'}
       />
     );
   }
@@ -1215,11 +1262,17 @@ export default function App() {
         sheetConfig={sheetConfig}
         todayDutyOfficer={todayDutyOfficer}
         onOpenDutyRoster={() => setActiveTab('duty_roster')}
-        onLogin={handleLogin}
+        onLogin={() => handleOpenAdminLogin('เข้าสู่ระบบสำหรับเจ้าหน้าที่ / แอดมิน')}
         onLogout={handleLogout}
         onOpenSheetSettings={() => setIsSheetModalOpen(true)}
         onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
-        onRequestEditPermission={() => setIsRequestEditModalOpen(true)}
+        onRequestEditPermission={() => {
+          if (!user) {
+            handleOpenAdminLogin('เข้าสู่ระบบเพื่อขอสิทธิ์แก้ไข หรือใส่รหัส PIN แอดมิน');
+          } else {
+            setIsRequestEditModalOpen(true);
+          }
+        }}
         onSync={handleSyncWithSheet}
         isSyncing={isSyncing}
         onPushLocalToCloud={handlePushLocalToCloud}
@@ -1245,18 +1298,34 @@ export default function App() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  ข้อมูลสำนวนคดีและตารางเวรชี้อัปเดตเป็นปัจจุบันแบบเรียลไทม์จากแอดมิน ({ADMIN_EMAIL}) หากต้องการเพิ่มหรือแก้ไขข้อมูล สามารถกดขอสิทธิ์แก้ไขได้
+                  ข้อมูลสำนวนคดีและตารางเวรชี้อัปเดตเป็นปัจจุบันแบบเรียลไทม์จากแอดมิน ({ADMIN_EMAIL}) หากต้องการเพิ่มหรือแก้ไขข้อมูล สามารถใส่รหัส PIN แอดมิน หรือกดขอสิทธิ์แก้ไขได้
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsRequestEditModalOpen(true)}
-              className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 flex-shrink-0 cursor-pointer"
-            >
-              <ShieldAlert className="w-4 h-4" />
-              <span>🙋 ขอสิทธิ์แก้ไขข้อมูลจากแอดมิน</span>
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleOpenAdminLogin('กรุณาใส่รหัสผ่าน PIN เพื่อเข้าใช้งานในฐานะแอดมิน')}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 flex-shrink-0 cursor-pointer active:scale-[0.99]"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>ใส่รหัสผ่านแอดมินเพื่อแก้ไข</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!user) {
+                    handleOpenAdminLogin('เข้าสู่ระบบเพื่อขอสิทธิ์แก้ไข หรือใส่รหัส PIN แอดมิน');
+                  } else {
+                    setIsRequestEditModalOpen(true);
+                  }
+                }}
+                className="bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-750 text-xs font-medium px-3 py-2 rounded-xl transition flex items-center justify-center gap-1.5 flex-shrink-0 cursor-pointer"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                <span>ขอสิทธิ์แก้ไข</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1360,7 +1429,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            {canEdit && (
+            {canEdit ? (
               <button
                 onClick={() => {
                   setAddCaseInitialFilingDate(undefined);
@@ -1371,6 +1440,15 @@ export default function App() {
               >
                 <Plus className="w-4 h-4" />
                 <span>เพิ่มสำนวนคุมอุทธรณ์ 1 เดือน</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => handleOpenAdminLogin('กรุณาใส่รหัสผ่าน PIN แอดมินเพื่อเพิ่มสำนวนคดี')}
+                className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                title="คลิกเพื่อใส่รหัสผ่านแอดมินหรือเข้าสู่ระบบ Google"
+              >
+                <Lock className="w-3.5 h-3.5 text-amber-700" />
+                <span>เพิ่มสำนวน (ต้องใส่รหัสแอดมิน)</span>
               </button>
             )}
           </div>
@@ -1580,6 +1658,7 @@ export default function App() {
         onRejectRequest={handleRejectRequest}
         onAddEditor={handleAddEditor}
         onRemoveEditor={handleRemoveEditor}
+        onUpdateAdminPin={handleUpdateAdminPin}
         isProcessing={isProcessingPermissions}
       />
 
@@ -1623,6 +1702,19 @@ export default function App() {
         isDestructive={confirmDialog.isDestructive}
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Admin / Staff Login Modal */}
+      <AdminLoginModal
+        isOpen={isAdminLoginModalOpen}
+        onClose={() => setIsAdminLoginModalOpen(false)}
+        onLoginGoogle={handleLogin}
+        onLoginRedirect={handleLoginRedirect}
+        onLoginPin={handleLoginWithPin}
+        isLoggingIn={isLoggingIn}
+        loginError={loginError}
+        adminPin={projectSettings.adminPin || '5555'}
+        actionTitle={adminLoginActionTitle}
       />
     </div>
   );
