@@ -55,7 +55,15 @@ async function startServer() {
       // Clean base64 data if it contains data URI prefix
       const cleanBase64 = fileData.replace(/^data:[^;]+;base64,/, '');
 
-      const promptText = `คุณเป็นผู้เชี่ยวชาญด้านงานสารบบคดีและธุรการศาลไทย กรุณาวิเคราะห์เอกสารภาพหรือ PDF ตารางเวรนี้อย่างละเอียด
+      let cleanMimeType = String(mimeType).toLowerCase();
+      if (cleanMimeType === 'image/jpg' || cleanMimeType === 'image/pjpeg') {
+        cleanMimeType = 'image/jpeg';
+      }
+      if (cleanMimeType.startsWith('image/') && !['image/jpeg', 'image/png', 'image/webp'].includes(cleanMimeType)) {
+        cleanMimeType = 'image/jpeg';
+      }
+
+      const promptText = `คุณเป็นผู้เชี่ยวชาญด้านงานสารบบคดีและธุรการศาลไทย กรุณาวิเคราะห์เอกสารภาพถ่ายหรือ PDF ตารางเวรนี้อย่างละเอียด
 
 เป้าหมาย:
 1. วิเคราะห์ว่าเป็นตารางเวรชี้คดี / ตารางเวรศาล / ตารางเวรประจำวัน / บัญชีรายชื่อเวร ของรอบเดือนใด (เช่น "ตุลาคม 2569", "พฤศจิกายน 2569")
@@ -67,120 +75,143 @@ ${requestedMonth ? `ผู้ใช้ระบุเดือนที่ต้
 
 ชื่อไฟล์ที่อัปโหลด: ${fileName || 'เอกสารตารางเวร'}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: cleanBase64,
-            },
-          },
-          {
-            text: promptText,
-          },
-        ],
-        config: {
-          systemInstruction: `คุณคือระบบ AI ผู้เชี่ยวชาญการอ่านเอกสารทางกฎหมายและตารางเวรของศาลและสำนักงานอัยการในประเทศไทย
-หน้าที่ของคุณคืออ่านเอกสารตารางเวรชี้คดี (Duty Roster) ไม่ว่าจะเป็นไฟล์รูปภาพหรือไฟล์ PDF ที่อาจมีรูปแบบเป็นตาราง ปฏิทิน รายชื่อประจำวัน หรือบันทึกข้อความ
-สกัดข้อมูลอย่างแม่นยำ ครบถ้วนทุกวันที่มีในเอกสาร และแปลงปีเป็น ค.ศ. ในรูปแบบ YYYY-MM-DD เสมอ`,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              monthYear: {
-                type: Type.STRING,
-                description: 'เดือนและปีในรูปแบบ YYYY-MM เช่น 2026-10 หรือ 2026-11',
-              },
-              monthNameThai: {
-                type: Type.STRING,
-                description: 'ชื่อเดือนและปีภาษาไทย เช่น ตุลาคม 2569',
-              },
-              title: {
-                type: Type.STRING,
-                description: 'ชื่อหรือหัวข้อตารางเวร เช่น ตารางเวรชี้คดีและเวรศาล ประจำเดือนตุลาคม 2569',
-              },
-              totalDays: {
-                type: Type.INTEGER,
-                description: 'จำนวนวันทั้งหมดที่มีข้อมูลในตาราง',
-              },
-              notes: {
-                type: Type.STRING,
-                description: 'ข้อกำหนดทั่วไป คำสั่ง หรือหมายเหตุท้ายตารางเวร',
-              },
-              duties: {
-                type: Type.ARRAY,
-                description: 'รายการเวรชี้แต่ละวันในเดือน',
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    date: {
-                      type: Type.STRING,
-                      description: 'วันที่ในรูปแบบ YYYY-MM-DD เช่น 2026-10-02',
-                    },
-                    dayOfWeek: {
-                      type: Type.STRING,
-                      description: 'วันในสัปดาห์ เช่น วันจันทร์, วันอังคาร, วันศุกร์',
-                    },
-                    isHoliday: {
-                      type: Type.BOOLEAN,
-                      description: 'เป็นวันหยุดราชการหรือไม่มีเวรชี้หรือไม่',
-                    },
-                    holidayName: {
-                      type: Type.STRING,
-                      description: 'ชื่อวันหยุด (ถ้ามี)',
-                    },
-                    dutyType: {
-                      type: Type.STRING,
-                      description: 'ประเภทเวร เช่น เวรชี้สองฝ่าย, เวรชี้คดีอาญา, เวรศาล',
-                    },
-                    officers: {
-                      type: Type.ARRAY,
-                      description: 'รายชื่อเจ้าหน้าที่/อัยการที่เป็นเวรชี้ในวันนั้น',
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          name: {
-                            type: Type.STRING,
-                            description: 'ชื่อ-นามสกุล ของเวรชี้',
-                          },
-                          role: {
-                            type: Type.STRING,
-                            description: 'ตำแหน่งหรือบทบาท เช่น อัยการเวรชี้ 1, อัยการเวรชี้ 2, นิติกร',
-                          },
-                          courtRoom: {
-                            type: Type.STRING,
-                            description: 'ห้องพิจารณาคดีหรือบัลลังก์ศาล (ถ้ามีระบุ)',
-                          },
-                          session: {
-                            type: Type.STRING,
-                            description: 'รอบเวลา เช่น เช้า, บ่าย, ตลอดวัน',
-                          },
-                          contact: {
-                            type: Type.STRING,
-                            description: 'เบอร์ติดต่อภายในหรือเบอร์โทรศัพท์ (ถ้ามี)',
-                          },
-                          notes: {
-                            type: Type.STRING,
-                            description: 'หมายเหตุเฉพาะบุคคล เช่น สลับเวรกับ..., ปฏิบัติหน้าที่แทน',
-                          },
-                        },
-                        required: ['name'],
-                      },
-                    },
-                    notes: {
-                      type: Type.STRING,
-                      description: 'หมายเหตุประจำวัน',
-                    },
-                  },
-                  required: ['date', 'officers'],
+      let response;
+      let retries = 3;
+      let lastError;
+      while (retries > 0) {
+        try {
+          response = await ai.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: [
+              {
+                inlineData: {
+                  mimeType: cleanMimeType,
+                  data: cleanBase64,
                 },
               },
+              {
+                text: promptText,
+              },
+            ],
+            config: {
+              systemInstruction: `คุณคือระบบ AI ผู้เชี่ยวชาญการอ่านเอกสารทางกฎหมายและตารางเวรของศาลและสำนักงานอัยการในประเทศไทย
+หน้าที่ของคุณคืออ่านเอกสารตารางเวรชี้คดี (Duty Roster) ไม่ว่าจะเป็นไฟล์รูปภาพหรือไฟล์ PDF ที่อาจมีรูปแบบเป็นตาราง ปฏิทิน รายชื่อประจำวัน หรือบันทึกข้อความ
+สกัดข้อมูลอย่างแม่นยำ ครบถ้วนทุกวันที่มีในเอกสาร และแปลงปีเป็น ค.ศ. ในรูปแบบ YYYY-MM-DD เสมอ`,
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  monthYear: {
+                    type: Type.STRING,
+                    description: 'เดือนและปีในรูปแบบ YYYY-MM เช่น 2026-10 หรือ 2026-11',
+                  },
+                  monthNameThai: {
+                    type: Type.STRING,
+                    description: 'ชื่อเดือนและปีภาษาไทย เช่น ตุลาคม 2569',
+                  },
+                  title: {
+                    type: Type.STRING,
+                    description: 'ชื่อหรือหัวข้อตารางเวร เช่น ตารางเวรชี้คดีและเวรศาล ประจำเดือนตุลาคม 2569',
+                  },
+                  totalDays: {
+                    type: Type.INTEGER,
+                    description: 'จำนวนวันทั้งหมดที่มีข้อมูลในตาราง',
+                  },
+                  notes: {
+                    type: Type.STRING,
+                    description: 'ข้อกำหนดทั่วไป คำสั่ง หรือหมายเหตุท้ายตารางเวร',
+                  },
+                  duties: {
+                    type: Type.ARRAY,
+                    description: 'รายการเวรชี้แต่ละวันในเดือน',
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        date: {
+                          type: Type.STRING,
+                          description: 'วันที่ในรูปแบบ YYYY-MM-DD เช่น 2026-10-02',
+                        },
+                        dayOfWeek: {
+                          type: Type.STRING,
+                          description: 'วันในสัปดาห์ เช่น วันจันทร์, วันอังคาร, วันศุกร์',
+                        },
+                        isHoliday: {
+                          type: Type.BOOLEAN,
+                          description: 'เป็นวันหยุดราชการหรือไม่มีเวรชี้หรือไม่',
+                        },
+                        holidayName: {
+                          type: Type.STRING,
+                          description: 'ชื่อวันหยุด (ถ้ามี)',
+                        },
+                        dutyType: {
+                          type: Type.STRING,
+                          description: 'ประเภทเวร เช่น เวรชี้สองฝ่าย, เวรชี้คดีอาญา, เวรศาล',
+                        },
+                        officers: {
+                          type: Type.ARRAY,
+                          description: 'รายชื่อเจ้าหน้าที่/อัยการที่เป็นเวรชี้ในวันนั้น',
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              name: {
+                                type: Type.STRING,
+                                description: 'ชื่อ-นามสกุล ของเวรชี้',
+                              },
+                              role: {
+                                type: Type.STRING,
+                                description: 'ตำแหน่งหรือบทบาท เช่น อัยการเวรชี้ 1, อัยการเวรชี้ 2, นิติกร',
+                              },
+                              courtRoom: {
+                                type: Type.STRING,
+                                description: 'ห้องพิจารณาคดีหรือบัลลังก์ศาล (ถ้ามีระบุ)',
+                              },
+                              session: {
+                                type: Type.STRING,
+                                description: 'รอบเวลา เช่น เช้า, บ่าย, ตลอดวัน',
+                              },
+                              contact: {
+                                type: Type.STRING,
+                                description: 'เบอร์ติดต่อภายในหรือเบอร์โทรศัพท์ (ถ้ามี)',
+                              },
+                              notes: {
+                                type: Type.STRING,
+                                description: 'หมายเหตุเฉพาะบุคคล เช่น สลับเวรกับ..., ปฏิบัติหน้าที่แทน',
+                              },
+                            },
+                            required: ['name'],
+                          },
+                        },
+                        notes: {
+                          type: Type.STRING,
+                          description: 'หมายเหตุประจำวัน',
+                        },
+                      },
+                      required: ['date', 'officers'],
+                    },
+                  },
+                },
+                required: ['monthYear', 'monthNameThai', 'title', 'duties'],
+              },
             },
-            required: ['monthYear', 'monthNameThai', 'title', 'duties'],
-          },
-        },
-      });
+          });
+          break;
+        } catch (apiErr: any) {
+          lastError = apiErr;
+          const errStr = String(apiErr?.message || apiErr);
+          if (apiErr?.status === 503 || errStr.includes('503') || errStr.includes('high demand') || errStr.includes('UNAVAILABLE')) {
+            retries--;
+            if (retries > 0) {
+              await new Promise((resolve) => setTimeout(resolve, 3500));
+              continue;
+            }
+          }
+          throw apiErr;
+        }
+      }
+
+      if (!response) {
+        throw lastError || new Error('Gemini API request failed after retries');
+      }
 
       const text = response.text;
       if (!text) {
@@ -189,10 +220,13 @@ ${requestedMonth ? `ผู้ใช้ระบุเดือนที่ต้
 
       const parsedData = JSON.parse(text);
 
-      const rosterId = `roster_${parsedData.monthYear.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+      const safeMonthYear =
+        parsedData.monthYear ||
+        (parsedData.duties?.[0]?.date ? String(parsedData.duties[0].date).slice(0, 7) : new Date().toISOString().slice(0, 7));
+      const rosterId = `roster_${String(safeMonthYear).replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
       const finalRoster = {
         id: rosterId,
-        monthYear: parsedData.monthYear,
+        monthYear: safeMonthYear,
         monthNameThai: parsedData.monthNameThai || 'ตารางเวรชี้',
         title: parsedData.title || `ตารางเวรชี้ประจำเดือน ${parsedData.monthNameThai || ''}`,
         uploadedFileName: fileName || 'ไฟล์ตารางเวร',

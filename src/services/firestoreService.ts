@@ -520,9 +520,15 @@ export async function seedInitialFirestoreDataIfEmpty(
   initialFollowUps?: DailyJudgmentFollowUp[]
 ): Promise<boolean> {
   try {
-    const casesSnap = await getDocs(collection(db, 'cases'));
-    let didSeed = false;
+    const settingsDocRef = doc(db, 'settings', 'permissions');
+    const settingsSnap = await getDoc(settingsDocRef);
+    if (settingsSnap.exists() && settingsSnap.data()?.isInitialized) {
+      // Database has already been initialized previously. Do not auto-reseed over user deletions!
+      return false;
+    }
 
+    let didSeed = false;
+    const casesSnap = await getDocs(collection(db, 'cases'));
     if (casesSnap.empty && initialCases.length > 0) {
       await saveCasesBatchToFirestore(initialCases);
       console.log('Seeded initial cases to Firestore');
@@ -549,19 +555,19 @@ export async function seedInitialFirestoreDataIfEmpty(
       }
     }
 
-    const settingsDocRef = doc(db, 'settings', 'permissions');
+    // Mark as initialized so future empty state (e.g. user deletes all cases) is respected
     await setDoc(
       settingsDocRef,
       {
         ...DEFAULT_SETTINGS,
         isInitialized: true,
-        initializedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       { merge: true }
     );
     return didSeed;
-  } catch (err) {
-    console.warn('Error during Firestore seed:', err);
+  } catch (error) {
+    console.warn('Failed to seed initial Firestore data:', error);
     return false;
   }
 }

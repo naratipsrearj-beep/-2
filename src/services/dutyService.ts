@@ -24,6 +24,18 @@ export async function analyzeDutyRosterFile(
 ): Promise<MonthlyDutyRoster> {
   const base64Data = await fileToBase64(file);
 
+  let mimeType = file.type || '';
+  if (!mimeType) {
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      mimeType = 'application/pdf';
+    } else {
+      mimeType = 'image/jpeg';
+    }
+  }
+  if (mimeType.toLowerCase() === 'image/jpg' || mimeType.toLowerCase() === 'image/pjpeg') {
+    mimeType = 'image/jpeg';
+  }
+
   const response = await fetch('/api/analyze-duty-roster', {
     method: 'POST',
     headers: {
@@ -31,7 +43,7 @@ export async function analyzeDutyRosterFile(
     },
     body: JSON.stringify({
       fileData: base64Data,
-      mimeType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+      mimeType,
       fileName: file.name,
       requestedMonth,
     }),

@@ -12,7 +12,12 @@ import {
   ChevronRight,
   Sparkles,
   ShieldAlert,
-  Info
+  Info,
+  Trash2,
+  Edit3,
+  Plus,
+  UploadCloud,
+  X
 } from 'lucide-react';
 import { MonthlyDutyRoster, DailyDutyRecord, DutyOfficerEntry } from '../types/appeal';
 import { formatThaiDateLong } from '../services/dutyService';
@@ -21,7 +26,10 @@ interface DailyDutyInspectorProps {
   rosters: MonthlyDutyRoster[];
   currentRoster: MonthlyDutyRoster | null;
   selectedDate: string;
+  canEdit?: boolean;
   onSelectDate: (date: string) => void;
+  onUpdateDutyRecord?: (rosterId: string, updatedRecord: DailyDutyRecord) => void;
+  onOpenUploadModal?: () => void;
   onUseOfficerForNewCase?: (officerName: string, date: string) => void;
   onFilterCasesByOfficer?: (officerName: string) => void;
   showToast: (msg: string) => void;
@@ -31,12 +39,28 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
   rosters,
   currentRoster,
   selectedDate,
+  canEdit = true,
   onSelectDate,
+  onUpdateDutyRecord,
+  onOpenUploadModal,
   onUseOfficerForNewCase,
   onFilterCasesByOfficer,
   showToast,
 }) => {
   const [copiedName, setCopiedName] = useState<string | null>(null);
+
+  // Modal states for deleting, editing, and adding officers
+  const [officerToDelete, setOfficerToDelete] = useState<{ index: number; name: string } | null>(null);
+  const [officerToEdit, setOfficerToEdit] = useState<{ index: number; data: DutyOfficerEntry } | null>(null);
+  const [isAddOfficerOpen, setIsAddOfficerOpen] = useState(false);
+  const [newOfficerForm, setNewOfficerForm] = useState<DutyOfficerEntry>({
+    name: '',
+    role: 'อัยการเวรชี้',
+    courtRoom: '',
+    session: 'ตลอดวัน',
+    contact: '',
+    notes: '',
+  });
 
   // Today in local YYYY-MM-DD
   const today = new Date();
@@ -78,6 +102,75 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
     setTimeout(() => setCopiedName(null), 2500);
   };
 
+  // Confirm delete officer
+  const handleConfirmDeleteOfficer = () => {
+    if (!officerToDelete || !sourceRoster || !matchedDuty || !onUpdateDutyRecord) return;
+    const remainingOfficers = matchedDuty.officers.filter((_, idx) => idx !== officerToDelete.index);
+    const updatedDuty: DailyDutyRecord = {
+      ...matchedDuty,
+      officers: remainingOfficers,
+    };
+    onUpdateDutyRecord(sourceRoster.id, updatedDuty);
+    showToast(`ลบชื่ออัยการเวรชี้ "${officerToDelete.name}" ออกจากวันนี้เรียบร้อยแล้ว`);
+    setOfficerToDelete(null);
+  };
+
+  // Save edit officer
+  const handleSaveEditOfficer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!officerToEdit || !sourceRoster || !matchedDuty || !onUpdateDutyRecord) return;
+    const updatedOfficers = [...matchedDuty.officers];
+    updatedOfficers[officerToEdit.index] = officerToEdit.data;
+    const updatedDuty: DailyDutyRecord = {
+      ...matchedDuty,
+      officers: updatedOfficers,
+    };
+    onUpdateDutyRecord(sourceRoster.id, updatedDuty);
+    showToast(`บันทึกการแก้ไขข้อมูลเวรชี้ "${officerToEdit.data.name}" แล้ว`);
+    setOfficerToEdit(null);
+  };
+
+  // Save add new officer
+  const handleSaveNewOfficer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOfficerForm.name.trim() || !onUpdateDutyRecord) return;
+    const targetRoster = sourceRoster || currentRoster || rosters[0];
+    if (!targetRoster) {
+      showToast('กรุณาสร้างหรืออัปโหลดตารางเวรประจำเดือนก่อน');
+      return;
+    }
+
+    if (matchedDuty) {
+      const updatedDuty: DailyDutyRecord = {
+        ...matchedDuty,
+        isHoliday: false,
+        officers: [...matchedDuty.officers, { ...newOfficerForm, name: newOfficerForm.name.trim() }],
+      };
+      onUpdateDutyRecord(targetRoster.id, updatedDuty);
+    } else {
+      const newDutyRecord: DailyDutyRecord = {
+        id: `duty_${selectedDate}_${Date.now()}`,
+        date: selectedDate,
+        dayOfWeek: new Intl.DateTimeFormat('th-TH', { weekday: 'long' }).format(new Date(selectedDate)),
+        isHoliday: false,
+        dutyType: 'เวรชี้สองฝ่าย',
+        officers: [{ ...newOfficerForm, name: newOfficerForm.name.trim() }],
+      };
+      onUpdateDutyRecord(targetRoster.id, newDutyRecord);
+    }
+
+    showToast(`เพิ่มชื่อเวรชี้ "${newOfficerForm.name}" ในวันที่ ${selectedDate} เรียบร้อยแล้ว`);
+    setIsAddOfficerOpen(false);
+    setNewOfficerForm({
+      name: '',
+      role: 'อัยการเวรชี้',
+      courtRoom: '',
+      session: 'ตลอดวัน',
+      contact: '',
+      notes: '',
+    });
+  };
+
   const isToday = selectedDate === todayStr;
 
   return (
@@ -101,12 +194,12 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                เลือกวันที่เพื่อดูรายชื่ออัยการ/เจ้าหน้าที่เวรชี้ ห้องพิจารณาคดี และรอบเวลาตามเอกสารตารางเวรที่อัปโหลด
+                เลือกวันที่เพื่อดูรายชื่ออัยการ/เจ้าหน้าที่เวรชี้ ห้องพิจารณาคดี และรอบเวลา หรืออัพโหลดภาพให้ AI วิเคราะห์
               </p>
             </div>
           </div>
 
-          {/* Quick Date Selectors */}
+          {/* Quick Date Selectors & Upload Button */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onSelectDate(todayStr)}
@@ -140,6 +233,19 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                 className="bg-transparent text-white text-xs focus:outline-hidden cursor-pointer"
               />
             </div>
+
+            {/* Upload image / PDF button in inspector top bar */}
+            {canEdit && onOpenUploadModal && (
+              <button
+                type="button"
+                onClick={onOpenUploadModal}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                title="อัพโหลดภาพถ่ายหรือเอกสาร PDF ตารางเวรชี้ เพื่อให้ AI สกัดรายชื่อเวรชี้"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span>อัพโหลดภาพ/PDF ให้ AI วิเคราะห์</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -161,20 +267,34 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
             </h3>
           </div>
 
-          {sourceRoster && (
-            <div className="text-xs text-slate-500 flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200 self-start sm:self-auto">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>จาก: {sourceRoster.monthNameThai}</span>
-              <span className="text-slate-400">({sourceRoster.uploadedFileName || 'ตารางเวร'})</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {sourceRoster && (
+              <div className="text-xs text-slate-500 flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>จาก: {sourceRoster.monthNameThai}</span>
+                <span className="text-slate-400">({sourceRoster.uploadedFileName || 'ตารางเวร'})</span>
+              </div>
+            )}
+
+            {/* Quick Add Officer Button for this date */}
+            {canEdit && onUpdateDutyRecord && (
+              <button
+                type="button"
+                onClick={() => setIsAddOfficerOpen(true)}
+                className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-amber-600" />
+                <span>เพิ่มชื่อเวรชี้ในวันนี้</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Content Details */}
         {matchedDuty ? (
           matchedDuty.isHoliday ? (
             /* Holiday Notice */
-            <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-6 text-center space-y-2">
+            <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-6 text-center space-y-3">
               <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
                 <Calendar className="w-6 h-6" />
               </div>
@@ -184,6 +304,16 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
               <p className="text-xs text-rose-700 max-w-md mx-auto">
                 {matchedDuty.notes || 'ในวันนี้เป็นวันหยุดราชการ/วันหยุดทำการ ไม่มีรายชื่อเวรชี้คดี'}
               </p>
+              {canEdit && onUpdateDutyRecord && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddOfficerOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>เพิ่มเวรชี้พิเศษในวันนี้</span>
+                </button>
+              )}
             </div>
           ) : matchedDuty.officers.length > 0 ? (
             /* Officers List Cards */
@@ -229,17 +359,41 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleCopyName(officer.name)}
-                        className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition"
-                        title="คัดลอกชื่อเวรชี้"
-                      >
-                        {copiedName === officer.name ? (
-                          <Check className="w-4 h-4 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
+                      {/* Header Actions: Copy, Edit, Delete */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleCopyName(officer.name)}
+                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+                          title="คัดลอกชื่อเวรชี้"
+                        >
+                          {copiedName === officer.name ? (
+                            <Check className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+
+                        {canEdit && onUpdateDutyRecord && sourceRoster && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setOfficerToEdit({ index, data: { ...officer } })}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                              title="แก้ไขข้อมูลเวรชี้นี้"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOfficerToDelete({ index, name: officer.name })}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title={`ลบชื่อ ${officer.name} ออกจากเวรชี้วันนี้`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
                         )}
-                      </button>
+                      </div>
                     </div>
 
                     {/* Metadata Badges */}
@@ -298,13 +452,23 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
               )}
             </div>
           ) : (
-            <div className="bg-slate-100/80 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
-              ไม่พบรายชื่อเวรชี้ที่ระบุไว้สำหรับวันที่นี้ในตาราง
+            <div className="bg-slate-100/80 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500 space-y-3">
+              <p>ไม่พบรายชื่อเวรชี้ที่ระบุไว้สำหรับวันที่นี้ในตาราง</p>
+              {canEdit && onUpdateDutyRecord && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddOfficerOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg transition shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>เพิ่มชื่อเวรชี้ในวันที่นี้</span>
+                </button>
+              )}
             </div>
           )
         ) : (
           /* Not Found in Roster */
-          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-4">
             <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
               <Calendar className="w-6 h-6" />
             </div>
@@ -313,12 +477,252 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                 ยังไม่มีข้อมูลเวรชี้สำหรับวันที่ {formatThaiDateLong(selectedDate)}
               </h4>
               <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                ท่านสามารถอัปโหลดไฟล์ภาพหรือ PDF ของตารางเวรชี้ประจำเดือนนี้ เพื่อให้ AI สกัดรายชื่อเวรชี้โดยอัตโนมัติ
+                ท่านสามารถอัปโหลดไฟล์ภาพหรือ PDF ของตารางเวรชี้ประจำเดือนนี้ เพื่อให้ AI สกัดรายชื่อเวรชี้โดยอัตโนมัติ หรือเพิ่มรายชื่อเวรชี้ด้วยตนเอง
               </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              {canEdit && onOpenUploadModal && (
+                <button
+                  type="button"
+                  onClick={onOpenUploadModal}
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>อัพโหลดภาพหรือ PDF ตารางเวรให้ AI วิเคราะห์</span>
+                </button>
+              )}
+
+              {canEdit && onUpdateDutyRecord && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddOfficerOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-4 py-2 rounded-xl border border-slate-300 transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>เพิ่มรายชื่อเวรชี้ด้วยตนเอง</span>
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Delete Officer Confirmation Modal */}
+      {officerToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-800 font-['Prompt']">ยืนยันการลบชื่อเวรชี้</h4>
+                <p className="text-xs text-slate-500">การกระทำนี้จะลบชื่อออกจากเวรชี้ของวันนี้</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              ต้องการลบชื่อ <strong className="text-slate-900">"{officerToDelete.name}"</strong> ออกจากรายชื่อเวรชี้ประจำวันที่ <strong className="text-slate-900">{formatThaiDateLong(selectedDate)}</strong> หรือไม่?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setOfficerToDelete(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteOfficer}
+                className="px-4 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs transition"
+              >
+                ลบรายชื่อนี้
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Officer Modal */}
+      {officerToEdit && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="bg-slate-900 px-5 py-4 text-white flex items-center justify-between">
+              <h4 className="text-sm font-bold font-['Prompt']">แก้ไขข้อมูลเวรชี้</h4>
+              <button onClick={() => setOfficerToEdit(null)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditOfficer} className="p-5 space-y-3.5">
+              <div>
+                <label className="text-xs font-semibold text-slate-700">ชื่อ-นามสกุล:</label>
+                <input
+                  type="text"
+                  value={officerToEdit.data.name}
+                  onChange={(e) =>
+                    setOfficerToEdit({
+                      ...officerToEdit,
+                      data: { ...officerToEdit.data, name: e.target.value },
+                    })
+                  }
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700">ตำแหน่ง / บทบาท:</label>
+                <input
+                  type="text"
+                  value={officerToEdit.data.role || ''}
+                  onChange={(e) =>
+                    setOfficerToEdit({
+                      ...officerToEdit,
+                      data: { ...officerToEdit.data, role: e.target.value },
+                    })
+                  }
+                  placeholder="เช่น อัยการเวรชี้ 1, อัยการจังหวัดประจำสำนักงาน"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">ห้องพิจารณา / บัลลังก์:</label>
+                  <input
+                    type="text"
+                    value={officerToEdit.data.courtRoom || ''}
+                    onChange={(e) =>
+                      setOfficerToEdit({
+                        ...officerToEdit,
+                        data: { ...officerToEdit.data, courtRoom: e.target.value },
+                      })
+                    }
+                    placeholder="เช่น 803"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">รอบเวลา:</label>
+                  <input
+                    type="text"
+                    value={officerToEdit.data.session || ''}
+                    onChange={(e) =>
+                      setOfficerToEdit({
+                        ...officerToEdit,
+                        data: { ...officerToEdit.data, session: e.target.value },
+                      })
+                    }
+                    placeholder="ตลอดวัน / เช้า / บ่าย"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setOfficerToEdit(null)}
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs"
+                >
+                  บันทึก
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Officer Modal */}
+      {isAddOfficerOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="bg-amber-600 px-5 py-4 text-white flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold font-['Prompt']">เพิ่มชื่อเวรชี้</h4>
+                <p className="text-[11px] text-amber-100">{formatThaiDateLong(selectedDate)}</p>
+              </div>
+              <button onClick={() => setIsAddOfficerOpen(false)} className="text-white/80 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveNewOfficer} className="p-5 space-y-3.5">
+              <div>
+                <label className="text-xs font-semibold text-slate-700">ชื่อ-นามสกุล อัยการ/เวรชี้ *:</label>
+                <input
+                  type="text"
+                  value={newOfficerForm.name}
+                  onChange={(e) => setNewOfficerForm({ ...newOfficerForm, name: e.target.value })}
+                  placeholder="เช่น นายธนากร สุขเกษม"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700">ตำแหน่ง / บทบาท:</label>
+                <input
+                  type="text"
+                  value={newOfficerForm.role || ''}
+                  onChange={(e) => setNewOfficerForm({ ...newOfficerForm, role: e.target.value })}
+                  placeholder="เช่น อัยการเวรชี้, อัยการจังหวัดประจำสำนักงาน"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">ห้องพิจารณา / บัลลังก์:</label>
+                  <input
+                    type="text"
+                    value={newOfficerForm.courtRoom || ''}
+                    onChange={(e) => setNewOfficerForm({ ...newOfficerForm, courtRoom: e.target.value })}
+                    placeholder="เช่น 803 หรือ บัลลังก์ 2"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">รอบเวลา:</label>
+                  <input
+                    type="text"
+                    value={newOfficerForm.session || ''}
+                    onChange={(e) => setNewOfficerForm({ ...newOfficerForm, session: e.target.value })}
+                    placeholder="ตลอดวัน"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsAddOfficerOpen(false)}
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs"
+                >
+                  เพิ่มรายชื่อ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

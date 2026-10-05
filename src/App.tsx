@@ -266,18 +266,8 @@ export default function App() {
     const unsubCases = subscribeToCases(
       (remoteCases) => {
         setConnectionStatus('connected');
-        if (remoteCases.length > 0) {
-          setCases(remoteCases);
-          saveCases(remoteCases);
-        } else {
-          // If remote is empty, seed local cases to Firestore so all clients get them
-          const localCases = getSavedCases();
-          if (localCases.length > 0) {
-            saveCasesBatchToFirestore(localCases).catch((e) =>
-              console.warn('Auto-seed cases to Firestore failed:', e)
-            );
-          }
-        }
+        setCases(remoteCases);
+        saveCases(remoteCases);
       },
       (err) => {
         console.warn('Real-time cases sync error:', err);
@@ -288,21 +278,10 @@ export default function App() {
     // 2. Real-time subscribe to monthly duty rosters
     const unsubRosters = subscribeToDutyRosters(
       (remoteRosters) => {
-        if (remoteRosters.length > 0) {
-          setDutyRosters(remoteRosters);
-          saveDutyRosters(remoteRosters);
-          if (!activeDutyRosterId && remoteRosters[0]) {
-            setActiveDutyRosterId(remoteRosters[0].id);
-          }
-        } else {
-          const localRosters = getSavedDutyRosters();
-          if (localRosters.length > 0) {
-            for (const r of localRosters) {
-              saveDutyRosterToFirestore(r).catch((e) =>
-                console.warn('Auto-seed duty roster to Firestore failed:', e)
-              );
-            }
-          }
+        setDutyRosters(remoteRosters);
+        saveDutyRosters(remoteRosters);
+        if (!activeDutyRosterId && remoteRosters[0]) {
+          setActiveDutyRosterId(remoteRosters[0].id);
         }
       },
       (err) => {
@@ -314,19 +293,8 @@ export default function App() {
     // 3. Real-time subscribe to daily follow-ups
     const unsubFollowUps = subscribeToFollowUps(
       (remoteFollowUps) => {
-        if (remoteFollowUps.length > 0) {
-          setFollowUps(remoteFollowUps);
-          saveFollowUps(remoteFollowUps);
-        } else {
-          const localFollowUps = getSavedFollowUps();
-          if (localFollowUps.length > 0) {
-            for (const f of localFollowUps) {
-              saveFollowUpToFirestore(f).catch((e) =>
-                console.warn('Auto-seed follow-up to Firestore failed:', e)
-              );
-            }
-          }
-        }
+        setFollowUps(remoteFollowUps);
+        saveFollowUps(remoteFollowUps);
       },
       (err) => {
         console.warn('Real-time followups sync error:', err);
@@ -774,13 +742,18 @@ export default function App() {
       message: `คุณแน่ใจหรือไม่ว่าต้องการลบสำนวนคดีดำ ${targetCase.blackCaseNo} (แดง ${targetCase.redCaseNo}) ออกจากระบบ? การกระทำนี้ไม่สามารถย้อนกลับได้`,
       confirmText: 'ลบสำนวน',
       isDestructive: true,
-      onConfirm: () => {
-        const remaining = cases.filter((c) => c.id !== caseId);
-        setCases(remaining);
-        saveCases(remaining);
-        deleteCaseFromFirestore(caseId).catch((e) => console.warn('Firestore delete error:', e));
-        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-        showToast(`ลบสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
+      onConfirm: async () => {
+        try {
+          const remaining = cases.filter((c) => c.id !== caseId);
+          setCases(remaining);
+          saveCases(remaining);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          await deleteCaseFromFirestore(caseId);
+          showToast(`ลบสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
+        } catch (e: any) {
+          console.error('Delete case error:', e);
+          showToast(`เกิดข้อผิดพลาดในการลบ: ${e.message || 'ไม่สามารถลบได้'}`);
+        }
       },
     });
   };
@@ -1477,22 +1450,6 @@ export default function App() {
                 {dutyRosters.length} รอบเดือน
               </span>
             </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {canEdit && (
-              <button
-                onClick={() => {
-                  setAddCaseInitialFilingDate(undefined);
-                  setAddCaseInitialResponsiblePerson(undefined);
-                  setIsAddCaseOpen(true);
-                }}
-                className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>เพิ่มสำนวนคุมอุทธรณ์ 1 เดือน</span>
-              </button>
-            )}
           </div>
         </div>
 

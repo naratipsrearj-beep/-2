@@ -37,8 +37,9 @@ export const UploadDutyRosterModal: React.FC<UploadDutyRosterModalProps> = ({
 
   const handleFileChange = (file: File) => {
     // Validate file type: PDF or image
-    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|heic|bmp|tiff|jfif)$/i.test(file.name);
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isImage && !isPdf) {
       setErrorMessage('กรุณาเลือกไฟล์รูปภาพ (JPG, PNG, WEBP) หรือเอกสาร PDF เท่านั้น');
       return;
     }
@@ -51,7 +52,7 @@ export const UploadDutyRosterModal: React.FC<UploadDutyRosterModalProps> = ({
     setErrorMessage(null);
     setSelectedFile(file);
 
-    if (file.type.startsWith('image/')) {
+    if (isImage) {
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
     } else {
@@ -136,7 +137,7 @@ export const UploadDutyRosterModal: React.FC<UploadDutyRosterModalProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,image/png,image/jpeg,image/webp,image/heic"
+              accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.heic"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {

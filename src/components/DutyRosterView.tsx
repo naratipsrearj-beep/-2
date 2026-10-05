@@ -215,7 +215,10 @@ export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
         rosters={rosters}
         currentRoster={currentRoster}
         selectedDate={inspectedDate}
+        canEdit={canEdit}
         onSelectDate={(d) => setInspectedDate(d)}
+        onUpdateDutyRecord={onUpdateDutyRecord}
+        onOpenUploadModal={onOpenUploadModal}
         onUseOfficerForNewCase={onUseOfficerForNewCase}
         onFilterCasesByOfficer={onFilterCasesByOfficer}
         showToast={showToast}

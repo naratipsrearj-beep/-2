@@ -292,19 +292,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
             </button>
           </div>
 
-          {canEdit ? (
-            <button
-              onClick={onAddNewCase}
-              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs flex-shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>เพิ่มสำนวนคุมอุทธรณ์</span>
-            </button>
-          ) : (
-            <div className="bg-slate-100 text-slate-600 text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 flex-shrink-0 border border-slate-200">
-              <span>👁️ โหมดดูข้อมูลอย่างเดียว</span>
-            </div>
-          )}
+
         </div>
       </div>
 
