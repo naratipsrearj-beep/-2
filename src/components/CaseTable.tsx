@@ -20,7 +20,8 @@ import {
   ExternalLink,
   Mail,
   Copy,
-  QrCode
+  QrCode,
+  Scale
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
@@ -34,6 +35,7 @@ interface CaseTableProps {
   canEdit?: boolean;
   onMarkComplete: (caseItem: AppealCase) => void;
   onExtendDeadline: (caseItem: AppealCase) => void;
+  onRecordJudgment?: (caseItem: AppealCase) => void;
   onEditCase?: (caseItem: AppealCase) => void;
   onSyncCalendar?: (caseItem: AppealCase) => void;
   onOpenJudgmentDoc?: (caseItem: AppealCase) => void;
@@ -53,6 +55,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   canEdit = true,
   onMarkComplete,
   onExtendDeadline,
+  onRecordJudgment,
   onEditCase,
   onSyncCalendar,
   onOpenJudgmentDoc,
@@ -492,6 +495,16 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <span className="text-slate-800 font-medium">
                               {formatThaiDate(caseItem.judgmentDate)}
                             </span>
+                            {canEdit && onRecordJudgment && (
+                              <button
+                                type="button"
+                                onClick={() => onRecordJudgment(caseItem)}
+                                className="text-amber-700 hover:text-amber-900 hover:bg-amber-100 p-0.5 rounded transition cursor-pointer"
+                                title="คลิกเพื่อดูหรือแก้ไขคำพิพากษา"
+                              >
+                                <Scale className="w-3.5 h-3.5 text-amber-600 hover:text-amber-800" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={async () => {
@@ -516,6 +529,17 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             ยังไม่มีคำพิพากษา
                           </span>
                           <span className="text-[10px] text-slate-400 block mt-0.5">จำเลยให้การปฏิเสธ</span>
+                          {canEdit && onRecordJudgment && (
+                            <button
+                              type="button"
+                              onClick={() => onRecordJudgment(caseItem)}
+                              className="mt-1 text-[11px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
+                              title="ศาลตัดสินแล้ว คลิกเพื่อกรอกคำพิพากษาและเริ่มคุมอุทธรณ์ 1 เดือน"
+                            >
+                              <Scale className="w-3 h-3 text-amber-700" />
+                              <span>+ กรอกคำพิพากษา</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -610,6 +634,26 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                       <div className="flex items-center justify-center gap-1.5">
                         {canEdit ? (
                           <>
+                            {/* กรอกคำพิพากษา / แก้ไขคำพิพากษา */}
+                            {onRecordJudgment && (
+                              <button
+                                onClick={() => onRecordJudgment(caseItem)}
+                                className={`text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition font-bold cursor-pointer active:scale-95 ${
+                                  !caseItem.judgmentDate
+                                    ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
+                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                                }`}
+                                title={
+                                  !caseItem.judgmentDate
+                                    ? 'ศาลตัดสินแล้ว กรอกคำพิพากษาเพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'
+                                    : `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate)} - คลิกเพื่อแก้ไขคำพิพากษา`
+                                }
+                              >
+                                <Scale className="w-3 h-3" />
+                                <span>{caseItem.judgmentDate ? 'แก้คำพิพากษา' : 'กรอกคำพิพากษา'}</span>
+                              </button>
+                            )}
+
                             {!isCompleted ? (
                               <button
                                 onClick={() => onMarkComplete(caseItem)}

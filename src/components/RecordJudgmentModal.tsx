@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Scale, Calendar, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { X, Scale, Calendar, CheckCircle2, AlertCircle, Clock, Sparkles, FileText } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
 
@@ -14,10 +14,21 @@ interface RecordJudgmentModalProps {
       redCaseNo?: string;
       judgmentOutcome: string;
       appealDeadline: string;
+      fullJudgmentText?: string;
     },
     syncToCalendar: boolean
   ) => void;
 }
+
+const QUICK_OUTCOME_SUGGESTIONS = [
+  'ลงโทษตามฟ้อง',
+  'จำคุก รอการลงโทษ',
+  'ยกฟ้อง',
+  'รอการกำหนดโทษ',
+  'จำคุก ไม่รอลงอาญา',
+  'ปรับอย่างเดียว',
+  'ยอมความ / ถอนฟ้อง',
+];
 
 export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   isOpen,
@@ -28,6 +39,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   const [judgmentDate, setJudgmentDate] = useState<string>(getTodayString());
   const [redCaseNo, setRedCaseNo] = useState<string>('');
   const [judgmentOutcome, setJudgmentOutcome] = useState<string>('');
+  const [fullJudgmentText, setFullJudgmentText] = useState<string>('');
   const [syncToCalendar, setSyncToCalendar] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -42,6 +54,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
       setJudgmentDate(caseItem.judgmentDate || getTodayString());
       setRedCaseNo(caseItem.redCaseNo || '');
       setJudgmentOutcome(caseItem.judgmentOutcome || '');
+      setFullJudgmentText(caseItem.fullJudgmentText || '');
       setErrorMsg(null);
     }
   }, [caseItem, isOpen]);
@@ -75,37 +88,40 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
         redCaseNo: redCaseNo.trim() || undefined,
         judgmentOutcome: judgmentOutcome.trim(),
         appealDeadline: deadlineInfo.deadlineDate,
+        fullJudgmentText: fullJudgmentText.trim() || undefined,
       },
       syncToCalendar
     );
     onClose();
   };
 
+  const isEditingExisting = Boolean(caseItem.judgmentDate);
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
+        <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-white flex-shrink-0 shadow-sm">
               <Scale className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-bold text-base font-['Prompt'] text-white">
-                บันทึกคำพิพากษา & เริ่มคุมอุทธรณ์ 1 เดือน
+                {isEditingExisting ? 'กรอก/แก้ไขคำพิพากษา & คุมอุทธรณ์ 1 เดือน' : 'กรอกคำพิพากษา & เริ่มคุมอุทธรณ์ 1 เดือน'}
               </h3>
               <p className="text-xs text-slate-300">
                 สำนวนคดีดำ {caseItem.blackCaseNo} • {caseItem.court}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg transition">
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {/* Summary Box */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 space-y-1">
             <div className="flex justify-between">
@@ -114,11 +130,11 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
             </div>
             {caseItem.prosecutorName && (
               <div className="text-amber-800">
-                <span>อัยการเจ้าของสำนวน: {caseItem.prosecutorName}</span>
+                <span>อัยการเจ้าของสำนวน/เวรชี้: {caseItem.prosecutorName}</span>
               </div>
             )}
             <div className="text-[11px] text-indigo-700 bg-indigo-50/80 p-1.5 rounded border border-indigo-100 mt-1">
-              🛡️ สำนวนเดิม: จำเลยให้การปฏิเสธ / มีนัดพิจารณา เมื่อศาลมีคำพิพากษาแล้ว ระบบจะเริ่มคำนวณและแจ้งเตือนกำหนดเวลาอุทธรณ์ 1 เดือน
+              🛡️ เมื่อกรอกคำพิพากษาแล้ว ระบบจะคำนวณและเริ่มนับระยะเวลาคุมอุทธรณ์ 1 เดือน (พร้อมแจ้งเตือนตามกำหนด)
             </div>
           </div>
 
@@ -172,7 +188,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="เช่น อ.891/2569"
+              placeholder="เช่น อ.891/2569 หรือ แดง 124/2569"
               value={redCaseNo}
               onChange={(e) => setRedCaseNo(e.target.value)}
               className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500"
@@ -181,15 +197,55 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
 
           {/* Judgment Outcome */}
           <div>
-            <label className="block text-xs font-semibold text-slate-800 mb-1">
-              ผลคำพิพากษาโดยย่อ
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-slate-800">
+                ผลคำพิพากษาโดยย่อ
+              </label>
+              <span className="text-[10px] text-slate-400">เลือกผลคำพิพากษาด่วนได้</span>
+            </div>
+
+            {/* Quick Chips */}
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {QUICK_OUTCOME_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setJudgmentOutcome(suggestion)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full border transition cursor-pointer ${
+                    judgmentOutcome === suggestion
+                      ? 'bg-amber-600 text-white border-amber-600 font-semibold'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300'
+                  }`}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+
             <input
               type="text"
               placeholder="เช่น ลงโทษจำคุก 2 ปี ปรับ 50,000 บาท รอการลงโทษ 2 ปี, ยกฟ้อง"
               value={judgmentOutcome}
               onChange={(e) => setJudgmentOutcome(e.target.value)}
               className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+
+          {/* Full Judgment Text / Verdict Details */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-800 mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5 text-blue-600" />
+                <span>สาระสำคัญ / ข้อความคำพิพากษาฉบับเต็ม</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-normal">พิมพ์หรือวางข้อความคำพิพากษา</span>
+            </label>
+            <textarea
+              rows={3}
+              placeholder="กรอกสาระสำคัญของคำพิพากษา คำวินิจฉัยของศาล หรือคัดลอกข้อความคำพิพากษามาวางที่นี่..."
+              value={fullJudgmentText}
+              onChange={(e) => setFullJudgmentText(e.target.value)}
+              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans leading-relaxed"
             />
           </div>
 
@@ -215,20 +271,20 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+              className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition shadow-xs flex items-center gap-1.5"
+              className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>เริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน</span>
+              <span>{isEditingExisting ? 'บันทึกการแก้ไขคำพิพากษา' : 'เริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'}</span>
             </button>
           </div>
         </form>

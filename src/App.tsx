@@ -266,8 +266,18 @@ export default function App() {
     const unsubCases = subscribeToCases(
       (remoteCases) => {
         setConnectionStatus('connected');
-        setCases(remoteCases);
-        saveCases(remoteCases);
+        if (remoteCases.length > 0) {
+          setCases(remoteCases);
+          saveCases(remoteCases);
+        } else {
+          // If remote is empty, seed local cases to Firestore so all clients get them
+          const localCases = getSavedCases();
+          if (localCases.length > 0) {
+            saveCasesBatchToFirestore(localCases).catch((e) =>
+              console.warn('Auto-seed cases to Firestore failed:', e)
+            );
+          }
+        }
       },
       (err) => {
         console.warn('Real-time cases sync error:', err);
@@ -278,10 +288,21 @@ export default function App() {
     // 2. Real-time subscribe to monthly duty rosters
     const unsubRosters = subscribeToDutyRosters(
       (remoteRosters) => {
-        setDutyRosters(remoteRosters);
-        saveDutyRosters(remoteRosters);
-        if (!activeDutyRosterId && remoteRosters[0]) {
-          setActiveDutyRosterId(remoteRosters[0].id);
+        if (remoteRosters.length > 0) {
+          setDutyRosters(remoteRosters);
+          saveDutyRosters(remoteRosters);
+          if (!activeDutyRosterId && remoteRosters[0]) {
+            setActiveDutyRosterId(remoteRosters[0].id);
+          }
+        } else {
+          const localRosters = getSavedDutyRosters();
+          if (localRosters.length > 0) {
+            for (const r of localRosters) {
+              saveDutyRosterToFirestore(r).catch((e) =>
+                console.warn('Auto-seed duty roster to Firestore failed:', e)
+              );
+            }
+          }
         }
       },
       (err) => {
@@ -293,8 +314,19 @@ export default function App() {
     // 3. Real-time subscribe to daily follow-ups
     const unsubFollowUps = subscribeToFollowUps(
       (remoteFollowUps) => {
-        setFollowUps(remoteFollowUps);
-        saveFollowUps(remoteFollowUps);
+        if (remoteFollowUps.length > 0) {
+          setFollowUps(remoteFollowUps);
+          saveFollowUps(remoteFollowUps);
+        } else {
+          const localFollowUps = getSavedFollowUps();
+          if (localFollowUps.length > 0) {
+            for (const f of localFollowUps) {
+              saveFollowUpToFirestore(f).catch((e) =>
+                console.warn('Auto-seed follow-up to Firestore failed:', e)
+              );
+            }
+          }
+        }
       },
       (err) => {
         console.warn('Real-time followups sync error:', err);
@@ -704,6 +736,8 @@ export default function App() {
         notes: notes ? `${targetCase.notes || ''} | ${notes}` : targetCase.notes,
         updatedAt: new Date().toISOString(),
       };
+      delete updatedCase.extendedDeadline;
+      delete updatedCase.extensionCount;
       showToast(`ยกเลิกการขยายเวลาสำนวน ${targetCase.blackCaseNo} คืนค่าวันครบกำหนดเดิมเรียบร้อยแล้ว`);
     } else {
       updatedCase = {
@@ -742,18 +776,13 @@ export default function App() {
       message: `คุณแน่ใจหรือไม่ว่าต้องการลบสำนวนคดีดำ ${targetCase.blackCaseNo} (แดง ${targetCase.redCaseNo}) ออกจากระบบ? การกระทำนี้ไม่สามารถย้อนกลับได้`,
       confirmText: 'ลบสำนวน',
       isDestructive: true,
-      onConfirm: async () => {
-        try {
-          const remaining = cases.filter((c) => c.id !== caseId);
-          setCases(remaining);
-          saveCases(remaining);
-          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-          await deleteCaseFromFirestore(caseId);
-          showToast(`ลบสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
-        } catch (e: any) {
-          console.error('Delete case error:', e);
-          showToast(`เกิดข้อผิดพลาดในการลบ: ${e.message || 'ไม่สามารถลบได้'}`);
-        }
+      onConfirm: () => {
+        const remaining = cases.filter((c) => c.id !== caseId);
+        setCases(remaining);
+        saveCases(remaining);
+        deleteCaseFromFirestore(caseId).catch((e) => console.warn('Firestore delete error:', e));
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        showToast(`ลบสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
       },
     });
   };
@@ -1020,6 +1049,7 @@ export default function App() {
       redCaseNo?: string;
       judgmentOutcome: string;
       appealDeadline: string;
+      fullJudgmentText?: string;
     },
     syncToCalendar: boolean
   ) => {
@@ -1032,6 +1062,8 @@ export default function App() {
       judgmentDate: judgmentData.judgmentDate,
       redCaseNo: judgmentData.redCaseNo || target.redCaseNo,
       judgmentOutcome: judgmentData.judgmentOutcome || target.judgmentOutcome,
+      fullJudgmentText:
+        judgmentData.fullJudgmentText !== undefined ? judgmentData.fullJudgmentText : target.fullJudgmentText,
       appealDeadline: judgmentData.appealDeadline,
       updatedAt: new Date().toISOString(),
     };
@@ -1451,6 +1483,23 @@ export default function App() {
               </span>
             </button>
           </div>
+
+          <div className="flex items-center gap-2">
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAddCaseInitialFilingDate(undefined);
+                  setAddCaseInitialResponsiblePerson(undefined);
+                  setIsAddCaseOpen(true);
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>เพิ่มสำนวนคุมอุทธรณ์ 1 เดือน</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Tab 1: All Appeal Cases Table View */}
@@ -1462,6 +1511,10 @@ export default function App() {
             externalSearchTerm={globalVoiceQuery}
             onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
             onExtendDeadline={(caseItem) => setSelectedCaseForExtend(caseItem)}
+            onRecordJudgment={(caseItem) => {
+              setSelectedCaseForRecordJudgment(caseItem);
+              setIsRecordJudgmentOpen(true);
+            }}
             onEditCase={(caseItem) => {
               setSelectedCaseForEdit(caseItem);
               setIsEditCaseOpen(true);
@@ -1505,6 +1558,7 @@ export default function App() {
             }}
             onQuickAssignOfficer={handleQuickAssignOfficer}
             onBatchAssignOfficerToDate={handleBatchAssignOfficerToDate}
+            onDeleteCase={handleDeleteCase}
             onToast={showToast}
           />
         )}
@@ -1577,6 +1631,12 @@ export default function App() {
         caseItem={selectedCaseForExtend}
         onClose={() => setSelectedCaseForExtend(null)}
         onConfirmExtend={handleConfirmExtend}
+        token={token}
+        onToast={showToast}
+        onOpenCourtPetition={(caseItem) => {
+          setSelectedCaseForExtend(null);
+          setCaseForCourtPetition(caseItem);
+        }}
       />
 
       <JudgmentDocModal
