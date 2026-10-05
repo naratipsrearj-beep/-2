@@ -30,7 +30,6 @@ export const ADMIN_EMAIL = 'naratipsrearj@gmail.com';
 export interface ProjectSettings {
   adminEmail: string;
   allowedEditors: string[];
-  adminPin?: string;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -49,7 +48,6 @@ export interface PermissionRequest {
 export const DEFAULT_SETTINGS: ProjectSettings = {
   adminEmail: ADMIN_EMAIL,
   allowedEditors: [],
-  adminPin: '5555',
   updatedAt: new Date().toISOString(),
 };
 
@@ -283,27 +281,6 @@ export async function updateProjectSettingsInFirestore(
       updatedBy: userEmail,
     },
     { merge: true }
-  );
-}
-
-/**
- * Update Admin PIN in Firestore (Admin only)
- */
-export async function updateAdminPinInFirestore(
-  newPin: string,
-  currentSettings: ProjectSettings,
-  adminEmail: string
-): Promise<void> {
-  const cleanPin = newPin.trim();
-  if (!cleanPin) {
-    throw new Error('กรุณาระบุรหัสผ่าน PIN');
-  }
-  await updateProjectSettingsInFirestore(
-    {
-      ...currentSettings,
-      adminPin: cleanPin,
-    },
-    adminEmail
   );
 }
 

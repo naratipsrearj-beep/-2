@@ -106,67 +106,6 @@ export function formatCompactCaseForClipboard(c: AppealCase): string {
 }
 
 /**
- * Format case data as a Tab-Separated Value (TSV) row
- * for direct pasting (Ctrl+V) into Excel, Google Sheets, or Office Registry systems
- */
-export function formatCaseForOfficeTsv(c: AppealCase): string {
-  const values = [
-    c.blackCaseNo || '',
-    c.redCaseNo || '',
-    c.receivedNumberS1 || '',
-    c.filingNumberS4 || '',
-    c.filingDate || '',
-    c.court || '',
-    c.plaintiff || '',
-    c.defendant || '',
-    c.caseType || 'อาญา',
-    c.judgmentDate || '',
-    c.judgmentOutcome ? c.judgmentOutcome.replace(/\t|\n/g, ' ') : '',
-    c.appealDeadline || '',
-    c.extendedDeadline || '',
-    c.extensionCount ? String(c.extensionCount) : '',
-    c.prosecutorName || '',
-    c.responsiblePerson || '',
-    c.isCompleted ? 'เสร็จสิ้น' : (c.judgmentDate ? 'คุมอุทธรณ์' : 'พิจารณา'),
-    c.notes ? c.notes.replace(/\t|\n/g, ' ') : '',
-  ];
-
-  return values.join('\t');
-}
-
-/**
- * Format multiple cases as TSV table with standard office header
- */
-export function formatCasesBatchForOfficeTsv(cases: AppealCase[], includeHeader: boolean = true): string {
-  const header = [
-    'คดีดำ',
-    'คดีแดง',
-    'เลขรับ ส.1',
-    'เลขฟ้อง ส.4',
-    'วันที่ยื่นฟ้อง',
-    'ศาล',
-    'โจทก์',
-    'จำเลย',
-    'ประเภทคดี',
-    'วันพิพากษา',
-    'ผลคำพิพากษา',
-    'ครบกำหนดอุทธรณ์ 1 เดือน',
-    'วันขยายเวลาอุทธรณ์',
-    'ขยายครั้งที่',
-    'อัยการเจ้าของสำนวน/เวรชี้',
-    'ผู้รับผิดชอบ',
-    'สถานะสำนวน',
-    'หมายเหตุ',
-  ].join('\t');
-
-  const rows = cases.map((c) => formatCaseForOfficeTsv(c));
-  if (includeHeader) {
-    return [header, ...rows].join('\n');
-  }
-  return rows.join('\n');
-}
-
-/**
  * Universal copy helper with fallback for iframe/cross-origin security
  */
 export async function copyTextToClipboard(text: string): Promise<boolean> {

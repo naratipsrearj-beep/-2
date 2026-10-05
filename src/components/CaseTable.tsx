@@ -19,8 +19,7 @@ import {
   FileText,
   ExternalLink,
   Mail,
-  Copy,
-  QrCode
+  Copy
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
@@ -41,8 +40,6 @@ interface CaseTableProps {
   onOpenAppointmentModal?: (caseItem: AppealCase) => void;
   onDeleteCase: (id: string) => void;
   onAddNewCase: () => void;
-  onOpenFileLabel?: (caseItem: AppealCase) => void;
-  onOpenCourtPetition?: (caseItem: AppealCase) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -60,8 +57,6 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onOpenAppointmentModal,
   onDeleteCase,
   onAddNewCase,
-  onOpenFileLabel,
-  onOpenCourtPetition,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -705,8 +700,6 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <CopyCaseDropdown
                               caseItem={caseItem}
                               onToast={onToast}
-                              onOpenFileLabel={onOpenFileLabel}
-                              onOpenCourtPetition={onOpenCourtPetition}
                             />
 
                             {onEditCase && (
@@ -733,8 +726,6 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <CopyCaseDropdown
                               caseItem={caseItem}
                               onToast={onToast}
-                              onOpenFileLabel={onOpenFileLabel}
-                              onOpenCourtPetition={onOpenCourtPetition}
                             />
 
                             {onOpenJudgmentDoc && (
