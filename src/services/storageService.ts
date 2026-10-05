@@ -1,20 +1,9 @@
 import { AppealCase, DailyJudgmentFollowUp, SheetConfig, MonthlyDutyRoster } from '../types/appeal';
 
-const STORAGE_KEY_CASES = 'appeal_tracker_cases_v2';
-const STORAGE_KEY_FOLLOWUPS = 'appeal_tracker_followups_v2';
-const STORAGE_KEY_SHEET_CONFIG = 'appeal_tracker_sheet_config_v2';
-const STORAGE_KEY_DUTY_ROSTERS = 'appeal_tracker_duty_rosters_v2';
-
-// Purge legacy v1 cache to prevent resurrecting deleted cases
-try {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    window.localStorage.removeItem('appeal_tracker_cases_v1');
-    window.localStorage.removeItem('appeal_tracker_followups_v1');
-    window.localStorage.removeItem('appeal_tracker_duty_rosters_v1');
-  }
-} catch {
-  // ignore
-}
+const STORAGE_KEY_CASES = 'appeal_tracker_cases_v1';
+const STORAGE_KEY_FOLLOWUPS = 'appeal_tracker_followups_v1';
+const STORAGE_KEY_SHEET_CONFIG = 'appeal_tracker_sheet_config_v1';
+const STORAGE_KEY_DUTY_ROSTERS = 'appeal_tracker_duty_rosters_v1';
 
 export function getSavedSheetConfig(): SheetConfig | null {
   try {
@@ -42,7 +31,7 @@ export function getSavedCases(): AppealCase[] {
   } catch (e) {
     console.error('Failed to parse saved cases', e);
   }
-  return [];
+  return getInitialSampleCases();
 }
 
 export function saveCases(cases: AppealCase[]) {
@@ -58,7 +47,7 @@ export function getSavedFollowUps(): DailyJudgmentFollowUp[] {
   } catch (e) {
     console.error('Failed to parse saved followups', e);
   }
-  return [];
+  return getInitialSampleFollowUps();
 }
 
 export function saveFollowUps(items: DailyJudgmentFollowUp[]) {
@@ -74,7 +63,7 @@ export function getSavedDutyRosters(): MonthlyDutyRoster[] {
   } catch (e) {
     console.error('Failed to parse saved duty rosters', e);
   }
-  return [];
+  return getInitialSampleDutyRosters();
 }
 
 export function saveDutyRosters(rosters: MonthlyDutyRoster[]) {
