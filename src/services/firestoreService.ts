@@ -197,6 +197,7 @@ export function subscribeToProjectSettings(
         onData({
           adminEmail: data.adminEmail || ADMIN_EMAIL,
           allowedEditors: data.allowedEditors || [],
+          adminPin: data.adminPin || DEFAULT_ADMIN_PIN,
           updatedAt: data.updatedAt,
         });
       } else {
@@ -495,19 +496,13 @@ export async function seedInitialFirestoreDataIfEmpty(
   initialFollowUps?: DailyJudgmentFollowUp[]
 ): Promise<boolean> {
   try {
-    const settingsDocRef = doc(db, 'settings', 'permissions');
-    const settingsDoc = await getDoc(settingsDocRef);
-    
-    // หากเคยตั้งค่าหรือบันทึกข้อมูลเริ่มต้นไปแล้ว จะไม่ทำการ seed ข้อมูลจำลองซ้ำอีก
-    // เพื่อป้องกันกรณีที่ผู้ใช้ตั้งใจลบข้อมูลทั้งหมดแล้วข้อมูลเดิมเด้งกลับมา
-    if (settingsDoc.exists() && settingsDoc.data()?.isInitialized) {
-      return false;
-    }
-
     const casesSnap = await getDocs(collection(db, 'cases'));
+    let didSeed = false;
+
     if (casesSnap.empty && initialCases.length > 0) {
       await saveCasesBatchToFirestore(initialCases);
       console.log('Seeded initial cases to Firestore');
+      didSeed = true;
     }
 
     const rostersSnap = await getDocs(collection(db, 'duty_rosters'));
@@ -516,6 +511,7 @@ export async function seedInitialFirestoreDataIfEmpty(
         await saveDutyRosterToFirestore(r);
       }
       console.log('Seeded initial duty rosters to Firestore');
+      didSeed = true;
     }
 
     if (initialFollowUps && initialFollowUps.length > 0) {
@@ -525,10 +521,11 @@ export async function seedInitialFirestoreDataIfEmpty(
           await saveFollowUpToFirestore(f);
         }
         console.log('Seeded initial follow-ups to Firestore');
+        didSeed = true;
       }
     }
 
-    // มาร์กไว้ว่าระบบเคยเริ่มต้นแล้ว
+    const settingsDocRef = doc(db, 'settings', 'permissions');
     await setDoc(
       settingsDocRef,
       {
@@ -538,7 +535,7 @@ export async function seedInitialFirestoreDataIfEmpty(
       },
       { merge: true }
     );
-    return true;
+    return didSeed;
   } catch (err) {
     console.warn('Error during Firestore seed:', err);
     return false;

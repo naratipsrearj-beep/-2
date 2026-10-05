@@ -232,11 +232,28 @@ export default function App() {
 
   // Real-time Firestore Subscriptions (active for all users, live sync across all devices)
   useEffect(() => {
+    // Immediate seed if Firestore is empty on first boot
+    seedInitialFirestoreDataIfEmpty(
+      getSavedCases(),
+      getSavedDutyRosters(),
+      getSavedFollowUps()
+    ).catch((e) => console.warn('First-boot seed error:', e));
+
     // 1. Real-time subscribe to all cases (all clients sync instantly)
     const unsubCases = subscribeToCases(
       (remoteCases) => {
-        setCases(remoteCases);
-        saveCases(remoteCases);
+        if (remoteCases.length > 0) {
+          setCases(remoteCases);
+          saveCases(remoteCases);
+        } else {
+          // If remote is empty, seed local cases to Firestore so all clients get them
+          const localCases = getSavedCases();
+          if (localCases.length > 0) {
+            saveCasesBatchToFirestore(localCases).catch((e) =>
+              console.warn('Auto-seed cases to Firestore failed:', e)
+            );
+          }
+        }
       },
       (err) => console.warn('Real-time cases sync error:', err)
     );
@@ -244,12 +261,21 @@ export default function App() {
     // 2. Real-time subscribe to monthly duty rosters
     const unsubRosters = subscribeToDutyRosters(
       (remoteRosters) => {
-        setDutyRosters(remoteRosters);
-        saveDutyRosters(remoteRosters);
-        if (!activeDutyRosterId && remoteRosters[0]) {
-          setActiveDutyRosterId(remoteRosters[0].id);
-        } else if (remoteRosters.length === 0) {
-          setActiveDutyRosterId(undefined);
+        if (remoteRosters.length > 0) {
+          setDutyRosters(remoteRosters);
+          saveDutyRosters(remoteRosters);
+          if (!activeDutyRosterId && remoteRosters[0]) {
+            setActiveDutyRosterId(remoteRosters[0].id);
+          }
+        } else {
+          const localRosters = getSavedDutyRosters();
+          if (localRosters.length > 0) {
+            for (const r of localRosters) {
+              saveDutyRosterToFirestore(r).catch((e) =>
+                console.warn('Auto-seed duty roster to Firestore failed:', e)
+              );
+            }
+          }
         }
       },
       (err) => console.warn('Real-time duty rosters sync error:', err)
@@ -258,8 +284,19 @@ export default function App() {
     // 3. Real-time subscribe to daily follow-ups
     const unsubFollowUps = subscribeToFollowUps(
       (remoteFollowUps) => {
-        setFollowUps(remoteFollowUps);
-        saveFollowUps(remoteFollowUps);
+        if (remoteFollowUps.length > 0) {
+          setFollowUps(remoteFollowUps);
+          saveFollowUps(remoteFollowUps);
+        } else {
+          const localFollowUps = getSavedFollowUps();
+          if (localFollowUps.length > 0) {
+            for (const f of localFollowUps) {
+              saveFollowUpToFirestore(f).catch((e) =>
+                console.warn('Auto-seed follow-up to Firestore failed:', e)
+              );
+            }
+          }
+        }
       },
       (err) => console.warn('Real-time followups sync error:', err)
     );
@@ -291,17 +328,6 @@ export default function App() {
       if (unsubRequests) unsubRequests();
     };
   }, [user]);
-
-  // Seed initial sample data to cloud if admin and first time
-  useEffect(() => {
-    if (user && userRole === 'admin') {
-      seedInitialFirestoreDataIfEmpty(
-        getSavedCases(),
-        getSavedDutyRosters(),
-        getSavedFollowUps()
-      );
-    }
-  }, [user, userRole]);
 
   // Save to localStorage whenever data changes
   useEffect(() => {
@@ -761,6 +787,10 @@ export default function App() {
     );
     setCases(updated);
     saveCases(updated);
+    const targetCase = updated.find((c) => c.id === caseId);
+    if (targetCase) {
+      saveCaseToFirestore(targetCase).catch((e) => console.warn('Firestore judgment save error:', e));
+    }
     showToast('บันทึกคำพิพากษาและเชื่อมโยง Google Docs เรียบร้อยแล้ว');
   };
 
