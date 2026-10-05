@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, UserPlus, Trash2, CheckCircle2, Clock, AlertTriangle, Shield, User, Users, Mail, KeyRound, Eye, EyeOff, Edit3, Save } from 'lucide-react';
+import { X, ShieldCheck, UserPlus, Trash2, CheckCircle2, Clock, AlertTriangle, Shield, User, Users, Mail } from 'lucide-react';
 import { ProjectSettings, PermissionRequest, ADMIN_EMAIL } from '../services/firestoreService';
 
 interface UserPermissionsModalProps {
@@ -11,7 +11,6 @@ interface UserPermissionsModalProps {
   onRejectRequest: (requestId: string) => Promise<void>;
   onAddEditor: (email: string) => Promise<void>;
   onRemoveEditor: (email: string) => Promise<void>;
-  onUpdateAdminPin?: (newPin: string) => Promise<void>;
   isProcessing?: boolean;
 }
 
@@ -24,35 +23,15 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   onRejectRequest,
   onAddEditor,
   onRemoveEditor,
-  onUpdateAdminPin,
   isProcessing = false,
 }) => {
   const [newEditorEmail, setNewEditorEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showPin, setShowPin] = useState(false);
-  const [isEditingPin, setIsEditingPin] = useState(false);
-  const [newPinInput, setNewPinInput] = useState('');
-  const [pinSuccessMsg, setPinSuccessMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const pendingRequests = requests.filter((r) => r.status === 'pending');
   const allowedEditors = settings.allowedEditors || [];
-
-  const handlePinUpdateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPinInput.trim()) return;
-    try {
-      if (onUpdateAdminPin) {
-        await onUpdateAdminPin(newPinInput.trim());
-      }
-      setPinSuccessMsg('เปลี่ยนรหัสผ่าน PIN แอดมินเรียบร้อยแล้ว');
-      setIsEditingPin(false);
-      setTimeout(() => setPinSuccessMsg(null), 4000);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'ไม่สามารถเปลี่ยนรหัส PIN ได้');
-    }
-  };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,92 +99,6 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
                 และมีสิทธิ์เพิ่มหรือถอดถอนผู้ช่วยแก้ไขข้อมูล (Editors)
               </p>
             </div>
-          </div>
-
-          {/* Admin Office PIN Secret Card */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-amber-600" />
-                <span className="text-xs font-bold text-slate-800">
-                  รหัสผ่าน PIN แอดมิน (ความลับเฉพาะแอดมิน)
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="bg-amber-100 text-amber-950 border border-amber-300 font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg shadow-2xs tracking-widest">
-                  {showPin ? (settings.adminPin || '5555') : '••••'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowPin(!showPin)}
-                  className="p-1 text-slate-500 hover:text-slate-800 rounded hover:bg-slate-200 transition cursor-pointer"
-                  title={showPin ? 'ซ่อนรหัส PIN' : 'กดเพื่อดูรหัส PIN'}
-                >
-                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              รหัสผ่านนี้<strong>ถูกซ่อนไว้เป็นความลับ</strong>และจะไม่ปรากฏบนหน้าจอเข้าสู่ระบบหรือโหมดเข้าชมทั่วไป แอดมินสามารถนำรหัสนี้ไปใช้เข้าสู่ระบบบนเครื่องอื่นๆ หรือกดเปลี่ยนรหัส PIN ใหม่ได้ที่นี่
-            </p>
-
-            {/* Change PIN Form or Button */}
-            {!isEditingPin ? (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsEditingPin(true);
-                    setNewPinInput(settings.adminPin || '5555');
-                    setPinSuccessMsg(null);
-                  }}
-                  className="text-xs text-amber-700 hover:text-amber-800 font-bold inline-flex items-center gap-1.5 transition cursor-pointer hover:underline"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>เปลี่ยนรหัสผ่าน PIN ใหม่</span>
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handlePinUpdateSubmit} className="pt-2 border-t border-slate-200 space-y-2">
-                <label className="block text-[11px] font-semibold text-slate-700">
-                  ตั้งรหัสผ่าน PIN ใหม่ที่ต้องการ (เช่น 4-8 หลัก):
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    maxLength={20}
-                    value={newPinInput}
-                    onChange={(e) => setNewPinInput(e.target.value)}
-                    placeholder="รหัส PIN ใหม่"
-                    className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-900 tracking-wider focus:outline-none focus:border-amber-500"
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    disabled={isProcessing || !newPinInput.trim()}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition disabled:opacity-50 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>บันทึก</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingPin(false)}
-                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium px-2.5 py-1.5 rounded-lg transition cursor-pointer"
-                  >
-                    ยกเลิก
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {pinSuccessMsg && (
-              <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1 animate-in fade-in">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>{pinSuccessMsg}</span>
-              </p>
-            )}
           </div>
 
           {/* Section 1: Pending Permission Requests */}

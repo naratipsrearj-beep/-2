@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { X, Send, ShieldAlert, CheckCircle2, Clock, Mail } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { ADMIN_EMAIL } from '../services/firestoreService';
-import { AppAuthUser } from '../services/auth';
 
 interface RequestEditModalProps {
   isOpen: boolean;
   onClose: () => void;
-  user: User | AppAuthUser;
+  user: User;
   onRequest: (note: string) => Promise<void>;
   existingRequestStatus?: 'pending' | 'approved' | 'rejected' | null;
 }
