@@ -18,11 +18,12 @@ import {
   UserCheck,
   Eye,
   ShieldAlert,
-  Users
+  Users,
+  KeyRound
 } from 'lucide-react';
 
 import { AppealCase, DailyJudgmentFollowUp, SheetConfig, CaseCompletionReason, MonthlyDutyRoster, DailyDutyRecord } from './types/appeal';
-import { initAuth, googleSignIn, logout, getAccessToken } from './services/auth';
+import { initAuth, googleSignIn, logout, getAccessToken, AppAuthUser, loginWithAdminPin, getSavedPinAdminSession, clearPinAdminSession } from './services/auth';
 import {
   fetchAppealCases,
   appendAppealCase,
@@ -49,7 +50,9 @@ import {
   ProjectSettings,
   PermissionRequest,
   DEFAULT_SETTINGS,
+  DEFAULT_ADMIN_PIN,
   ADMIN_EMAIL,
+  updateAdminPin,
   subscribeToCases,
   subscribeToDutyRosters,
   subscribeToFollowUps,
@@ -93,6 +96,7 @@ import { RecordJudgmentModal } from './components/RecordJudgmentModal';
 import { LoginScreen } from './components/LoginScreen';
 import { UserPermissionsModal } from './components/UserPermissionsModal';
 import { RequestEditModal } from './components/RequestEditModal';
+import { AdminLoginModal } from './components/AdminLoginModal';
 import { createDailyFilingDoc } from './services/docsService';
 import { checkAndSendAutomaticEmailAlerts } from './services/gmailService';
 import { CourtAppointmentType, CaseAppointment } from './types/appeal';
@@ -100,11 +104,12 @@ import { getAppointmentLabel } from './utils/appointmentUtils';
 
 export default function App() {
   // Auth & Roles state
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | AppAuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [authInitializing, setAuthInitializing] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState(false);
 
   // Firestore Project Settings & Permissions
   const [projectSettings, setProjectSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS);
@@ -114,10 +119,11 @@ export default function App() {
   const [isProcessingPermissions, setIsProcessingPermissions] = useState(false);
   const [isPushingLocal, setIsPushingLocal] = useState(false);
 
-  // RBAC Roles: Admin (naratipsrearj@gmail.com) | Editor | Viewer
+  // RBAC Roles: Admin (naratipsrearj@gmail.com / Admin PIN) | Editor | Viewer
+  const isPinAdmin = Boolean((user as AppAuthUser)?.isPinAdmin);
   const userRole = React.useMemo(
-    () => getUserRole(user?.email, projectSettings),
-    [user?.email, projectSettings]
+    () => getUserRole(user?.email, projectSettings, isPinAdmin),
+    [user?.email, projectSettings, isPinAdmin]
   );
   const canEdit = React.useMemo(() => canUserEdit(userRole), [userRole]);
 
@@ -199,7 +205,13 @@ export default function App() {
       setActiveDutyRosterId(loadedRosters[0].id);
     }
 
-    // Initialize Auth Listener
+    // Initialize Auth Listener & Check Saved PIN Session
+    const savedPinSession = getSavedPinAdminSession();
+    if (savedPinSession) {
+      setUser(savedPinSession);
+      setAuthInitializing(false);
+    }
+
     const unsubscribe = initAuth(
       (currentUser, accessToken) => {
         setUser(currentUser);
@@ -207,8 +219,10 @@ export default function App() {
         setAuthInitializing(false);
       },
       () => {
-        setUser(null);
-        setToken(null);
+        if (!getSavedPinAdminSession()) {
+          setUser(null);
+          setToken(null);
+        }
         setAuthInitializing(false);
       }
     );
@@ -356,11 +370,46 @@ export default function App() {
     }
   };
 
+  const handlePinLogin = (pin: string) => {
+    try {
+      const adminUser = loginWithAdminPin(pin, projectSettings.adminPin || DEFAULT_ADMIN_PIN);
+      setUser(adminUser);
+      showToast('เข้าสู่ระบบในสถานะแอดมินเรียบร้อยแล้ว');
+    } catch (err: any) {
+      showToast(err.message || 'รหัส PIN ไม่ถูกต้อง');
+    }
+  };
+
+  const handleGuestLogin = () => {
+    setUser({
+      uid: 'viewer-guest',
+      email: null,
+      displayName: 'ผู้เยี่ยมชม (Viewer)',
+      photoURL: null,
+      isPinAdmin: false,
+    });
+    showToast('เข้าชมในโหมดดูข้อมูลทั่วไป (Read-only)');
+  };
+
   const handleLogout = async () => {
     await logout();
+    clearPinAdminSession();
     setUser(null);
     setToken(null);
     showToast('ออกจากระบบเรียบร้อยแล้ว');
+  };
+
+  const handleUpdateAdminPin = async (newPin: string) => {
+    if (!user || userRole !== 'admin') return;
+    try {
+      const updated = await updateAdminPin(newPin, projectSettings, user.displayName || user.email || 'admin');
+      setProjectSettings(updated);
+      showToast(`อัปเดตรหัส PIN แอดมินเป็น "${newPin}" สำเร็จ`);
+    } catch (err: any) {
+      console.error('Update PIN failed', err);
+      showToast('บันทึกรหัส PIN ไม่สำเร็จ: ' + err.message);
+      throw err;
+    }
   };
 
   // Permission Request & Management Handlers
@@ -1147,8 +1196,11 @@ export default function App() {
     return (
       <LoginScreen
         onLogin={handleLogin}
+        onPinLogin={handlePinLogin}
+        onGuestLogin={handleGuestLogin}
         isLoggingIn={isLoggingIn}
         loginError={loginError}
+        adminPin={projectSettings.adminPin || DEFAULT_ADMIN_PIN}
       />
     );
   }
@@ -1173,6 +1225,7 @@ export default function App() {
         todayDutyOfficer={todayDutyOfficer}
         onOpenDutyRoster={() => setActiveTab('duty_roster')}
         onLogin={handleLogin}
+        onOpenAdminPinLogin={() => setIsAdminPinModalOpen(true)}
         onLogout={handleLogout}
         onOpenSheetSettings={() => setIsSheetModalOpen(true)}
         onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
@@ -1202,18 +1255,28 @@ export default function App() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  ข้อมูลสำนวนคดีและตารางเวรชี้อัปเดตเป็นปัจจุบันแบบเรียลไทม์จากแอดมิน ({ADMIN_EMAIL}) หากต้องการเพิ่มหรือแก้ไขข้อมูล สามารถกดขอสิทธิ์แก้ไขได้
+                  ข้อมูลสำนวนคดีและตารางเวรชี้อัปเดตเป็นปัจจุบันแบบเรียลไทม์จากแอดมิน ({ADMIN_EMAIL}) หากมีรหัส PIN แอดมิน สามารถกดปลดล็อคสิทธิ์แก้ไขได้ทันที
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsRequestEditModalOpen(true)}
-              className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 flex-shrink-0 cursor-pointer"
-            >
-              <ShieldAlert className="w-4 h-4" />
-              <span>🙋 ขอสิทธิ์แก้ไขข้อมูลจากแอดมิน</span>
-            </button>
+            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsAdminPinModalOpen(true)}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>🔑 ปลดล็อคแอดมินด้วย PIN</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsRequestEditModalOpen(true)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ShieldAlert className="w-4 h-4 text-blue-400" />
+                <span>ขอสิทธิ์แก้ไข</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1521,7 +1584,16 @@ export default function App() {
         onRejectRequest={handleRejectRequest}
         onAddEditor={handleAddEditor}
         onRemoveEditor={handleRemoveEditor}
+        onUpdateAdminPin={handleUpdateAdminPin}
         isProcessing={isProcessingPermissions}
+      />
+
+      {/* Admin PIN Login Modal (Quick Unlock for Viewers or Guests) */}
+      <AdminLoginModal
+        isOpen={isAdminPinModalOpen}
+        onClose={() => setIsAdminPinModalOpen(false)}
+        onSuccess={handlePinLogin}
+        adminPin={projectSettings.adminPin || DEFAULT_ADMIN_PIN}
       />
 
       {/* Request Edit Permission Modal (Viewers) */}

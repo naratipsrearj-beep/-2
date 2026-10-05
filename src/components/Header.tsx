@@ -1,10 +1,11 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
+import { AppAuthUser } from '../services/auth';
 
 interface HeaderProps {
-  user: User | null;
+  user: User | AppAuthUser | null;
   token: string | null;
   role?: 'admin' | 'editor' | 'viewer';
   pendingRequestsCount?: number;
@@ -12,6 +13,7 @@ interface HeaderProps {
   todayDutyOfficer?: string;
   onOpenDutyRoster?: () => void;
   onLogin: () => void;
+  onOpenAdminPinLogin?: () => void;
   onLogout: () => void;
   onOpenSheetSettings: () => void;
   onOpenPermissionsModal?: () => void;
@@ -30,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   todayDutyOfficer,
   onOpenDutyRoster,
   onLogin,
+  onOpenAdminPinLogin,
   onLogout,
   onOpenSheetSettings,
   onOpenPermissionsModal,
@@ -46,6 +49,8 @@ export const Header: React.FC<HeaderProps> = ({
     month: 'long',
     year: 'numeric',
   }).format(new Date());
+
+  const isPinAdmin = Boolean((user as AppAuthUser)?.isPinAdmin);
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-md">
@@ -154,14 +159,26 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
+            {/* Viewer: Unlock Admin via PIN */}
+            {role === 'viewer' && onOpenAdminPinLogin && (
+              <button
+                onClick={onOpenAdminPinLogin}
+                className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+                title="เข้าสู่ระบบในสถานะแอดมินด้วยรหัสผ่าน PIN"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span>ปลดล็อคแอดมิน (PIN)</span>
+              </button>
+            )}
+
             {/* Viewer: Request Edit Button */}
             {role === 'viewer' && onRequestEditPermission && (
               <button
                 onClick={onRequestEditPermission}
-                className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition"
+                className="flex items-center gap-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition"
                 title="ขอสิทธิ์แก้ไขข้อมูลจากแอดมิน"
               >
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
                 <span>ขอสิทธิ์แก้ไข</span>
               </button>
             )}
@@ -177,7 +194,7 @@ export const Header: React.FC<HeaderProps> = ({
                   />
                 ) : (
                   <div className="w-6 h-6 rounded-full bg-amber-600 flex items-center justify-center font-bold text-white text-[10px]">
-                    {user.email ? user.email.charAt(0).toUpperCase() : 'U'}
+                    {isPinAdmin ? '👑' : user.email ? user.email.charAt(0).toUpperCase() : 'U'}
                   </div>
                 )}
                 <div className="hidden sm:block text-left">
@@ -188,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="text-[9px] font-bold tracking-wide">
                     {role === 'admin' ? (
                       <span className="text-amber-400 flex items-center gap-0.5">
-                        <span>👑 แอดมินหลัก</span>
+                        <span>👑 {isPinAdmin ? 'แอดมิน (PIN)' : 'แอดมินหลัก'}</span>
                       </span>
                     ) : role === 'editor' ? (
                       <span className="text-emerald-400 flex items-center gap-0.5">

@@ -59,7 +59,73 @@ export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
 
-export const logout = async () => {
-  await signOut(auth);
-  cachedAccessToken = null;
+export interface AppAuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL?: string | null;
+  isPinAdmin?: boolean;
+}
+
+export const DEFAULT_ADMIN_PIN = '951753';
+export const PIN_SESSION_KEY = 'appeal_app_admin_pin_session';
+
+export const getSavedPinAdminSession = (): AppAuthUser | null => {
+  try {
+    const raw = localStorage.getItem(PIN_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.isPinAdmin) {
+      return parsed;
+    }
+  } catch (err) {
+    console.error('Failed to parse PIN session', err);
+  }
+  return null;
 };
+
+export const savePinAdminSession = (user: AppAuthUser) => {
+  try {
+    localStorage.setItem(PIN_SESSION_KEY, JSON.stringify(user));
+  } catch (err) {
+    console.error('Failed to save PIN session', err);
+  }
+};
+
+export const clearPinAdminSession = () => {
+  try {
+    localStorage.removeItem(PIN_SESSION_KEY);
+  } catch (err) {
+    console.error('Failed to clear PIN session', err);
+  }
+};
+
+export const loginWithAdminPin = (inputPin: string, expectedPin: string = DEFAULT_ADMIN_PIN): AppAuthUser => {
+  const cleanInput = (inputPin || '').trim();
+  const cleanExpected = (expectedPin || DEFAULT_ADMIN_PIN).trim();
+
+  // Accept 951753 or configured PIN
+  if (cleanInput === cleanExpected || cleanInput === '951753') {
+    const adminUser: AppAuthUser = {
+      uid: 'admin-pin-' + Date.now(),
+      email: 'naratipsrearj@gmail.com',
+      displayName: 'ผู้ดูแลระบบ (Admin PIN)',
+      photoURL: null,
+      isPinAdmin: true
+    };
+    savePinAdminSession(adminUser);
+    return adminUser;
+  }
+  throw new Error('รหัสผ่าน PIN ไม่ถูกต้อง โปรดตรวจสอบรหัสผ่านอีกครั้ง');
+};
+
+export const logout = async () => {
+  try {
+    await signOut(auth);
+  } catch (e) {
+    console.warn('SignOut error or not signed in via Google', e);
+  }
+  cachedAccessToken = null;
+  clearPinAdminSession();
+};
+

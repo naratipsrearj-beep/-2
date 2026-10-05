@@ -59,6 +59,7 @@
         "allowedEditors": {
           "type": "array"
         },
+        "adminPin": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
       "required": ["adminEmail"]

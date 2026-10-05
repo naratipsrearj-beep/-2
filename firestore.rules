@@ -7,49 +7,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isProjectAdmin() {
-      return isAuthenticated() && (
-        request.auth.token.email.lower() == 'naratipsrearj@gmail.com'
-      );
-    }
-
-    function isEditor() {
-      return isProjectAdmin() || (
-        isAuthenticated() &&
-        exists(/databases/$(database)/documents/settings/permissions) &&
-        request.auth.token.email in get(/databases/$(database)/documents/settings/permissions).data.allowedEditors
-      );
-    }
-
-    // Cases collection: anyone can read live data (real-time sync for everyone); admin and permitted editors can write
+    // Cases collection: live data real-time sync across all clients and PIN admin
     match /cases/{caseId} {
-      allow read: if true;
-      allow write: if isEditor();
+      allow read, write: if true;
     }
 
     // Monthly duty rosters collection
     match /duty_rosters/{rosterId} {
-      allow read: if true;
-      allow write: if isEditor();
+      allow read, write: if true;
     }
 
     // Daily judgment follow-ups collection
     match /follow_ups/{followUpId} {
-      allow read: if true;
-      allow write: if isEditor();
+      allow read, write: if true;
     }
 
-    // Settings collection (permissions, app configuration)
+    // Settings collection (permissions, admin PIN, app configuration)
     match /settings/{settingId} {
-      allow read: if true;
-      allow write: if isProjectAdmin();
+      allow read, write: if true;
     }
 
-    // Permission requests collection (users request edit rights from admin)
+    // Permission requests collection
     match /permission_requests/{requestId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.email == request.auth.token.email;
-      allow update, delete: if isProjectAdmin();
+      allow read, write: if true;
     }
 
     // Default deny all other paths

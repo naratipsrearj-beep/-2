@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Calendar, AlertCircle, X, Check, Edit3, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Clock, Calendar, AlertCircle, X, Check, Edit3, Plus, RotateCcw, Trash2, FileText, ExternalLink, Loader2, Scale } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { createAppealExtensionMemoDoc } from '../services/docsService';
+import { getAccessToken } from '../services/auth';
 
 interface ExtendDeadlineModalProps {
   isOpen: boolean;
   caseItem: AppealCase | null;
   onClose: () => void;
   onConfirmExtend: (caseId: string, newDeadline: string | null, extensionCount: number, notes?: string) => void;
+  token?: string | null;
+  onToast?: (msg: string) => void;
+  onOpenCourtPetition?: (caseItem: AppealCase, newDeadline?: string, extensionCount?: number) => void;
 }
 
 export const ExtendDeadlineModal: React.FC<ExtendDeadlineModalProps> = ({
@@ -15,6 +20,9 @@ export const ExtendDeadlineModal: React.FC<ExtendDeadlineModalProps> = ({
   caseItem,
   onClose,
   onConfirmExtend,
+  token,
+  onToast,
+  onOpenCourtPetition,
 }) => {
   const hasExistingExtension = Boolean(caseItem?.extendedDeadline);
 
@@ -23,6 +31,8 @@ export const ExtendDeadlineModal: React.FC<ExtendDeadlineModalProps> = ({
   const [newDeadline, setNewDeadline] = useState<string>('');
   const [extensionCount, setExtensionCount] = useState<number>(1);
   const [notes, setNotes] = useState('');
+  const [isCreatingDoc, setIsCreatingDoc] = useState(false);
+  const [createdDocUrl, setCreatedDocUrl] = useState<string | null>(null);
 
   // Helper to add days to a date string YYYY-MM-DD
   const addDaysToDate = (baseDate: string, days: number): string => {
@@ -51,11 +61,44 @@ export const ExtendDeadlineModal: React.FC<ExtendDeadlineModalProps> = ({
       setExtensionCount(1);
     }
     setNotes('');
+    setCreatedDocUrl(null);
   }, [isOpen, caseItem]);
 
   if (!isOpen || !caseItem) return null;
 
   const currentEffectiveDeadline = caseItem.extendedDeadline || caseItem.appealDeadline || getTodayString();
+
+  // Create Google Docs Memo for Extension
+  const handleCreateDoc = async () => {
+    if (!newDeadline) {
+      alert('กรุณาระบุวันครบกำหนดขยายเวลาใหม่ก่อนสร้างเอกสาร');
+      return;
+    }
+    const currentToken = token || (await getAccessToken());
+    if (!currentToken) {
+      if (onToast) onToast('โปรดเข้าสู่ระบบ Google เพื่อสร้างเอกสาร Google Docs');
+      return;
+    }
+
+    try {
+      setIsCreatingDoc(true);
+      const res = await createAppealExtensionMemoDoc(
+        currentToken,
+        caseItem,
+        newDeadline,
+        extensionCount,
+        notes
+      );
+      setCreatedDocUrl(res.docUrl);
+      if (onToast) onToast('สร้างบันทึกข้อความขอขยายเวลาใน Google Docs สำเร็จแล้ว');
+      window.open(res.docUrl, '_blank');
+    } catch (err: any) {
+      console.error('Doc creation error:', err);
+      if (onToast) onToast(`ไม่สามารถสร้าง Google Docs ได้: ${err.message || 'เกิดข้อผิดพลาด'}`);
+    } finally {
+      setIsCreatingDoc(false);
+    }
+  };
 
   // Switch to Edit Mode (แก้ไขวันขยายเวลาเดิมที่กรอกไปแล้ว)
   const handleSwitchToEdit = () => {
@@ -289,6 +332,67 @@ export const ExtendDeadlineModal: React.FC<ExtendDeadlineModalProps> = ({
               onChange={(e) => setNotes(e.target.value)}
               className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
+          </div>
+
+          {/* Court Petition Tool (แบบพิมพ์ศาล ๗ พร้อมพิมพ์ลงกระดาษตราครุฑ) */}
+          {onOpenCourtPetition && (
+            <div className="bg-amber-50/80 border border-amber-300 rounded-xl p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-amber-200 text-amber-800 flex items-center justify-center shrink-0">
+                  <Scale className="w-4 h-4" />
+                </div>
+                <div className="text-xs min-w-0">
+                  <strong className="text-amber-950 block font-semibold truncate">
+                    แบบคำร้องศาล (แบบพิมพ์ศาล ๗ พิมพ์ลงกระดาษตราครุฑ)
+                  </strong>
+                  <span className="text-amber-800/80 text-[11px] block truncate">
+                    ดึงข้อมูลคดีดำ/แดง ศาลเพชรบุรี กำหนดเดิม/ใหม่ ออกแบบพิมพ์ศาลเปิดดูและพิมพ์ได้ทันที
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenCourtPetition(caseItem, newDeadline, extensionCount)}
+                className="px-3 py-1.5 text-xs font-bold text-amber-950 bg-amber-200 hover:bg-amber-300 border border-amber-400 rounded-lg transition shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>เปิดแบบคำร้อง ↗</span>
+              </button>
+            </div>
+          )}
+
+          {/* Google Docs Extension Memo Tool */}
+          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div className="text-xs min-w-0">
+                <strong className="text-blue-950 block font-semibold truncate">สร้างบันทึกข้อความขอขยายเวลา (Google Docs)</strong>
+                <span className="text-blue-700/80 text-[11px] block truncate">ดึงเลขคดี คู่ความ วันพิพากษา และเหตุผลทำเอกสารราชการพร้อมสั่งพิมพ์</span>
+              </div>
+            </div>
+            {createdDocUrl ? (
+              <a
+                href={createdDocUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-2xs flex items-center gap-1 shrink-0"
+              >
+                <span>เปิด Docs ↗</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCreateDoc}
+                disabled={isCreatingDoc}
+                className="px-3 py-1.5 text-xs font-bold text-blue-700 bg-white hover:bg-blue-100 border border-blue-300 rounded-lg transition shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+              >
+                {isCreatingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                <span>{isCreatingDoc ? 'กำลังสร้าง...' : 'สร้าง Docs'}</span>
+              </button>
+            )}
           </div>
 
           {/* Actions Bar */}

@@ -26,10 +26,12 @@ const customDbId =
 export const db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 
 export const ADMIN_EMAIL = 'naratipsrearj@gmail.com';
+export const DEFAULT_ADMIN_PIN = '951753';
 
 export interface ProjectSettings {
   adminEmail: string;
   allowedEditors: string[];
+  adminPin?: string;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -48,6 +50,7 @@ export interface PermissionRequest {
 export const DEFAULT_SETTINGS: ProjectSettings = {
   adminEmail: ADMIN_EMAIL,
   allowedEditors: [],
+  adminPin: DEFAULT_ADMIN_PIN,
   updatedAt: new Date().toISOString(),
 };
 
@@ -69,8 +72,12 @@ export async function testFirestoreConnection() {
  */
 export function getUserRole(
   email: string | null | undefined,
-  settings: ProjectSettings = DEFAULT_SETTINGS
+  settings: ProjectSettings = DEFAULT_SETTINGS,
+  isPinAdmin?: boolean
 ): 'admin' | 'editor' | 'viewer' {
+  if (isPinAdmin) {
+    return 'admin';
+  }
   if (!email) return 'viewer';
   const cleanEmail = email.toLowerCase().trim();
 
@@ -88,6 +95,23 @@ export function getUserRole(
   }
 
   return 'viewer';
+}
+
+export async function updateAdminPin(
+  newPin: string,
+  currentSettings: ProjectSettings,
+  updatedBy: string = 'admin'
+) {
+  const settingsRef = doc(db, 'settings', 'permissions');
+  const cleanPin = (newPin || DEFAULT_ADMIN_PIN).trim();
+  const updated: ProjectSettings = {
+    ...currentSettings,
+    adminPin: cleanPin,
+    updatedAt: new Date().toISOString(),
+    updatedBy,
+  };
+  await setDoc(settingsRef, updated, { merge: true });
+  return updated;
 }
 
 export function canUserEdit(role: 'admin' | 'editor' | 'viewer'): boolean {

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Copy, Check, ChevronDown, Scale, FileText, Sparkles, Share2, FileSpreadsheet } from 'lucide-react';
+import { Copy, Check, ChevronDown, Scale, FileText, Sparkles, Share2, FileSpreadsheet, QrCode, Table } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import {
   formatJudgmentForClipboard,
   formatCaseSummaryForClipboard,
   formatCompactCaseForClipboard,
+  formatCaseForOfficeTsv,
   copyTextToClipboard
 } from '../utils/copyCaseUtils';
 import { getDailyExportRow } from '../utils/dailyExportUtils';
@@ -12,6 +13,8 @@ import { getDailyExportRow } from '../utils/dailyExportUtils';
 interface CopyCaseDropdownProps {
   caseItem: AppealCase;
   onToast?: (message: string) => void;
+  onOpenFileLabel?: (caseItem: AppealCase) => void;
+  onOpenCourtPetition?: (caseItem: AppealCase) => void;
   variant?: 'compact' | 'button' | 'badge';
   className?: string;
 }
@@ -19,11 +22,13 @@ interface CopyCaseDropdownProps {
 export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
   caseItem,
   onToast,
+  onOpenFileLabel,
+  onOpenCourtPetition,
   variant = 'compact',
   className = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [copiedType, setCopiedType] = useState<'judgment' | 'summary' | 'compact' | 'sheets' | null>(null);
+  const [copiedType, setCopiedType] = useState<'judgment' | 'summary' | 'compact' | 'sheets' | 'office' | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -42,7 +47,7 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
   }, [isOpen]);
 
   const handleCopy = async (
-    type: 'judgment' | 'summary' | 'compact' | 'sheets',
+    type: 'judgment' | 'summary' | 'compact' | 'sheets' | 'office',
     e?: React.MouseEvent
   ) => {
     if (e) {
@@ -62,6 +67,9 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
     } else if (type === 'sheets') {
       textToCopy = getDailyExportRow(caseItem).join('\t');
       successMessage = `คัดลอกข้อมูล 7 คอลัมน์สำหรับ Google Sheets (${caseItem.blackCaseNo}) แล้ว (พร้อมกด Ctrl+V)`;
+    } else if (type === 'office') {
+      textToCopy = formatCaseForOfficeTsv(caseItem);
+      successMessage = `คัดลอกแถวสำหรับวางลง Excel / โปรแกรมสารบบ (${caseItem.blackCaseNo}) เรียบร้อยแล้ว (กด Ctrl+V วางได้ทันที)`;
     } else {
       textToCopy = formatCompactCaseForClipboard(caseItem);
       successMessage = `คัดลอกข้อความแบบย่อ ${caseItem.blackCaseNo} แล้ว`;
@@ -212,6 +220,82 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
               </div>
               {copiedType === 'sheets' && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
             </button>
+
+            {/* Option 5: Copy for Office System / Excel (TSV) */}
+            <button
+              type="button"
+              onClick={(e) => handleCopy('office', e)}
+              className="w-full text-left px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-950 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
+            >
+              <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-amber-600 group-hover:text-white transition">
+                <Table className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-slate-900 flex items-center gap-1">
+                  <span>คัดลอกแถวสำหรับ Excel / โปรแกรมสารบบ</span>
+                  <span className="bg-amber-100 text-amber-900 text-[9px] px-1 py-0.2 rounded font-bold">
+                    TSV
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  แยกคอลัมน์ให้อัตโนมัติ (ดำ, แดง, ส.1, ส.4, ศาล, คู่ความ, ครบอุทธรณ์) พร้อมกด Ctrl+V
+                </div>
+              </div>
+              {copiedType === 'office' && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
+            </button>
+
+            {/* Option 5.5: Court Petition Form (7) */}
+            {onOpenCourtPetition && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                  onOpenCourtPetition(caseItem);
+                }}
+                className="w-full text-left px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-950 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
+              >
+                <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-amber-600 group-hover:text-white transition">
+                  <Scale className="w-3.5 h-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-slate-900 flex items-center gap-1">
+                    <span>แบบคำร้องขอขยายเวลาอุทธรณ์</span>
+                    <span className="bg-amber-200 text-amber-900 text-[9px] px-1 py-0.2 rounded font-bold">
+                      แบบพิมพ์ศาล (๗)
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    ดึงเลขคดี คู่ความ ศาลเพชรบุรี กำหนดเดิม/ใหม่ พิมพ์ลงกระดาษตราครุฑ / Google Docs
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {/* Option 6: Print Folder Label & QR Code */}
+            {onOpenFileLabel && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                  onOpenFileLabel(caseItem);
+                }}
+                className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-100 hover:text-slate-900 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
+              >
+                <div className="w-6 h-6 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-slate-800 group-hover:text-white transition">
+                  <QrCode className="w-3.5 h-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-slate-900 flex items-center gap-1">
+                    <span>พิมพ์ป้ายหน้าแฟ้ม & ใบปะหน้า (QR Code)</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    ป้ายติดหน้าซองสำนวน พร้อม QR Code สแกนดูคดีได้ทันที
+                  </div>
+                </div>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -344,6 +428,82 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
             </div>
             {copiedType === 'sheets' && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
           </button>
+
+          {/* Option 5: Copy for Office System / Excel (TSV) */}
+          <button
+            type="button"
+            onClick={(e) => handleCopy('office', e)}
+            className="w-full text-left px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-950 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
+          >
+            <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-amber-600 group-hover:text-white transition">
+              <Table className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-slate-900 flex items-center gap-1">
+                <span>คัดลอกแถวสำหรับ Excel / โปรแกรมสารบบ</span>
+                <span className="bg-amber-100 text-amber-900 text-[9px] px-1 py-0.2 rounded font-bold">
+                  TSV
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                แยกคอลัมน์ให้อัตโนมัติ (ดำ, แดง, ส.1, ส.4, ศาล, คู่ความ, ครบอุทธรณ์) พร้อมกด Ctrl+V
+              </div>
+            </div>
+            {copiedType === 'office' && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
+          </button>
+
+          {/* Option 5.5: Court Petition Form (7) */}
+          {onOpenCourtPetition && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onOpenCourtPetition(caseItem);
+              }}
+              className="w-full text-left px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-950 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
+            >
+              <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-amber-600 group-hover:text-white transition">
+                <Scale className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-slate-900 flex items-center gap-1">
+                  <span>แบบคำร้องขอขยายเวลาอุทธรณ์</span>
+                  <span className="bg-amber-200 text-amber-900 text-[9px] px-1 py-0.2 rounded font-bold">
+                    แบบพิมพ์ศาล (๗)
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  ดึงเลขคดี คู่ความ ศาลเพชรบุรี กำหนดเดิม/ใหม่ พิมพ์ลงกระดาษตราครุฑ / Google Docs
+                </div>
+              </div>
+            </button>
+          )}
+
+          {/* Option 6: Print Folder Label & QR Code */}
+          {onOpenFileLabel && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onOpenFileLabel(caseItem);
+              }}
+              className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-100 hover:text-slate-900 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
+            >
+              <div className="w-6 h-6 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-slate-800 group-hover:text-white transition">
+                <QrCode className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-slate-900 flex items-center gap-1">
+                  <span>พิมพ์ป้ายหน้าแฟ้ม & ใบปะหน้า (QR Code)</span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  ป้ายติดหน้าซองสำนวน พร้อม QR Code สแกนดูคดีได้ทันที
+                </div>
+              </div>
+            </button>
+          )}
         </div>
       )}
     </div>
