@@ -1,6 +1,6 @@
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate } from './dateUtils';
-import { getAppointmentLabel } from './appointmentUtils';
+import { getAppointmentLabel, isCaseConfessed } from './appointmentUtils';
 
 /**
  * 7 Column Headers as specifically requested by user:
@@ -78,20 +78,9 @@ export function formatDefendant(c: AppealCase): string {
  */
 export function formatProcedureStatus(c: AppealCase, concise: boolean = false): string {
   // 1. สำนวนรับสารภาพ
-  const isConfessed =
-    c.defendantPlea === 'confessed' ||
-    (c.judgmentOutcome && c.judgmentOutcome.toLowerCase().includes('รับสารภาพ'));
-
-  if (isConfessed) {
+  if (isCaseConfessed(c)) {
     if (!concise && c.hasJudgment && c.judgmentDate) {
       return `สำนวนรับสารภาพ (พิพากษา ${formatThaiDate(c.judgmentDate, { short: true })})`;
-    }
-    return 'สำนวนรับสารภาพ';
-  }
-
-  if (c.hasJudgment && c.judgmentDate) {
-    if (!concise) {
-      return `สำนวนรับสารภาพ / มีคำพิพากษา (${formatThaiDate(c.judgmentDate, { short: true })})`;
     }
     return 'สำนวนรับสารภาพ';
   }

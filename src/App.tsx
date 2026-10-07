@@ -93,6 +93,7 @@ import { VoiceSearchBar } from './components/VoiceSearchBar';
 import { JudgmentDocModal } from './components/JudgmentDocModal';
 import { EmailAlertModal } from './components/EmailAlertModal';
 import { CourtAppointmentModal } from './components/CourtAppointmentModal';
+import { CourtPetitionModal } from './components/CourtPetitionModal';
 import { EditCaseModal } from './components/EditCaseModal';
 import { RecordJudgmentModal } from './components/RecordJudgmentModal';
 import { LoginScreen } from './components/LoginScreen';
@@ -103,7 +104,7 @@ import { FirebaseRulesGuideModal } from './components/FirebaseRulesGuideModal';
 import { createDailyFilingDoc } from './services/docsService';
 import { checkAndSendAutomaticEmailAlerts } from './services/gmailService';
 import { CourtAppointmentType, CaseAppointment } from './types/appeal';
-import { getAppointmentLabel } from './utils/appointmentUtils';
+import { getAppointmentLabel, isCaseConfessed } from './utils/appointmentUtils';
 
 export default function App() {
   // Auth & Roles state
@@ -172,6 +173,11 @@ export default function App() {
   const [addCaseInitialFilingDate, setAddCaseInitialFilingDate] = useState<string | undefined>();
   const [selectedCaseForComplete, setSelectedCaseForComplete] = useState<AppealCase | null>(null);
   const [selectedCaseForExtend, setSelectedCaseForExtend] = useState<AppealCase | null>(null);
+  const [selectedCaseForCourtPetition, setSelectedCaseForCourtPetition] = useState<{
+    caseItem: AppealCase;
+    newDeadline?: string;
+    extensionCount?: number;
+  } | null>(null);
   const [selectedCaseForJudgmentDoc, setSelectedCaseForJudgmentDoc] = useState<AppealCase | null>(null);
   const [selectedCaseForEmailAlert, setSelectedCaseForEmailAlert] = useState<AppealCase | null>(null);
   const [selectedCaseForAppointment, setSelectedCaseForAppointment] = useState<AppealCase | null>(null);
@@ -905,18 +911,33 @@ export default function App() {
       appointmentCourtRoom?: string;
       appointmentNotes?: string;
       subsequentAppointments?: CaseAppointment[];
+      isRequisitionCase?: boolean;
+      requisitionDate?: string;
     },
     syncToCalendar?: boolean
   ) => {
-    const updated = cases.map((c) =>
-      c.id === caseId
-        ? {
-            ...c,
-            ...appointmentData,
-            updatedAt: new Date().toISOString(),
-          }
-        : c
-    );
+    const updated = cases.map((c) => {
+      if (c.id !== caseId) return c;
+      const isConfessed = isCaseConfessed(c);
+      const safeType = isConfessed && appointmentData.appointmentType === 'rights_protection'
+        ? 'none'
+        : appointmentData.appointmentType;
+      const safeDate = isConfessed && appointmentData.appointmentType === 'rights_protection'
+        ? undefined
+        : appointmentData.appointmentDate;
+      const safeSubsequent = isConfessed
+        ? (appointmentData.subsequentAppointments || []).filter((a) => a.type !== 'rights_protection')
+        : appointmentData.subsequentAppointments;
+
+      return {
+        ...c,
+        ...appointmentData,
+        appointmentType: safeType,
+        appointmentDate: safeDate,
+        subsequentAppointments: safeSubsequent,
+        updatedAt: new Date().toISOString(),
+      };
+    });
     setCases(updated);
     saveCases(updated);
 
@@ -980,10 +1001,8 @@ export default function App() {
     const updatedCase: AppealCase = {
       ...targetCase,
       prosecutorName: officerName,
-      responsiblePerson:
-        targetCase.responsiblePerson && targetCase.responsiblePerson !== 'ผู้ดูแลสำนวน'
-          ? targetCase.responsiblePerson
-          : officerName,
+      // Do not overwrite responsiblePerson (อัยการเจ้าของสำนวน) with duty officer
+      responsiblePerson: targetCase.responsiblePerson || '',
       updatedAt: new Date().toISOString(),
     };
 
@@ -1009,7 +1028,7 @@ export default function App() {
       (c) => c.filingDate === filingDate && (!c.prosecutorName || !c.prosecutorName.trim())
     );
     if (unassignedCases.length === 0) {
-      showToast('ทุกสำนวนในวันนี้มีชื่ออัยการเจ้าของสำนวน/เวรชี้แล้ว');
+      showToast('ทุกสำนวนในวันนี้มีชื่ออัยการเวรชี้แล้ว');
       return;
     }
 
@@ -1018,10 +1037,8 @@ export default function App() {
         return {
           ...c,
           prosecutorName: officerName,
-          responsiblePerson:
-            c.responsiblePerson && c.responsiblePerson !== 'ผู้ดูแลสำนวน'
-              ? c.responsiblePerson
-              : officerName,
+          // Do not overwrite responsiblePerson (อัยการเจ้าของสำนวน) with duty officer
+          responsiblePerson: c.responsiblePerson || '',
           updatedAt: new Date().toISOString(),
         };
       }
@@ -1525,6 +1542,7 @@ export default function App() {
             onOpenAppointmentModal={(caseItem) => setSelectedCaseForAppointment(caseItem)}
             onDeleteCase={handleDeleteCase}
             onAddNewCase={() => setIsAddCaseOpen(true)}
+            onOpenCourtPetition={(caseItem) => setSelectedCaseForCourtPetition({ caseItem })}
             onToast={showToast}
           />
         )}
@@ -1559,6 +1577,7 @@ export default function App() {
             onQuickAssignOfficer={handleQuickAssignOfficer}
             onBatchAssignOfficerToDate={handleBatchAssignOfficerToDate}
             onDeleteCase={handleDeleteCase}
+            onOpenCourtPetition={(caseItem) => setSelectedCaseForCourtPetition({ caseItem })}
             onToast={showToast}
           />
         )}
@@ -1633,10 +1652,20 @@ export default function App() {
         onConfirmExtend={handleConfirmExtend}
         token={token}
         onToast={showToast}
-        onOpenCourtPetition={(caseItem) => {
+        onOpenCourtPetition={(caseItem, newDeadline, extensionCount) => {
           setSelectedCaseForExtend(null);
-          setCaseForCourtPetition(caseItem);
+          setSelectedCaseForCourtPetition({ caseItem, newDeadline, extensionCount });
         }}
+      />
+
+      <CourtPetitionModal
+        isOpen={!!selectedCaseForCourtPetition}
+        caseItem={selectedCaseForCourtPetition?.caseItem || null}
+        defaultNewDeadline={selectedCaseForCourtPetition?.newDeadline}
+        defaultExtensionCount={selectedCaseForCourtPetition?.extensionCount}
+        token={token}
+        onToast={showToast}
+        onClose={() => setSelectedCaseForCourtPetition(null)}
       />
 
       <JudgmentDocModal

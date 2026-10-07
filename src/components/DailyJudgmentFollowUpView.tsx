@@ -509,8 +509,11 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
                     </span>
                   )}
 
-                  {/* Court Appointment Badge */}
-                  {item.appointmentType && item.appointmentType !== 'none' && (
+                  {/* Court Appointment Badge (คดีที่จำเลยรับสารภาพจะไม่แสดงนัดคุ้มครองสิทธิ) */}
+                  {item.appointmentType && item.appointmentType !== 'none' && !(
+                    item.appointmentType === 'rights_protection' &&
+                    (item.status === 'delivered' || (item.judgmentSummary && item.judgmentSummary.includes('รับสารภาพ')))
+                  ) && (
                     <span
                       className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${getAppointmentBadgeStyle(item.appointmentType).bg} ${getAppointmentBadgeStyle(item.appointmentType).text} ${getAppointmentBadgeStyle(item.appointmentType).border}`}
                     >

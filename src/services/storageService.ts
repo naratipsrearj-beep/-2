@@ -291,6 +291,7 @@ function getInitialSampleCases(): AppealCase[] {
       defendant: 'นายสมชาย มั่นคง และพวก (จำเลยที่ 1-2)',
       caseType: 'อาญา (ฉ้อโกงประชาชน)',
       hasJudgment: true,
+      defendantPlea: 'confessed',
       judgmentDate: '2026-09-04',
       appealDeadline: '2026-10-05', // 1 เดือน (เลื่อนจาก 4 ต.ค. วันอาทิตย์ เป็น 5 ต.ค.)
       isCompleted: false, // ยังไม่เสร็จสิ้น -> เหลือ ~3-4 วัน เตือนด่วนมาก!

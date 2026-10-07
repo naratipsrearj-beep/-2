@@ -15,6 +15,7 @@ export type CourtAppointmentType =
   | 'mediation'             // นัดไกล่เกลี่ย
   | 'pre_trial'             // นัดพร้อม / ตรวจพยานหลักฐาน
   | 'witness_examination'   // นัดสืบพยาน
+  | 'requisition'           // นัดเบิกฟ้อง / สำนวนเบิกฟ้อง
   | 'other';                // นัดอื่นๆ
 
 export interface CaseAppointment {
@@ -52,9 +53,14 @@ export interface AppealCase {
   completedDate?: string;      // วันที่กดเสร็จสิ้น
   completionReason?: CaseCompletionReason;
   judgmentOutcome?: string;    // ผลคำพิพากษาโดยย่อ (เช่น ยกฟ้อง, ลงโทษตามฟ้อง, จำคุก 2 ปี)
-  responsiblePerson: string;   // ผู้รับผิดชอบ/เจ้าของสำนวน
+  responsiblePerson: string;   // อัยการเจ้าของสำนวน
   notes?: string;              // หมายเหตุเพิ่มเติม
   
+  // สำนวนเบิกฟ้อง และวันนัดเบิกฟ้อง
+  isRequisitionCase?: boolean;        // เป็นสำนวนเบิกฟ้องหรือไม่
+  requisitionDate?: string;          // วันที่เบิกฟ้อง (YYYY-MM-DD)
+  requisitionNotes?: string;         // หมายเหตุการเบิกฟ้อง เช่น เบิกตัวจากเรือนจำ
+
   // นัดของศาลในสำนวน (นัดแรก / นัดปัจจุบัน เช่น นัดคุ้มครองสิทธิ)
   appointmentType?: CourtAppointmentType;
   appointmentTypeName?: string;        // ชื่อระบุกรณีเลือก "นัดอื่นๆ"

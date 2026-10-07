@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar, CheckCircle2, Shield, Search, FileText, AlertCircle, Clock, Plus, Trash2, CalendarPlus } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, CaseAppointment } from '../types/appeal';
 import { formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { isCaseConfessed } from '../utils/appointmentUtils';
 
 interface CourtAppointmentModalProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ interface CourtAppointmentModalProps {
       appointmentCourtRoom?: string;
       appointmentNotes?: string;
       subsequentAppointments?: CaseAppointment[];
+      isRequisitionCase?: boolean;
+      requisitionDate?: string;
     },
     syncToCalendar?: boolean
   ) => void;
@@ -25,6 +28,7 @@ interface CourtAppointmentModalProps {
 export const appointmentTypeOptions: { value: CourtAppointmentType; label: string; description: string; icon: string }[] = [
   { value: 'none', label: 'ไม่มีนัด (รอคุมระยะเวลาอุทธรณ์)', description: 'ไม่มีนัดของศาลในระหว่างนี้', icon: '⏳' },
   { value: 'rights_protection', label: 'นัดคุ้มครองสิทธิ', description: 'นัดชี้สองสถาน / คุ้มครองสิทธิและเสรีภาพ', icon: '🛡️' },
+  { value: 'requisition', label: 'สำนวนเบิกฟ้อง / นัดเบิกฟ้อง', description: 'สำนวนเบิกฟ้องคดี / เบิกตัวจำเลยมาฟ้องศาล', icon: '🚚' },
   { value: 'investigation', label: 'นัดสืบเสาะ', description: 'นัดสืบเสาะและพินิจพฤติการณ์จำเลย', icon: '🔍' },
   { value: 'judgment', label: 'นัดฟังคำพิพากษา / คำสั่ง', description: 'ศาลนัดฟังคำพิพากษาหรือคำสั่งศาล', icon: '⚖️' },
   { value: 'mediation', label: 'นัดไกล่เกลี่ย', description: 'นัดศูนย์ไกล่เกลี่ยและประนอมข้อพิพาท', icon: '🤝' },
@@ -51,13 +55,21 @@ export const CourtAppointmentModal: React.FC<CourtAppointmentModalProps> = ({
 
   useEffect(() => {
     if (caseItem) {
-      setAppointmentType(caseItem.appointmentType || 'none');
+      const isConfessed = isCaseConfessed(caseItem);
+      const initialType = (isConfessed && caseItem.appointmentType === 'rights_protection')
+        ? 'none'
+        : (caseItem.appointmentType || 'none');
+      setAppointmentType(initialType);
       setAppointmentTypeName(caseItem.appointmentTypeName || '');
       setAppointmentDate(caseItem.appointmentDate || getTodayString());
       setAppointmentTime(caseItem.appointmentTime || '09:00 น.');
       setAppointmentCourtRoom(caseItem.appointmentCourtRoom || '');
       setAppointmentNotes(caseItem.appointmentNotes || '');
-      setSubsequentAppointments(caseItem.subsequentAppointments || []);
+      setSubsequentAppointments(
+        (caseItem.subsequentAppointments || []).filter(
+          (a) => !(isConfessed && a.type === 'rights_protection')
+        )
+      );
       setErrorMsg(null);
     }
   }, [caseItem, isOpen]);
@@ -125,6 +137,8 @@ export const CourtAppointmentModal: React.FC<CourtAppointmentModalProps> = ({
         appointmentCourtRoom: appointmentCourtRoom.trim() || undefined,
         appointmentNotes: appointmentNotes.trim() || undefined,
         subsequentAppointments: subsequentAppointments.length > 0 ? subsequentAppointments : undefined,
+        isRequisitionCase: appointmentType === 'requisition' ? true : caseItem.isRequisitionCase,
+        requisitionDate: appointmentType === 'requisition' ? appointmentDate : caseItem.requisitionDate,
       },
       syncToCalendar
     );
@@ -175,6 +189,18 @@ export const CourtAppointmentModal: React.FC<CourtAppointmentModalProps> = ({
             </div>
           )}
 
+          {isCaseConfessed(caseItem) && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-3 rounded-xl text-xs flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">จำเลยรับสารภาพ / ศาลมีคำพิพากษาแล้ว</span>
+                <span className="text-[11px] text-emerald-800">
+                  คดีที่จำเลยให้การรับสารภาพจะไม่มีขั้นตอนนัดคุ้มครองสิทธิ ระบบจึงปิดและไม่แสดงการแจ้งเตือนนัดคุ้มครองสิทธิ
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Appointment Type Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-800 mb-1.5">
@@ -183,23 +209,33 @@ export const CourtAppointmentModal: React.FC<CourtAppointmentModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {appointmentTypeOptions.map((opt) => {
                 const isSelected = appointmentType === opt.value;
+                const isConfessed = isCaseConfessed(caseItem);
+                const isRightsDisabled = isConfessed && opt.value === 'rights_protection';
+
                 return (
                   <button
                     key={opt.value}
                     type="button"
+                    disabled={isRightsDisabled}
                     onClick={() => {
+                      if (isRightsDisabled) return;
                       setAppointmentType(opt.value);
                       setErrorMsg(null);
                     }}
                     className={`p-2.5 rounded-xl border text-left transition flex items-start gap-2 ${
-                      isSelected
+                      isRightsDisabled
+                        ? 'opacity-40 bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                        : isSelected
                         ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-1 ring-indigo-500 font-medium'
                         : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
                     }`}
                   >
                     <span className="text-base flex-shrink-0 mt-0.5">{opt.icon}</span>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold leading-snug">{opt.label}</div>
+                      <div className="text-xs font-bold leading-snug">
+                        {opt.label}
+                        {isRightsDisabled && <span className="text-[10px] text-rose-600 block">(ไม่ใช้นัดนี้เพราะรับสารภาพ)</span>}
+                      </div>
                       <div className="text-[10px] text-slate-500 truncate">{opt.description}</div>
                     </div>
                   </button>

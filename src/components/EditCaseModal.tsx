@@ -62,6 +62,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   const [responsiblePerson, setResponsiblePerson] = useState('');
   const [notes, setNotes] = useState('');
 
+  // สำนวนเบิกฟ้อง
+  const [isRequisitionCase, setIsRequisitionCase] = useState(false);
+  const [requisitionDate, setRequisitionDate] = useState('');
+  const [requisitionNotes, setRequisitionNotes] = useState('');
+
   // Primary Court Appointment (เช่น นัดคุ้มครองสิทธิ)
   const [appointmentType, setAppointmentType] = useState<CourtAppointmentType>('rights_protection');
   const [appointmentTypeName, setAppointmentTypeName] = useState('');
@@ -103,9 +108,14 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setDefendant(caseItem.defendant || '');
       setCaseType(caseItem.caseType || 'อาญา');
 
+      const isReq = Boolean(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition');
+      setIsRequisitionCase(isReq);
+      setRequisitionDate(caseItem.requisitionDate || (caseItem.appointmentType === 'requisition' ? caseItem.appointmentDate : '') || '');
+      setRequisitionNotes(caseItem.requisitionNotes || '');
+
       const caseHasJudgment = Boolean(caseItem.hasJudgment || caseItem.judgmentDate);
       setHasJudgment(caseHasJudgment);
-      setDefendantPlea(caseItem.defendantPlea || (caseHasJudgment ? 'confessed' : 'denied'));
+      setDefendantPlea(caseItem.defendantPlea || (caseHasJudgment ? 'confessed' : (isReq ? 'pending' : 'denied')));
 
       setJudgmentDate(caseItem.judgmentDate || '');
       setJudgmentOutcome(caseItem.judgmentOutcome || '');
@@ -115,7 +125,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setResponsiblePerson(caseItem.responsiblePerson || '');
       setNotes(caseItem.notes || '');
 
-      setAppointmentType(caseItem.appointmentType || (caseHasJudgment ? 'none' : 'rights_protection'));
+      setAppointmentType(caseItem.appointmentType || (caseHasJudgment ? 'none' : (isReq ? 'requisition' : 'rights_protection')));
       setAppointmentTypeName(caseItem.appointmentTypeName || '');
       setAppointmentDate(caseItem.appointmentDate || '');
       setAppointmentTime(caseItem.appointmentTime || '09:00 น.');
@@ -209,21 +219,32 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       defendant: defendant.trim(),
       caseType,
       hasJudgment,
-      defendantPlea: hasJudgment ? undefined : defendantPlea,
+      defendantPlea: hasJudgment ? (caseItem.defendantPlea === 'denied' ? 'denied' : 'confessed') : defendantPlea,
       judgmentDate: hasJudgment && judgmentDate ? judgmentDate : undefined,
       appealDeadline: hasJudgment && deadlineInfo.deadlineDate ? deadlineInfo.deadlineDate : (hasJudgment ? caseItem.appealDeadline : undefined),
       extendedDeadline: hasJudgment && hasExtension && extendedDeadline ? extendedDeadline : undefined,
       extensionCount: hasJudgment && hasExtension && extendedDeadline ? extensionCount : undefined,
-      judgmentOutcome: hasJudgment ? judgmentOutcome.trim() : (appointmentType !== 'none' ? `อยู่ระหว่าง${appointmentType === 'rights_protection' ? 'นัดคุ้มครองสิทธิ' : 'นัดพิจารณา'} (จำเลยให้การปฏิเสธ)` : judgmentOutcome),
+      judgmentOutcome: hasJudgment
+        ? judgmentOutcome.trim()
+        : (isRequisitionCase || appointmentType === 'requisition')
+          ? (judgmentOutcome.trim() || 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
+          : (appointmentType !== 'none'
+            ? `อยู่ระหว่าง${appointmentType === 'rights_protection' ? 'นัดคุ้มครองสิทธิ' : 'นัดพิจารณา'} (${defendantPlea === 'denied' ? 'จำเลยให้การปฏิเสธ' : 'รอคำให้การ'})`
+            : judgmentOutcome),
       responsiblePerson: responsiblePerson.trim() || 'ผู้ดูแลสำนวน',
       notes: notes.trim() || undefined,
-      appointmentType,
+      isRequisitionCase: isRequisitionCase || appointmentType === 'requisition',
+      requisitionDate: isRequisitionCase ? (requisitionDate || appointmentDate || undefined) : (appointmentType === 'requisition' ? appointmentDate : undefined),
+      requisitionNotes: requisitionNotes.trim() || undefined,
+      appointmentType: (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection' ? 'none' : appointmentType,
       appointmentTypeName: appointmentType === 'other' ? appointmentTypeName.trim() : undefined,
-      appointmentDate: appointmentType !== 'none' && appointmentDate ? appointmentDate : undefined,
+      appointmentDate: ((hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection') ? undefined : (appointmentType !== 'none' && appointmentDate ? appointmentDate : undefined),
       appointmentTime: appointmentTime || undefined,
       appointmentCourtRoom: appointmentCourtRoom.trim() || undefined,
       appointmentNotes: appointmentNotes.trim() || undefined,
-      subsequentAppointments: subsequentAppointments.length > 0 ? subsequentAppointments : undefined,
+      subsequentAppointments: (hasJudgment || defendantPlea === 'confessed')
+        ? subsequentAppointments.filter((a) => a.type !== 'rights_protection')
+        : (subsequentAppointments.length > 0 ? subsequentAppointments : undefined),
       updatedAt: new Date().toISOString(),
     };
 
@@ -261,60 +282,159 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
           {/* Key Option: Case Stage / Judgment Toggle */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-            <label className="text-xs font-bold text-slate-800 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-indigo-600" />
-              <span>สถานะสำนวนในการพิจารณาของศาล:</span>
+            <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-indigo-600" />
+                <span>สถานะสำนวนในการพิจารณาของศาล:</span>
+              </span>
+              <span className="text-[11px] font-normal text-slate-500">เลือกสถานะของสำนวน</span>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setHasJudgment(true);
-                  if (!judgmentDate) setJudgmentDate(getTodayString());
-                }}
-                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
-                  hasJudgment
-                    ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500/20 text-amber-950'
-                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
-                }`}
-              >
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 ${hasJudgment ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300'}`}>
-                  {hasJudgment && <Check className="w-3 h-3" />}
-                </div>
-                <div>
-                  <span className="text-xs font-bold block">
-                    ⚖️ ศาลมีคำพิพากษาแล้ว (จำเลยรับสารภาพ / มีคำพิพากษา)
-                  </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    ใส่วันที่ศาลพิพากษา เพื่อเริ่มนับเวลาอุทธรณ์ 1 เดือน
-                  </span>
-                </div>
-              </button>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Option 1: คุ้มครองสิทธิ / ปฏิเสธ */}
               <button
                 type="button"
                 onClick={() => {
                   setHasJudgment(false);
                   setDefendantPlea('denied');
-                  if (appointmentType === 'none') {
+                  setIsRequisitionCase(false);
+                  if (appointmentType === 'none' || appointmentType === 'requisition') {
                     setAppointmentType('rights_protection');
                   }
                 }}
-                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
-                  !hasJudgment
-                    ? 'border-indigo-500 bg-indigo-50/80 ring-2 ring-indigo-500/20 text-indigo-950'
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                    ? 'border-indigo-500 bg-indigo-50/90 ring-2 ring-indigo-500/20 text-indigo-950 font-medium'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 ${!hasJudgment ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'}`}>
-                  {!hasJudgment && <Check className="w-3 h-3" />}
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
+                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300'
+                }`}>
+                  {!hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
+                    <Check className="w-3 h-3" />
+                  )}
                 </div>
                 <div>
-                  <span className="text-xs font-bold block">
-                    🛡️ คุ้มครองสิทธิ หรือสำนวนที่มีนัด (จำเลยให้การปฏิเสธ)
+                  <span className="text-xs font-bold block leading-tight">
+                    🛡️ คุ้มครองสิทธิ (จำเลยปฏิเสธ)
                   </span>
                   <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    ไม่บังคับใส่วันที่พิพากษา • ให้เลือกวันนัดต่อๆ ไปแทน
+                    ไม่บังคับใส่วันพิพากษา • เลือกวันนัดต่อๆ ไป
+                  </span>
+                </div>
+              </button>
+
+              {/* Option 2: คำพิพากษาแล้ว / รับสารภาพ */}
+              <button
+                type="button"
+                onClick={() => {
+                  setHasJudgment(true);
+                  setDefendantPlea('confessed');
+                  setIsRequisitionCase(false);
+                  if (appointmentType === 'rights_protection' || appointmentType === 'requisition') {
+                    setAppointmentType('none');
+                    setAppointmentDate('');
+                  }
+                  if (!judgmentDate) setJudgmentDate(getTodayString());
+                }}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  hasJudgment && !isRequisitionCase && appointmentType !== 'requisition'
+                    ? 'border-amber-500 bg-amber-50/90 ring-2 ring-amber-500/20 text-amber-950 font-medium'
+                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
+                  hasJudgment && !isRequisitionCase && appointmentType !== 'requisition'
+                    ? 'border-amber-600 bg-amber-600 text-white'
+                    : 'border-slate-300'
+                }`}>
+                  {hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (
+                    <Check className="w-3 h-3" />
+                  )}
+                </div>
+                <div>
+                  <span className="text-xs font-bold block leading-tight">
+                    ⚖️ พิพากษาแล้ว (รับสารภาพ)
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
+                    ใส่วันพิพากษา • เริ่มนับเวลาอุทธรณ์ 1 เดือน
+                  </span>
+                </div>
+              </button>
+
+              {/* Option 3: สำนวนเบิกฟ้อง (ยังไม่ทราบว่ารับสารภาพหรือปฏิเสธ) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setHasJudgment(false);
+                  setDefendantPlea('pending');
+                  setIsRequisitionCase(true);
+                  setAppointmentType('requisition');
+                  if (!requisitionDate && appointmentDate) {
+                    setRequisitionDate(appointmentDate);
+                  } else if (!requisitionDate) {
+                    setRequisitionDate(getTodayString());
+                  }
+                }}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  isRequisitionCase || appointmentType === 'requisition'
+                    ? 'border-orange-500 bg-orange-50/90 ring-2 ring-orange-500/20 text-orange-950 font-medium'
+                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
+                  isRequisitionCase || appointmentType === 'requisition'
+                    ? 'border-orange-600 bg-orange-600 text-white'
+                    : 'border-slate-300'
+                }`}>
+                  {(isRequisitionCase || appointmentType === 'requisition') && (
+                    <Check className="w-3 h-3" />
+                  )}
+                </div>
+                <div>
+                  <span className="text-xs font-bold block leading-tight text-orange-950">
+                    🚚 สำนวนเบิกฟ้อง (รอเบิกตัว)
+                  </span>
+                  <span className="text-[11px] text-orange-800/80 block mt-0.5 leading-tight">
+                    ยังไม่ทราบคำให้การ • แจ้งเตือนวันเบิกฟ้อง
+                  </span>
+                </div>
+              </button>
+
+              {/* Option 4: อื่นๆ / ยังไม่ทราบผล */}
+              <button
+                type="button"
+                onClick={() => {
+                  setHasJudgment(false);
+                  setDefendantPlea('pending');
+                  setIsRequisitionCase(false);
+                  if (appointmentType === 'rights_protection' || appointmentType === 'requisition') {
+                    setAppointmentType('other');
+                  }
+                }}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                    ? 'border-sky-500 bg-sky-50/90 ring-2 ring-sky-500/20 text-sky-950 font-medium'
+                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
+                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                    ? 'border-sky-600 bg-sky-600 text-white'
+                    : 'border-slate-300'
+                }`}>
+                  {!hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection' && (
+                    <Check className="w-3 h-3" />
+                  )}
+                </div>
+                <div>
+                  <span className="text-xs font-bold block leading-tight">
+                    📋 อื่นๆ / ยังไม่ทราบผล
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
+                    ยังไม่ทราบคำให้การ • รอผลการพิจารณา
                   </span>
                 </div>
               </button>
@@ -429,7 +549,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
             </div>
           </div>
 
-          {/* Row 3: Court & Prosecutor / Duty Officer */}
+          {/* Row 3: Court & Case Owner Prosecutor (อัยการเจ้าของสำนวน - เด่นชัดเจน) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -445,86 +565,107 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               />
             </div>
 
-            <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/80 space-y-2">
+            {/* อัยการเจ้าของสำนวน (ผู้รับผิดชอบสำนวนหลัก - ปรับให้ชัดเจน เด่นชัด) */}
+            <div className="bg-indigo-50/80 p-3 rounded-xl border-2 border-indigo-300 space-y-1.5 shadow-2xs">
               <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                  <UserCheck className="w-4 h-4 text-amber-600" />
-                  <span>เวรชี้ / อัยการเจ้าของสำนวน</span>
+                <label className="block text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <span className="text-sm">👔</span>
+                  <span className="font-['Prompt']">อัยการเจ้าของสำนวน *</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsDutyPickerOpen(true)}
-                  className="text-xs text-white bg-amber-600 hover:bg-amber-700 px-2.5 py-1 rounded-lg flex items-center gap-1 font-bold transition shadow-2xs cursor-pointer"
-                  title="เปิดหน้าต่างเลือกรายชื่อเวรชี้จากไฟล์ PDF แต่ละเดือนที่อัปโหลดไว้"
-                >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  <span>เลือกเวรชี้ (PDF)</span>
-                </button>
+                <span className="text-[10px] text-indigo-800 bg-indigo-100 font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                  ผู้รับผิดชอบสำนวนหลัก
+                </span>
               </div>
-
-              {/* Quick Dropdown: populated by months from uploaded PDF rosters */}
-              {monthsOfficersData.length > 0 && (
-                <div className="space-y-1">
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        setProsecutorName(e.target.value);
-                        if (!responsiblePerson || responsiblePerson === 'ผู้ดูแลสำนวน') {
-                          setResponsiblePerson(e.target.value);
-                        }
-                      }
-                    }}
-                    className="w-full text-xs border border-amber-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
-                  >
-                    <option value="">— 📋 ดึงรายชื่อจากตารางเวรชี้ประจำเดือน (PDF) —</option>
-                    {monthsOfficersData.map((m: any) => (
-                      <optgroup key={m.monthYear} label={`📅 ตารางเวรชี้ ${m.monthNameThai} (${m.officers.length} ท่าน)`}>
-                        {m.officers.map((off: any, oIdx: number) => (
-                          <option key={oIdx} value={off.name}>
-                            ⚖️ {off.name} ({off.role}) - เข้าเวร {off.dutyCount} วัน
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Quick Pills: if officers are on duty on this exact filing date */}
-              {onDutyOfficersOnFilingDate.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-[10px] font-bold text-amber-900">
-                    ⚡ ตรงวันฟ้อง ({formatThaiDate(filingDate, { short: true })}):
-                  </span>
-                  {onDutyOfficersOnFilingDate.map((off: any, idx: number) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setProsecutorName(off.name);
-                        if (!responsiblePerson || responsiblePerson === 'ผู้ดูแลสำนวน') {
-                          setResponsiblePerson(off.name);
-                        }
-                      }}
-                      className="text-[11px] bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-semibold transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                      title={`เลือก ${off.name} (${off.role})`}
-                    >
-                      <span>+ {off.name}</span>
-                      <span className="text-[9px] text-amber-700">({off.role})</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
               <input
                 type="text"
-                placeholder="ชื่ออัยการเวรชี้ เช่น นายธนพล บุญเจริญ (เลือกจากตาราง PDF หรือพิมพ์)"
-                value={prosecutorName}
-                onChange={(e) => setProsecutorName(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
+                required
+                placeholder="ชื่ออัยการเจ้าของสำนวน เช่น นายธนพล บุญเจริญ"
+                value={responsiblePerson}
+                onChange={(e) => setResponsiblePerson(e.target.value)}
+                className="w-full text-xs border border-indigo-300 rounded-lg px-2.5 py-1.5 bg-white text-indigo-950 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500 shadow-2xs"
               />
+              <p className="text-[10px] text-indigo-700">
+                ระบุชื่อพนักงานอัยการเจ้าของสำนวนผู้รับผิดชอบคดีนี้โดยตรง
+              </p>
             </div>
+          </div>
+
+          {/* อัยการเวรชี้ (ข้อมูลตรงเวรชี้ ไม่ต้องเด่นมาก แยกบทบาทชัดเจน) */}
+          <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2 text-slate-700">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-medium text-slate-700 flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-slate-500" />
+                <span className="font-['Prompt']">อัยการเวรชี้ (เวรศาลประจำวัน)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsDutyPickerOpen(true)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg flex items-center gap-1 font-medium transition shadow-2xs cursor-pointer"
+                title="เปิดหน้าต่างเลือกรายชื่ออัยการเวรชี้จากไฟล์ PDF แต่ละเดือนที่อัปโหลดไว้"
+              >
+                <UserCheck className="w-3 h-3 text-slate-500" />
+                <span>เลือกอัยการเวรชี้ (PDF)</span>
+              </button>
+            </div>
+
+            {/* Quick Dropdown: populated by months from uploaded PDF rosters */}
+            {monthsOfficersData.length > 0 && (
+              <div className="space-y-1">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setProsecutorName(e.target.value);
+                      // Do not overwrite responsiblePerson (อัยการเจ้าของสำนวน)
+                    }
+                  }}
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 font-normal focus:outline-none focus:ring-2 focus:ring-slate-300 cursor-pointer"
+                >
+                  <option value="">— 📋 ดึงรายชื่อจากตารางอัยการเวรชี้ประจำเดือน (PDF) —</option>
+                  {monthsOfficersData.map((m: any) => (
+                    <optgroup key={m.monthYear} label={`📅 ตารางเวรชี้ ${m.monthNameThai} (${m.officers.length} ท่าน)`}>
+                      {m.officers.map((off: any, oIdx: number) => (
+                        <option key={oIdx} value={off.name}>
+                          ⚖️ {off.name} ({off.role}) - เข้าเวร {off.dutyCount} วัน
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Quick Pills: if officers are on duty on this exact filing date */}
+            {onDutyOfficersOnFilingDate.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[10px] text-slate-500">
+                  ตรงวันฟ้อง ({formatThaiDate(filingDate, { short: true })}):
+                </span>
+                {onDutyOfficersOnFilingDate.map((off: any, idx: number) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setProsecutorName(off.name);
+                      // Do not overwrite responsiblePerson
+                    }}
+                    className="text-[11px] bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-md font-normal transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                    title={`เลือก ${off.name} (${off.role})`}
+                  >
+                    <span>+ {off.name}</span>
+                    <span className="text-[9px] text-slate-400">({off.role})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <input
+              type="text"
+              placeholder="ชื่ออัยการเวรชี้ เช่น นายสมคิด ยุติธรรม (เลือกจากตาราง PDF หรือพิมพ์)"
+              value={prosecutorName}
+              onChange={(e) => setProsecutorName(e.target.value)}
+              className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-slate-300 font-normal"
+            />
           </div>
 
           {/* Row 4: Plaintiff & Defendant */}
@@ -718,6 +859,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { value: 'rights_protection', label: '🛡️ นัดคุ้มครองสิทธิ' },
+                    { value: 'requisition', label: '🚚 สำนวนเบิกฟ้อง' },
                     { value: 'pre_trial', label: '📋 นัดพร้อม / ตรวจพยาน' },
                     { value: 'witness_examination', label: '🎙️ นัดสืบพยาน' },
                     { value: 'investigation', label: '🔍 นัดสืบเสาะ' },
@@ -727,7 +869,12 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                     <button
                       key={preset.value}
                       type="button"
-                      onClick={() => setAppointmentType(preset.value as CourtAppointmentType)}
+                      onClick={() => {
+                        setAppointmentType(preset.value as CourtAppointmentType);
+                        if (preset.value === 'requisition') {
+                          setIsRequisitionCase(true);
+                        }
+                      }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
                         appointmentType === preset.value
                           ? 'bg-indigo-600 text-white shadow-xs font-semibold'
@@ -1020,28 +1167,63 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
             </div>
           )}
 
-          {/* Row 7: Assignee & Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
-                <span>เจ้าของสำนวน / ผู้รับผิดชอบ</span>
-                {suggestedDutyOfficer && (
-                  <button
-                    type="button"
-                    onClick={() => setResponsiblePerson(suggestedDutyOfficer)}
-                    className="text-[10px] text-amber-600 hover:text-amber-800 font-medium underline"
-                  >
-                    ใส่ชื่อเวรชี้วันนี้ ({suggestedDutyOfficer})
-                  </button>
-                )}
-              </label>
-              <input
-                type="text"
-                placeholder="ชื่อนิติกร / พนักงานอัยการ / ทนายความ"
-                value={responsiblePerson}
-                onChange={(e) => setResponsiblePerson(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-              />
+          {/* สำนวนเบิกฟ้อง & หมายเหตุเพิ่มเติม */}
+          <div className="space-y-3">
+            <div className={`p-3.5 rounded-xl border transition ${isRequisitionCase ? 'bg-orange-50/90 border-orange-300 ring-1 ring-orange-300' : 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isRequisitionCase}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsRequisitionCase(checked);
+                      if (checked && (!requisitionDate && appointmentDate)) {
+                        setRequisitionDate(appointmentDate);
+                      }
+                    }}
+                    className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500"
+                  />
+                  <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5 font-['Prompt']">
+                    <span>🚚 สำนวนเบิกฟ้อง</span>
+                    <span className="text-[10px] bg-orange-100 text-orange-800 font-semibold px-2 py-0.5 rounded-full border border-orange-200">
+                      ระบบจะคอยแจ้งเตือนเมื่อใกล้ถึงวันเบิกฟ้อง
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              {isRequisitionCase && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-orange-200/80 animate-in fade-in">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-orange-950 mb-1">
+                      วันที่เบิกฟ้อง *
+                    </label>
+                    <input
+                      type="date"
+                      required={isRequisitionCase}
+                      value={requisitionDate || appointmentDate}
+                      onChange={(e) => {
+                        setRequisitionDate(e.target.value);
+                        if (!appointmentDate) setAppointmentDate(e.target.value);
+                      }}
+                      className="w-full text-xs border border-orange-300 rounded-lg px-2.5 py-1.5 bg-white text-orange-950 font-medium focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-orange-950 mb-1">
+                      หมายเหตุการเบิกฟ้อง
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น เบิกตัวจำเลยจากเรือนจำ, ขอหมายเบิกตัว"
+                      value={requisitionNotes}
+                      onChange={(e) => setRequisitionNotes(e.target.value)}
+                      className="w-full text-xs border border-orange-300 rounded-lg px-2.5 py-1.5 bg-white text-orange-950 focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

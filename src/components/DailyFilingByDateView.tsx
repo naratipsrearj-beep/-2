@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar,
   ChevronDown,
@@ -44,7 +44,7 @@ import {
   getTodayString
 } from '../utils/dateUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
-import { getAppointmentLabel, getAppointmentBadgeStyle } from '../utils/appointmentUtils';
+import { getAppointmentLabel, getAppointmentBadgeStyle, isCaseConfessed } from '../utils/appointmentUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate } from '../services/dutyService';
@@ -57,10 +57,7 @@ export type DailyProcedureFilter = 'all' | 'confessed' | 'denied_scheduled' | 'o
 
 export function getCaseProcedureCategory(c: AppealCase): 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending' {
   // 1. รับสารภาพ: มีคำพิพากษา หรือระบุคำให้การรับสารภาพ
-  const isConfessed =
-    c.defendantPlea === 'confessed' ||
-    (c.judgmentOutcome && c.judgmentOutcome.toLowerCase().includes('รับสารภาพ')) ||
-    Boolean(c.hasJudgment && c.judgmentDate);
+  const isConfessed = isCaseConfessed(c);
 
   if (isConfessed) {
     return 'confessed';
@@ -113,6 +110,59 @@ function getUrgencyBadgeStyle(urgency: string) {
     default:
       return 'bg-slate-100 text-slate-700 border-slate-200';
   }
+}
+
+/**
+ * ฟังก์ชันค้นหาสำนวนคดีในมุมมองวันที่ฟ้อง
+ * รองรับการพิมพ์ "วันที่ฟ้อง", วันที่ภาษาไทย, วันที่สากล, เลขคดีดำ, เลขคดีแดง, เลขรับ ส.1, ส.4, คู่ความ และอัยการ
+ */
+export function caseMatchesDailySearch(c: AppealCase, search: string): boolean {
+  if (!search || !search.trim()) return true;
+  const term = search.toLowerCase().trim();
+  const cleanTerm = term
+    .replace(/ค้นหา/g, '')
+    .replace(/คดีดำ/g, '')
+    .replace(/คดีแดง/g, '')
+    .replace(/ส\.1/g, '')
+    .replace(/ส\.4/g, '')
+    .replace(/เลขรับ/g, '')
+    .replace(/เลขฟ้อง/g, '')
+    .replace(/ฟ้องวันที่/g, '')
+    .replace(/วันที่ฟ้อง/g, '')
+    .replace(/วันฟ้อง/g, '')
+    .replace(/วันที่/g, '')
+    .replace(/ยื่นฟ้อง/g, '')
+    .replace(/ฟ้อง/g, '')
+    .trim();
+
+  // หากผู้ใช้พิมพ์เพียง "วันที่ฟ้อง", "ฟ้อง", "ค้นหา" ให้ถือว่าผ่านทั้งหมด
+  if (!cleanTerm && (term.includes('ฟ้อง') || term.includes('วันที่') || term.includes('ค้นหา'))) {
+    return true;
+  }
+
+  const q = cleanTerm || term;
+  const rawFilingDate = (c.filingDate || '').toLowerCase();
+  const thaiFilingDate = formatThaiDate(c.filingDate).toLowerCase();
+
+  return (
+    rawFilingDate.includes(q) ||
+    thaiFilingDate.includes(q) ||
+    (cleanTerm !== '' && (rawFilingDate.includes(cleanTerm) || thaiFilingDate.includes(cleanTerm))) ||
+    c.blackCaseNo.toLowerCase().includes(q) ||
+    c.blackCaseNo.toLowerCase().includes(term) ||
+    Boolean(c.redCaseNo && (c.redCaseNo.toLowerCase().includes(q) || c.redCaseNo.toLowerCase().includes(term))) ||
+    Boolean(c.receivedNumberS1 && (c.receivedNumberS1.toLowerCase().includes(q) || c.receivedNumberS1.toLowerCase().includes(term))) ||
+    Boolean(c.filingNumberS4 && (c.filingNumberS4.toLowerCase().includes(q) || c.filingNumberS4.toLowerCase().includes(term))) ||
+    Boolean(c.prosecutorName && (c.prosecutorName.toLowerCase().includes(q) || c.prosecutorName.toLowerCase().includes(term))) ||
+    Boolean(c.responsiblePerson && (c.responsiblePerson.toLowerCase().includes(q) || c.responsiblePerson.toLowerCase().includes(term))) ||
+    c.court.toLowerCase().includes(q) ||
+    c.plaintiff.toLowerCase().includes(q) ||
+    c.defendant.toLowerCase().includes(q) ||
+    c.caseType.toLowerCase().includes(q) ||
+    Boolean(c.judgmentOutcome && c.judgmentOutcome.toLowerCase().includes(q)) ||
+    Boolean(c.notes && c.notes.toLowerCase().includes(q)) ||
+    Boolean(c.requisitionNotes && c.requisitionNotes.toLowerCase().includes(q))
+  );
 }
 
 interface DailyFilingByDateViewProps {
@@ -173,6 +223,13 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   const [dateSearch, setDateSearch] = useState<string>(externalDateSearch);
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
+  // Sync external search query (เช่น จากแถบค้นหาด้วยเสียงด้านบน หรือปุ่มคลิกจากแท็บอื่น)
+  useEffect(() => {
+    if (externalDateSearch !== undefined) {
+      setDateSearch(externalDateSearch);
+    }
+  }, [externalDateSearch]);
+
   // Batch office copy and Docs memo state
   const [copiedBatchTsv, setCopiedBatchTsv] = useState(false);
   const [isCreatingDailyMemo, setIsCreatingDailyMemo] = useState(false);
@@ -221,6 +278,22 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return Object.keys(groupedByFilingDate).sort((a, b) => b.localeCompare(a));
   }, [groupedByFilingDate]);
 
+  // Distinct filing dates filtered by search and active status
+  const filteredDistinctFilingDates = useMemo(() => {
+    return distinctFilingDates.filter((dateKey) => {
+      const casesInGroup = groupedByFilingDate[dateKey] || [];
+      if (filterOnlyActive && !casesInGroup.some((c) => !c.isCompleted)) {
+        return false;
+      }
+      if (!dateSearch.trim()) return true;
+      const rawDate = dateKey.toLowerCase();
+      const thaiDate = formatThaiDate(dateKey).toLowerCase();
+      const q = dateSearch.toLowerCase().trim();
+      if (rawDate.includes(q) || thaiDate.includes(q)) return true;
+      return casesInGroup.some((c) => caseMatchesDailySearch(c, dateSearch));
+    });
+  }, [distinctFilingDates, groupedByFilingDate, dateSearch, filterOnlyActive]);
+
   // Count unassigned cases on selected date
   const unassignedCasesOnSelectedDate = useMemo(() => {
     const list = groupedByFilingDate[selectedDate] || [];
@@ -236,22 +309,33 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
         if (cat !== procedureFilter) return false;
       }
       if (dateSearch.trim()) {
-        const q = dateSearch.toLowerCase().trim();
-        return (
-          c.blackCaseNo.toLowerCase().includes(q) ||
-          Boolean(c.redCaseNo && c.redCaseNo.toLowerCase().includes(q)) ||
-          Boolean(c.receivedNumberS1 && c.receivedNumberS1.toLowerCase().includes(q)) ||
-          Boolean(c.filingNumberS4 && c.filingNumberS4.toLowerCase().includes(q)) ||
-          Boolean(c.prosecutorName && c.prosecutorName.toLowerCase().includes(q)) ||
-          Boolean(c.responsiblePerson && c.responsiblePerson.toLowerCase().includes(q)) ||
-          c.court.toLowerCase().includes(q) ||
-          c.plaintiff.toLowerCase().includes(q) ||
-          c.defendant.toLowerCase().includes(q)
-        );
+        return caseMatchesDailySearch(c, dateSearch);
       }
       return true;
     });
   }, [groupedByFilingDate, selectedDate, filterOnlyActive, procedureFilter, dateSearch]);
+
+  // Cases matching search on OTHER filing dates (ช่วยแสดงผลกรณีค้นหาเลขคดีหรือวันที่ที่ไม่ได้อยู่ใน selectedDate ปัจจุบัน)
+  const casesMatchingOtherDates = useMemo(() => {
+    if (!dateSearch.trim()) return [];
+    return cases.filter((c) => {
+      const dateKey = c.filingDate || 'ไม่ระบุวันที่ฟ้อง';
+      if (dateKey === selectedDate) return false;
+      if (filterOnlyActive && c.isCompleted) return false;
+      return caseMatchesDailySearch(c, dateSearch);
+    });
+  }, [cases, selectedDate, dateSearch, filterOnlyActive]);
+
+  // Group matching cases in other dates by filing date
+  const otherDatesWithMatches = useMemo(() => {
+    const groups: Record<string, AppealCase[]> = {};
+    casesMatchingOtherDates.forEach((c) => {
+      const d = c.filingDate || 'ไม่ระบุวันที่ฟ้อง';
+      if (!groups[d]) groups[d] = [];
+      groups[d].push(c);
+    });
+    return groups;
+  }, [casesMatchingOtherDates]);
 
   // Statistics for selected date (สถิติฟ้องรายวัน: รับสารภาพ / ปฏิเสธมีนัด / มีนัดอื่นๆ / ยังไม่ทราบผล)
   const statsForSelectedDate = useMemo(() => {
@@ -468,7 +552,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             <div className="relative flex-1 sm:w-64">
               <input
                 type="text"
-                placeholder={isListening ? transcript || 'กำลังฟัง...' : 'ค้นหาเลขคดี, ส.1, ส.4, คู่ความ...'}
+                placeholder={isListening ? transcript || 'กำลังฟัง...' : 'ค้นหาเลขคดี, วันที่ฟ้อง, ส.1, ส.4, คู่ความ...'}
                 value={isListening ? transcript : dateSearch}
                 onChange={(e) => setDateSearch(e.target.value)}
                 className={`w-full text-xs pl-8 pr-8 py-1.5 border rounded-xl focus:outline-none transition ${
@@ -928,11 +1012,42 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   <strong className="text-slate-800 font-bold">{casesOnSelectedDate.length}</strong> คดี
                 </span>
                 {dateSearch && (
-                  <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                  <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
                     กรองตามคำค้นหา: &quot;{dateSearch}&quot;
                   </span>
                 )}
               </div>
+
+              {/* Notice if additional matching cases exist on other filing dates */}
+              {casesMatchingOtherDates.length > 0 && (
+                <div className="bg-blue-50/90 border border-blue-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-blue-950 gap-2 shadow-2xs animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+                    <span>
+                      พบอีก <strong>{casesMatchingOtherDates.length} คดี</strong> ในวันที่ฟ้องอื่นๆ ({Object.keys(otherDatesWithMatches).length} วัน) ที่ตรงกับคำค้นหา &quot;{dateSearch}&quot;
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {Object.keys(otherDatesWithMatches).slice(0, 3).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setSelectedDate(d)}
+                        className="text-[11px] bg-white border border-blue-300 px-2 py-0.5 rounded-lg text-blue-800 hover:bg-blue-100 font-semibold cursor-pointer shadow-2xs transition"
+                      >
+                        ไปดู {formatThaiDate(d, { short: true })} ({otherDatesWithMatches[d].length})
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('all_dates')}
+                      className="text-[11px] underline font-bold text-indigo-700 hover:text-indigo-900 ml-1 cursor-pointer"
+                    >
+                      ดูทุกวันพร้อมกัน →
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {casesOnSelectedDate.map((caseItem, idx) => {
                 const daysLeft = getDaysRemaining(caseItem);
@@ -1030,11 +1145,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 setCaseForDutyPicker(caseItem);
                                 setIsDutyPickerOpen(true);
                               }}
-                              className="text-xs font-semibold text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1 transition cursor-pointer"
-                              title="คลิกเพื่อเลือกหรือเปลี่ยนเวรชี้จากตาราง PDF"
+                              className="text-[11px] font-normal text-slate-600 bg-slate-50 hover:bg-slate-100 px-2 py-0.5 rounded border border-slate-200 flex items-center gap-1 transition cursor-pointer"
+                              title="คลิกเพื่อเลือกหรือเปลี่ยนอัยการเวรชี้จากตาราง PDF"
                             >
-                              <span className="text-amber-700">⚖️ เวรชี้:</span> {caseItem.prosecutorName}
-                              <UserCheck className="w-3 h-3 text-amber-600" />
+                              <span className="text-slate-500">⚖️ อัยการเวรชี้:</span>
+                              <span className="text-slate-700 font-medium">{caseItem.prosecutorName}</span>
+                              <UserCheck className="w-3 h-3 text-slate-400" />
                             </button>
                           ) : (
                             <div className="flex items-center gap-1">
@@ -1044,11 +1160,11 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                   setCaseForDutyPicker(caseItem);
                                   setIsDutyPickerOpen(true);
                                 }}
-                                className="text-xs font-semibold text-amber-800 bg-amber-50/80 hover:bg-amber-100 border border-dashed border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
-                                title="เลือกเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
+                                className="text-[10px] font-normal text-slate-500 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 px-2 py-0.5 rounded flex items-center gap-1 transition cursor-pointer"
+                                title="เลือกอัยการเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
                               >
-                                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-                                <span>+ เลือกเวรชี้ (PDF)</span>
+                                <UserCheck className="w-3 h-3 text-slate-400" />
+                                <span>ระบุอัยการเวรชี้ (PDF)</span>
                               </button>
                               {officersOnSelectedDate.length > 0 && onQuickAssignOfficer && (
                                 <button
@@ -1072,39 +1188,66 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           </span>
                         </div>
 
-                        {/* Court Appointment Badge */}
-                        {caseItem.appointmentType && caseItem.appointmentType !== 'none' && (
-                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                            <span
-                              className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg border ${getAppointmentBadgeStyle(caseItem.appointmentType).bg} ${getAppointmentBadgeStyle(caseItem.appointmentType).text} ${getAppointmentBadgeStyle(caseItem.appointmentType).border}`}
-                              title={caseItem.appointmentNotes || undefined}
-                            >
-                              <span>{getAppointmentBadgeStyle(caseItem.appointmentType).icon}</span>
-                              <span>{getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)}</span>
-                              {caseItem.appointmentDate && (
-                                <span className="font-bold">: {formatThaiDate(caseItem.appointmentDate)}</span>
+                        {/* Court Appointment Badge (คดีที่จำเลยรับสารภาพจะไม่แสดงนัดคุ้มครองสิทธิ) */}
+                        {(() => {
+                          const isConfessed = procCat === 'confessed' || isCaseConfessed(caseItem);
+
+                          const showAppt =
+                            caseItem.appointmentType &&
+                            caseItem.appointmentType !== 'none' &&
+                            !(isConfessed && caseItem.appointmentType === 'rights_protection');
+
+                          const filteredSubsequent = (caseItem.subsequentAppointments || []).filter(
+                            (appt) => !(isConfessed && appt.type === 'rights_protection')
+                          );
+
+                          if (!showAppt && filteredSubsequent.length === 0) return null;
+
+                          return (
+                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                              {showAppt && (
+                                <span
+                                  className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg border ${getAppointmentBadgeStyle(caseItem.appointmentType!).bg} ${getAppointmentBadgeStyle(caseItem.appointmentType!).text} ${getAppointmentBadgeStyle(caseItem.appointmentType!).border}`}
+                                  title={caseItem.appointmentNotes || undefined}
+                                >
+                                  <span>{getAppointmentBadgeStyle(caseItem.appointmentType!).icon}</span>
+                                  <span>{getAppointmentLabel(caseItem.appointmentType!, caseItem.appointmentTypeName)}</span>
+                                  {caseItem.appointmentDate && (
+                                    <span className="font-bold">: {formatThaiDate(caseItem.appointmentDate)}</span>
+                                  )}
+                                  {caseItem.appointmentTime && <span>({caseItem.appointmentTime})</span>}
+                                </span>
                               )}
-                              {caseItem.appointmentTime && <span>({caseItem.appointmentTime})</span>}
-                            </span>
 
-                            {/* Subsequent Appointments */}
-                            {caseItem.subsequentAppointments && caseItem.subsequentAppointments.map((appt, aIdx) => (
-                              <span
-                                key={appt.id || aIdx}
-                                className="inline-flex items-center gap-1 text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200"
-                                title={appt.notes || undefined}
-                              >
-                                <span>นัดที่ {aIdx + 2}: {getAppointmentLabel(appt.type, appt.typeName)} {formatThaiDate(appt.date)}</span>
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                              {filteredSubsequent.map((appt, aIdx) => (
+                                <span
+                                  key={appt.id || aIdx}
+                                  className="inline-flex items-center gap-1 text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200"
+                                  title={appt.notes || undefined}
+                                >
+                                  <span>นัดที่ {aIdx + 2}: {getAppointmentLabel(appt.type, appt.typeName)} {formatThaiDate(appt.date)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
 
-                        {/* Parties */}
-                        <div className="text-xs text-slate-600 flex flex-wrap gap-x-5 gap-y-1">
+                        {/* Parties & Case Owner */}
+                        <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-5 gap-y-1.5">
                           <div><span className="text-slate-400">โจทก์:</span> {caseItem.plaintiff}</div>
                           <div><span className="text-slate-400">จำเลย:</span> {caseItem.defendant}</div>
-                          <div><span className="text-slate-400">ผู้รับผิดชอบ:</span> {caseItem.responsiblePerson}</div>
+                          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-950 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                            <span className="text-indigo-700 font-bold">👔 อัยการเจ้าของสำนวน:</span>
+                            <span className="text-indigo-900 font-bold">{caseItem.responsiblePerson || 'รอกำหนด'}</span>
+                          </div>
+                          {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (
+                            <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-800 bg-orange-50 border border-orange-300 px-2 py-0.5 rounded-lg shadow-2xs">
+                              <span>🚚 สำนวนเบิกฟ้อง</span>
+                              {(caseItem.requisitionDate || caseItem.appointmentDate) && (
+                                <span className="font-bold">: {formatThaiDate(caseItem.requisitionDate || caseItem.appointmentDate)}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Judgment or Outcome Notes */}
@@ -1136,10 +1279,17 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           </span>
                         ) : !caseItem.judgmentDate && !caseItem.appealDeadline ? (
                           <div className="text-left sm:text-right">
-                            <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
-                              <Shield className="w-3.5 h-3.5 text-amber-600" />
-                              <span>จำเลยปฏิเสธ (อยู่ระหว่างนัด)</span>
-                            </span>
+                            {isCaseConfessed(caseItem) || procCat === 'confessed' ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>จำเลยรับสารภาพ (รอคำพิพากษา)</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                                <Shield className="w-3.5 h-3.5 text-amber-600" />
+                                <span>จำเลยปฏิเสธ (อยู่ระหว่างนัด)</span>
+                              </span>
+                            )}
                             <span className="text-[11px] text-slate-400 block mt-0.5">
                               ยังไม่มีคำพิพากษา
                             </span>
@@ -1366,6 +1516,68 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 );
               })}
             </div>
+          ) : dateSearch.trim() && casesMatchingOtherDates.length > 0 ? (
+            /* Search yielded matches on other dates */
+            <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-6 sm:p-8 shadow-xs animate-in fade-in">
+              <div className="flex items-start sm:items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <Search className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 font-['Prompt'] text-base">
+                    ไม่พบคดีที่ตรงกับคำค้นหา &quot;{dateSearch}&quot; ในวันที่ {formatThaiDate(selectedDate)}
+                  </h4>
+                  <p className="text-xs text-amber-900/90 mt-0.5">
+                    แต่พบ <strong>{casesMatchingOtherDates.length} คดี</strong> ในวันที่ฟ้องอื่นๆ ({Object.keys(otherDatesWithMatches).length} วัน) ที่ตรงกับคำค้นหา:
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-amber-200/90 mb-5">
+                {Object.keys(otherDatesWithMatches).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setSelectedDate(d)}
+                    className="px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-amber-700" />
+                    <span>วันที่ {formatThaiDate(d)}</span>
+                    <span className="bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full text-[10px] font-bold">
+                      {otherDatesWithMatches[d].length} คดี
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="text-xs font-bold text-slate-700">รายการคดีที่พบในวันอื่นๆ (คลิกเพื่อเปิดดูวันนั้นทันที):</div>
+                {casesMatchingOtherDates.slice(0, 6).map((otherCase) => (
+                  <div
+                    key={otherCase.id}
+                    onClick={() => {
+                      if (otherCase.filingDate) setSelectedDate(otherCase.filingDate);
+                    }}
+                    className="bg-white p-3 rounded-xl border border-amber-200 hover:border-indigo-400 hover:shadow-xs transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-slate-900">ดำ {otherCase.blackCaseNo}</span>
+                      {otherCase.redCaseNo && <span className="text-rose-700 font-semibold">แดง {otherCase.redCaseNo}</span>}
+                      <span className="text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-medium text-[11px]">
+                        ฟ้องวันที่: {formatThaiDate(otherCase.filingDate)}
+                      </span>
+                      {otherCase.responsiblePerson && (
+                        <span className="text-slate-600">👔 {otherCase.responsiblePerson}</span>
+                      )}
+                      <span className="text-slate-500">จ: {otherCase.plaintiff} | ล: {otherCase.defendant}</span>
+                    </div>
+                    <span className="text-indigo-600 font-bold hover:underline shrink-0 text-xs">
+                      สลับไปดูวันที่นี้ →
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : (
             /* Empty State for Selected Date */
             <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
@@ -1376,7 +1588,9 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 ไม่พบคดีที่ยื่นฟ้องในวันที่ {formatThaiDate(selectedDate)}
               </h4>
               <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-5">
-                ในวันที่เลือกนี้ยังไม่มีรายการสำนวนคดีที่บันทึกไว้ในระบบ คุณสามารถเริ่มเพิ่มสำนวนที่ยื่นฟ้องในวันนี้ได้ทันที
+                {dateSearch.trim()
+                  ? `ไม่พบสำนวนคดีที่ตรงกับคำค้นหา "${dateSearch}" ในวันที่เลือกนี้`
+                  : 'ในวันที่เลือกนี้ยังไม่มีรายการสำนวนคดีที่บันทึกไว้ในระบบ คุณสามารถเริ่มเพิ่มสำนวนที่ยื่นฟ้องในวันนี้ได้ทันที'}
               </p>
               {onAddNewCaseForDate && (
                 <button
@@ -1399,7 +1613,9 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       {viewMode === 'all_dates' && (
         <div className="space-y-4">
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs text-slate-600">
-            <span>แสดงภาพรวมทุกวันที่ยื่นฟ้อง ({distinctFilingDates.length} วัน) รวมทั้งหมด {cases.length} สำนวน</span>
+            <span>
+              แสดงภาพรวม {filteredDistinctFilingDates.length} วันที่ยื่นฟ้อง {dateSearch ? `(กรองตาม "${dateSearch}")` : `(ทั้งหมด ${distinctFilingDates.length} วัน)`} รวม {cases.length} สำนวน
+            </span>
             <button
               onClick={() => setViewMode('single_date')}
               className="text-indigo-600 hover:text-indigo-800 font-semibold"
@@ -1409,9 +1625,19 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
           </div>
 
           <div className="space-y-3">
-            {distinctFilingDates.map((dateKey) => {
-              const casesInGroup = groupedByFilingDate[dateKey] || [];
-              const isOpen = expandedDates[dateKey] !== false;
+            {filteredDistinctFilingDates.length === 0 ? (
+              <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center text-slate-500">
+                <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="font-semibold text-sm text-slate-700">ไม่พบวันที่ฟ้องหรือสำนวนคดีที่ตรงกับคำค้นหา &quot;{dateSearch}&quot;</p>
+                <p className="text-xs text-slate-400 mt-1">ลองพิมพ์วันที่ในรูปแบบ เช่น 15 ก.ย., 2026-09-15 หรือค้นหาด้วยเลขคดี</p>
+              </div>
+            ) : (
+              filteredDistinctFilingDates.map((dateKey) => {
+                const allCasesInGroup = groupedByFilingDate[dateKey] || [];
+                const casesInGroup = dateSearch.trim()
+                  ? allCasesInGroup.filter((c) => caseMatchesDailySearch(c, dateSearch))
+                  : allCasesInGroup;
+                const isOpen = dateSearch.trim() ? true : (expandedDates[dateKey] !== false);
 
               return (
                 <div key={dateKey} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
@@ -1484,16 +1710,31 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                               {caseItem.redCaseNo && <span className="text-rose-700 font-semibold">แดง {caseItem.redCaseNo}</span>}
                               {caseItem.receivedNumberS1 && <span className="text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-medium">ส.1: {caseItem.receivedNumberS1}</span>}
                               {caseItem.filingNumberS4 && <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium">ส.4: {caseItem.filingNumberS4}</span>}
+                              {caseItem.responsiblePerson && (
+                                <span className="text-indigo-950 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-semibold flex items-center gap-1 shadow-2xs">
+                                  <span className="text-indigo-700">👔 อัยการเจ้าของสำนวน:</span>
+                                  <span>{caseItem.responsiblePerson}</span>
+                                </span>
+                              )}
                               {caseItem.prosecutorName && (
-                                <span className="text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-semibold flex items-center gap-1">
-                                  <span>⚖️ เวรชี้:</span>
+                                <span className="text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 font-normal flex items-center gap-1">
+                                  <span className="text-slate-500">⚖️ อัยการเวรชี้:</span>
                                   <span>{caseItem.prosecutorName}</span>
+                                </span>
+                              )}
+                              {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (
+                                <span className="text-orange-800 bg-orange-50 px-2 py-0.5 rounded border border-orange-300 font-semibold flex items-center gap-1 shadow-2xs">
+                                  <span>🚚 สำนวนเบิกฟ้อง</span>
+                                  {(caseItem.requisitionDate || caseItem.appointmentDate) && (
+                                    <span>: {formatThaiDate(caseItem.requisitionDate || caseItem.appointmentDate)}</span>
+                                  )}
                                 </span>
                               )}
                               <span className="text-slate-500">📍 {caseItem.court}</span>
                             </div>
-                            <div className="text-slate-500">
-                              โจทก์: {caseItem.plaintiff} | จำเลย: {caseItem.defendant}
+                            <div className="text-slate-500 flex flex-wrap gap-x-3">
+                              <span>โจทก์: {caseItem.plaintiff}</span>
+                              <span>จำเลย: {caseItem.defendant}</span>
                             </div>
                           </div>
 
@@ -1572,7 +1813,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>
       )}
@@ -1594,7 +1835,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
               onEditCase({
                 ...caseForDutyPicker,
                 prosecutorName: officerName,
-                responsiblePerson: caseForDutyPicker.responsiblePerson || officerName,
+                // Do not overwrite responsiblePerson (อัยการเจ้าของสำนวน) with duty officer
+                responsiblePerson: caseForDutyPicker.responsiblePerson || '',
               });
             }
           }

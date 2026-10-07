@@ -26,7 +26,7 @@ import {
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
-import { getAppointmentLabel, getAppointmentBadgeStyle } from '../utils/appointmentUtils';
+import { getAppointmentLabel, getAppointmentBadgeStyle, isCaseConfessed, getRequisitionStatus } from '../utils/appointmentUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCaseUtils';
 
@@ -106,6 +106,9 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       if (statusFilter === 'active') {
         return !c.isCompleted && getAppealUrgency(c) === 'normal';
       }
+      if (statusFilter === 'requisition') {
+        return !c.isCompleted && (c.isRequisitionCase || c.appointmentType === 'requisition');
+      }
       if (statusFilter === 'pending_trial') {
         return !c.isCompleted && (c.hasJudgment === false || (!c.judgmentDate && !c.appealDeadline));
       }
@@ -117,9 +120,10 @@ export const CaseTable: React.FC<CaseTableProps> = ({
     .filter((c) => {
       // Search
       if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase();
+      const term = searchTerm.toLowerCase().trim();
+      if (!term) return true;
 
-      // Clean prefix if user spoke "คดีดำ" or "คดีแดง" or "ฟ้องวันที่"
+      // Clean prefix if user spoke or typed conversational prefixes
       const cleanTerm = term
         .replace(/ค้นหา/g, '')
         .replace(/คดีดำ/g, '')
@@ -129,46 +133,56 @@ export const CaseTable: React.FC<CaseTableProps> = ({
         .replace(/เลขรับ/g, '')
         .replace(/เลขฟ้อง/g, '')
         .replace(/ฟ้องวันที่/g, '')
+        .replace(/วันที่ฟ้อง/g, '')
+        .replace(/วันฟ้อง/g, '')
         .replace(/วันที่/g, '')
+        .replace(/ยื่นฟ้อง/g, '')
+        .replace(/ฟ้อง/g, '')
         .trim();
 
-      // If user specifically searched black or red
-      if (term.includes('ดำ') && !term.includes('แดง')) {
-        return c.blackCaseNo.toLowerCase().includes(cleanTerm || term);
-      }
-      if (term.includes('แดง')) {
-        return Boolean(c.redCaseNo && c.redCaseNo.toLowerCase().includes(cleanTerm || term));
-      }
-      if (term.includes('ส.1') || term.includes('เลขรับ')) {
-        return Boolean(c.receivedNumberS1 && c.receivedNumberS1.toLowerCase().includes(cleanTerm || term));
-      }
-      if (term.includes('ส.4') || term.includes('เลขฟ้อง')) {
-        return Boolean(c.filingNumberS4 && c.filingNumberS4.toLowerCase().includes(cleanTerm || term));
-      }
-      if (term.includes('ฟ้อง')) {
-        return (
-          (c.filingDate && c.filingDate.includes(cleanTerm)) ||
-          formatThaiDate(c.filingDate).toLowerCase().includes(cleanTerm)
-        );
+      // If user typed only keywords like "วันที่ฟ้อง", "ฟ้อง", "วันฟ้อง", "ค้นหา"
+      if (!cleanTerm && (term.includes('ฟ้อง') || term.includes('วันที่') || term.includes('ค้นหา'))) {
+        return true;
       }
 
+      const q = cleanTerm || term;
+      const rawFilingDate = (c.filingDate || '').toLowerCase();
+      const thaiFilingDate = formatThaiDate(c.filingDate).toLowerCase();
+
+      // If user specifically searched black or red
+      if (term.includes('ดำ') && !term.includes('แดง') && cleanTerm) {
+        return c.blackCaseNo.toLowerCase().includes(cleanTerm);
+      }
+      if (term.includes('แดง') && cleanTerm) {
+        return Boolean(c.redCaseNo && c.redCaseNo.toLowerCase().includes(cleanTerm));
+      }
+      if ((term.includes('ส.1') || term.includes('เลขรับ')) && cleanTerm) {
+        return Boolean(c.receivedNumberS1 && c.receivedNumberS1.toLowerCase().includes(cleanTerm));
+      }
+      if ((term.includes('ส.4') || term.includes('เลขฟ้อง')) && cleanTerm) {
+        return Boolean(c.filingNumberS4 && c.filingNumberS4.toLowerCase().includes(cleanTerm));
+      }
+
+      const matchesDate =
+        rawFilingDate.includes(q) ||
+        thaiFilingDate.includes(q) ||
+        (cleanTerm && (rawFilingDate.includes(cleanTerm) || thaiFilingDate.includes(cleanTerm)));
+
       return (
+        matchesDate ||
+        c.blackCaseNo.toLowerCase().includes(q) ||
         c.blackCaseNo.toLowerCase().includes(term) ||
-        c.blackCaseNo.toLowerCase().includes(cleanTerm) ||
-        Boolean(c.redCaseNo && c.redCaseNo.toLowerCase().includes(term)) ||
-        Boolean(c.redCaseNo && c.redCaseNo.toLowerCase().includes(cleanTerm)) ||
-        Boolean(c.receivedNumberS1 && c.receivedNumberS1.toLowerCase().includes(term)) ||
-        Boolean(c.receivedNumberS1 && c.receivedNumberS1.toLowerCase().includes(cleanTerm)) ||
-        Boolean(c.filingNumberS4 && c.filingNumberS4.toLowerCase().includes(term)) ||
-        Boolean(c.filingNumberS4 && c.filingNumberS4.toLowerCase().includes(cleanTerm)) ||
-        (c.prosecutorName && c.prosecutorName.toLowerCase().includes(term)) ||
-        (c.prosecutorName && c.prosecutorName.toLowerCase().includes(cleanTerm)) ||
-        c.court.toLowerCase().includes(term) ||
-        c.plaintiff.toLowerCase().includes(term) ||
-        c.defendant.toLowerCase().includes(term) ||
-        c.responsiblePerson.toLowerCase().includes(term) ||
-        (c.filingDate && c.filingDate.includes(term)) ||
-        formatThaiDate(c.filingDate).toLowerCase().includes(term)
+        Boolean(c.redCaseNo && (c.redCaseNo.toLowerCase().includes(q) || c.redCaseNo.toLowerCase().includes(term))) ||
+        Boolean(c.receivedNumberS1 && (c.receivedNumberS1.toLowerCase().includes(q) || c.receivedNumberS1.toLowerCase().includes(term))) ||
+        Boolean(c.filingNumberS4 && (c.filingNumberS4.toLowerCase().includes(q) || c.filingNumberS4.toLowerCase().includes(term))) ||
+        Boolean(c.prosecutorName && (c.prosecutorName.toLowerCase().includes(q) || c.prosecutorName.toLowerCase().includes(term))) ||
+        Boolean(c.responsiblePerson && (c.responsiblePerson.toLowerCase().includes(q) || c.responsiblePerson.toLowerCase().includes(term))) ||
+        c.court.toLowerCase().includes(q) ||
+        c.plaintiff.toLowerCase().includes(q) ||
+        c.defendant.toLowerCase().includes(q) ||
+        c.caseType.toLowerCase().includes(q) ||
+        Boolean(c.judgmentOutcome && c.judgmentOutcome.toLowerCase().includes(q)) ||
+        Boolean(c.notes && c.notes.toLowerCase().includes(q))
       );
     })
     .sort((a, b) => {
@@ -238,6 +252,18 @@ export const CaseTable: React.FC<CaseTableProps> = ({
             >
               มีนัดพิจารณา/ปฏิเสธ (
               {cases.filter((c) => !c.isCompleted && (c.hasJudgment === false || (!c.judgmentDate && !c.appealDeadline))).length}
+              )
+            </button>
+            <button
+              onClick={() => setStatusFilter('requisition')}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === 'requisition'
+                  ? 'bg-orange-600 text-white font-bold shadow-xs'
+                  : 'text-orange-700 hover:bg-orange-50'
+              }`}
+            >
+              🚚 สำนวนเบิกฟ้อง (
+              {cases.filter((c) => !c.isCompleted && (c.isRequisitionCase || c.appointmentType === 'requisition')).length}
               )
             </button>
             <button
@@ -336,25 +362,25 @@ export const CaseTable: React.FC<CaseTableProps> = ({
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs">
+        <table className="w-full text-left border-collapse text-xs table-auto">
           <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-600 font-medium">
-              <th className="py-3 px-4 w-12 text-center">#</th>
-              <th className="py-3 px-4">วันที่ฟ้อง</th>
-              <th className="py-3 px-4">เลขคดีดำ / คดีแดง</th>
-              <th className="py-3 px-4">ศาล & คู่ความ</th>
-              <th className="py-3 px-4">วันที่พิพากษา</th>
-              <th className="py-3 px-4">
+            <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-600 font-medium text-[11px]">
+              <th className="py-2.5 px-2 w-8 text-center">#</th>
+              <th className="py-2.5 px-2 whitespace-nowrap">วันที่ฟ้อง</th>
+              <th className="py-2.5 px-2">เลขคดีดำ / แดง</th>
+              <th className="py-2.5 px-2">ศาล & คู่ความ</th>
+              <th className="py-2.5 px-2 whitespace-nowrap">วันที่พิพากษา</th>
+              <th className="py-2.5 px-2 whitespace-nowrap">
                 <button
                   onClick={() => setSortBy(sortBy === 'deadline' ? 'filing' : 'deadline')}
                   className="inline-flex items-center gap-1 text-slate-700 hover:text-amber-600 font-semibold"
                 >
-                  <span>ครบกำหนดอุทธรณ์ 1 เดือน</span>
+                  <span>ครบอุทธรณ์ 1 ด.</span>
                   <ArrowUpDown className="w-3 h-3" />
                 </button>
               </th>
-              <th className="py-3 px-4">สถานะ & การเตือน</th>
-              <th className="py-3 px-4 text-center w-36">การดำเนินการ</th>
+              <th className="py-2.5 px-2 whitespace-nowrap">สถานะ & การเตือน</th>
+              <th className="py-2.5 px-2 text-center min-w-[190px]">การดำเนินการ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -382,20 +408,20 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     }`}
                   >
                     {/* Index */}
-                    <td className="py-3.5 px-4 text-center text-slate-400 font-mono">
+                    <td className="py-2.5 px-2 text-center text-slate-400 font-mono text-[11px]">
                       {idx + 1}
                     </td>
 
                     {/* Filing Date */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="font-medium text-slate-800">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
+                      <div className="font-medium text-slate-800 text-[11px]">
                         {formatThaiDate(caseItem.filingDate)}
                       </div>
                       <span className="text-[10px] text-slate-400">วันยื่นฟ้อง</span>
                     </td>
 
                     {/* Case Numbers */}
-                    <td className="py-3.5 px-4">
+                    <td className="py-2.5 px-2">
                       <div className="font-bold text-slate-900 font-['Prompt'] text-xs">
                         ดำ {caseItem.blackCaseNo}
                       </div>
@@ -410,7 +436,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                       )}
                       {caseItem.receivedNumberS1 && (
                         <div
-                          className="text-[10px] text-blue-700 font-medium bg-blue-50/80 border border-blue-200/60 rounded px-1.5 py-0.5 mt-0.5 flex items-center gap-1 truncate max-w-[170px]"
+                          className="text-[10px] text-blue-700 font-medium bg-blue-50/80 border border-blue-200/60 rounded px-1.5 py-0.5 mt-0.5 flex items-center gap-1 truncate max-w-[160px]"
                           title={`ข้อมูลเลขรับ ส.1: ${caseItem.receivedNumberS1}`}
                         >
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
@@ -419,76 +445,96 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                       )}
                       {caseItem.filingNumberS4 && (
                         <div
-                          className="text-[10px] text-emerald-700 font-medium bg-emerald-50/80 border border-emerald-200/60 rounded px-1.5 py-0.5 mt-0.5 flex items-center gap-1 truncate max-w-[170px]"
+                          className="text-[10px] text-emerald-700 font-medium bg-emerald-50/80 border border-emerald-200/60 rounded px-1.5 py-0.5 mt-0.5 flex items-center gap-1 truncate max-w-[160px]"
                           title={`ข้อมูลเลขฟ้อง ส.4: ${caseItem.filingNumberS4}`}
                         >
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
                           <span className="font-semibold text-emerald-900">ส.4:</span> {caseItem.filingNumberS4}
                         </div>
                       )}
-                      {caseItem.prosecutorName && (
-                        <div
-                          className="text-[11px] font-medium text-amber-950 bg-amber-50/90 border border-amber-200/80 rounded px-1.5 py-0.5 mt-1 truncate max-w-[170px]"
-                          title={`อัยการเจ้าของสำนวน: ${caseItem.prosecutorName}`}
-                        >
-                          <span className="text-amber-800 font-semibold">อัยการ:</span> {caseItem.prosecutorName}
-                        </div>
-                      )}
-                      <div className="mt-1">
+                      <div className="mt-1 flex items-center gap-1 flex-wrap">
                         <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
                           {caseItem.caseType}
                         </span>
+                        {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (
+                          <span className="text-[10px] font-semibold text-orange-800 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded shadow-2xs" title={`สำนวนเบิกฟ้อง ${caseItem.requisitionDate || caseItem.appointmentDate || ''}`}>
+                            🚚 เบิกฟ้อง
+                          </span>
+                        )}
                       </div>
                     </td>
 
                     {/* Court & Parties */}
-                    <td className="py-3.5 px-4 max-w-xs">
+                    <td className="py-2.5 px-2 max-w-[210px]">
                       <div className="font-medium text-slate-800 truncate" title={caseItem.court}>
                         📍 {caseItem.court}
                       </div>
                       <div className="text-slate-500 truncate text-[11px]" title={`โจทก์: ${caseItem.plaintiff} / จำเลย: ${caseItem.defendant}`}>
                         จ: {caseItem.plaintiff} | ล: {caseItem.defendant}
                       </div>
-                      {caseItem.prosecutorName && (
-                        <div className="text-[11px] text-amber-800 font-semibold flex items-center gap-1 mt-0.5" title={`อัยการเวรชี้: ${caseItem.prosecutorName}`}>
-                          <span>⚖️ เวรชี้:</span>
-                          <span className="bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">{caseItem.prosecutorName}</span>
-                        </div>
-                      )}
-                      <div className="text-[10px] text-slate-400">
-                        ผู้รับผิดชอบ: {caseItem.responsiblePerson}
+
+                      {/* แสดงอัยการเจ้าของสำนวน (เด่นชัด ชัดเจน) และ อัยการเวรชี้ (ไม่แย่งจุดสนใจ) แยกบทบาทชัดเจน */}
+                      <div className="mt-1 space-y-1">
+                        {caseItem.responsiblePerson && caseItem.responsiblePerson !== 'ผู้ดูแลสำนวน' && (
+                          <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-950 bg-indigo-50/90 border border-indigo-200 px-1.5 py-0.5 rounded-md shadow-2xs max-w-full" title={`อัยการเจ้าของสำนวน: ${caseItem.responsiblePerson}`}>
+                            <span className="text-indigo-700 font-bold shrink-0">👔 อัยการเจ้าของสำนวน:</span>
+                            <span className="text-indigo-950 font-bold truncate">{caseItem.responsiblePerson}</span>
+                          </div>
+                        )}
+                        {caseItem.prosecutorName && (
+                          <div className="flex items-center gap-1 text-[10px] text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded max-w-full" title={`อัยการเวรชี้: ${caseItem.prosecutorName}`}>
+                            <span className="text-slate-500 font-medium shrink-0">⚖️ อัยการเวรชี้:</span>
+                            <span className="text-slate-700 truncate">{caseItem.prosecutorName}</span>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Court Appointment Badge */}
-                      {caseItem.appointmentType && caseItem.appointmentType !== 'none' && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getAppointmentBadgeStyle(caseItem.appointmentType).bg} ${getAppointmentBadgeStyle(caseItem.appointmentType).text} ${getAppointmentBadgeStyle(caseItem.appointmentType).border}`}
-                            title={caseItem.appointmentNotes || undefined}
-                          >
-                            <span>{getAppointmentBadgeStyle(caseItem.appointmentType).icon}</span>
-                            <span>{getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)}</span>
-                            {caseItem.appointmentDate && (
-                              <span className="font-bold">: {formatThaiDate(caseItem.appointmentDate)}</span>
-                            )}
-                          </span>
+                      {/* Court Appointment Badge (คดีที่จำเลยรับสารภาพจะไม่แสดงนัดคุ้มครองสิทธิ) */}
+                      {(() => {
+                        const isConfessed = isCaseConfessed(caseItem);
 
-                          {/* Subsequent Appointments */}
-                          {caseItem.subsequentAppointments && caseItem.subsequentAppointments.map((appt, aIdx) => (
-                            <span
-                              key={appt.id || aIdx}
-                              className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200"
-                              title={appt.notes || undefined}
-                            >
-                              <span>นัดถัดไป ({aIdx + 2}): {getAppointmentLabel(appt.type, appt.typeName)} {formatThaiDate(appt.date)}</span>
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                        const showAppt =
+                          caseItem.appointmentType &&
+                          caseItem.appointmentType !== 'none' &&
+                          !(isConfessed && caseItem.appointmentType === 'rights_protection');
+
+                        const filteredSubsequent = (caseItem.subsequentAppointments || []).filter(
+                          (appt) => !(isConfessed && appt.type === 'rights_protection')
+                        );
+
+                        if (!showAppt && filteredSubsequent.length === 0) return null;
+
+                        return (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {showAppt && (
+                              <span
+                                className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getAppointmentBadgeStyle(caseItem.appointmentType!).bg} ${getAppointmentBadgeStyle(caseItem.appointmentType!).text} ${getAppointmentBadgeStyle(caseItem.appointmentType!).border}`}
+                                title={caseItem.appointmentNotes || undefined}
+                              >
+                                <span>{getAppointmentBadgeStyle(caseItem.appointmentType!).icon}</span>
+                                <span>{getAppointmentLabel(caseItem.appointmentType!, caseItem.appointmentTypeName)}</span>
+                                {caseItem.appointmentDate && (
+                                  <span className="font-bold">: {formatThaiDate(caseItem.appointmentDate)}</span>
+                                )}
+                              </span>
+                            )}
+
+                            {filteredSubsequent.map((appt, aIdx) => (
+                              <span
+                                key={appt.id || aIdx}
+                                className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200"
+                                title={appt.notes || undefined}
+                              >
+                                <span>นัดถัดไป ({aIdx + 2}): {getAppointmentLabel(appt.type, appt.typeName)} {formatThaiDate(appt.date)}</span>
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Judgment Date */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       {caseItem.judgmentDate ? (
                         <div>
                           <div className="flex items-center gap-1.5">
@@ -545,7 +591,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Appeal Deadline (1 month) */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       {caseItem.appealDeadline || caseItem.extendedDeadline ? (
                         <div
                           onClick={() => !isCompleted && onExtendDeadline(caseItem)}
@@ -588,7 +634,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Urgency / Status Badge */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       {isCompleted ? (
                         <div className="space-y-0.5">
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
@@ -630,7 +676,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1.5">
                         {canEdit ? (
                           <>
@@ -705,23 +751,31 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                               </button>
                             )}
 
-                            {onOpenAppointmentModal && (
-                              <button
-                                onClick={() => onOpenAppointmentModal(caseItem)}
-                                className={`p-1.5 rounded-lg transition ${
-                                  caseItem.appointmentType && caseItem.appointmentType !== 'none'
-                                    ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 ring-1 ring-indigo-200'
-                                    : 'text-slate-500 hover:text-indigo-700 hover:bg-indigo-50'
-                                }`}
-                                title={
-                                  caseItem.appointmentType && caseItem.appointmentType !== 'none'
-                                    ? `นัดศาล: ${getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)} (${caseItem.appointmentDate ? formatThaiDate(caseItem.appointmentDate) : '-'}) - คลิกเพื่อแก้ไข`
-                                    : 'ระบุขั้นตอนนัดของศาล (นัดคุ้มครองสิทธิ, สืบเสาะ หรืออื่นๆ)'
-                                }
-                              >
-                                <Clock className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            {onOpenAppointmentModal && (() => {
+                              const isConfessed = isCaseConfessed(caseItem);
+                              const hasActiveAppt =
+                                caseItem.appointmentType &&
+                                caseItem.appointmentType !== 'none' &&
+                                !(isConfessed && caseItem.appointmentType === 'rights_protection');
+
+                              return (
+                                <button
+                                  onClick={() => onOpenAppointmentModal(caseItem)}
+                                  className={`p-1.5 rounded-lg transition ${
+                                    hasActiveAppt
+                                      ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 ring-1 ring-indigo-200'
+                                      : 'text-slate-500 hover:text-indigo-700 hover:bg-indigo-50'
+                                  }`}
+                                  title={
+                                    hasActiveAppt
+                                      ? `นัดศาล: ${getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)} (${caseItem.appointmentDate ? formatThaiDate(caseItem.appointmentDate) : '-'}) - คลิกเพื่อแก้ไข`
+                                      : 'ระบุขั้นตอนนัดของศาล (สืบเสาะ, นัดฟังคำพิพากษา หรืออื่นๆ)'
+                                  }
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                </button>
+                              );
+                            })()}
 
                             {onSyncCalendar && (
                               <button

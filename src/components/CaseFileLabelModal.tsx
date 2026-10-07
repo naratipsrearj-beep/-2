@@ -269,10 +269,15 @@ export const CaseFileLabelModal: React.FC<CaseFileLabelModalProps> = ({
 
                 {/* Footer with Duty Prosecutor & QR Code */}
                 <div className="flex items-center justify-between pt-1">
-                  <div className="text-xs space-y-0.5">
-                    <div className="text-[11px] text-slate-600">
-                      เวรชี้ / เจ้าของสำนวน: <strong>{caseItem.prosecutorName || caseItem.responsiblePerson}</strong>
+                  <div className="text-xs space-y-1">
+                    <div className="text-[11px] text-slate-700">
+                      👔 อัยการเจ้าของสำนวน: <strong>{caseItem.responsiblePerson || '-'}</strong>
                     </div>
+                    {caseItem.prosecutorName && (
+                      <div className="text-[10px] text-slate-500">
+                        ⚖️ อัยการเวรชี้: <span>{caseItem.prosecutorName}</span>
+                      </div>
+                    )}
                     <div className="text-[10px] text-slate-400">
                       พิมพ์เมื่อ {formatThaiDate(new Date().toISOString().slice(0, 10))} • ระบบคุมสำนวนอุทธรณ์
                     </div>
@@ -309,7 +314,10 @@ export const CaseFileLabelModal: React.FC<CaseFileLabelModalProps> = ({
                     <p><strong>ศาล:</strong> {caseItem.court}</p>
                     <p><strong>วันที่ยื่นฟ้อง:</strong> {formatThaiDate(caseItem.filingDate, { short: false })}</p>
                     <p><strong>ประเภทคดี:</strong> {caseItem.caseType}</p>
-                    <p><strong>พนักงานอัยการเวรชี้/เจ้าของสำนวน:</strong> {caseItem.prosecutorName || caseItem.responsiblePerson}</p>
+                    <p><strong>อัยการเจ้าของสำนวน:</strong> {caseItem.responsiblePerson || '-'}</p>
+                    {caseItem.prosecutorName && (
+                      <p className="text-slate-600"><strong>อัยการเวรชี้:</strong> {caseItem.prosecutorName}</p>
+                    )}
                   </div>
                 </div>
 
