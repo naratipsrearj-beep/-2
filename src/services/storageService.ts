@@ -37,12 +37,54 @@ export function getSavedCases(): AppealCase[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CASES);
     if (raw !== null) {
-      return JSON.parse(raw);
+      const parsed: AppealCase[] = JSON.parse(raw);
+      // หากยังไม่มีสำนวนแยกฟ้องในระบบจำลอง ให้เพิ่มตัวอย่างสำนวนแยกฟ้องเพื่อความสมบูรณ์
+      if (Array.isArray(parsed) && parsed.length > 0 && !parsed.some((c) => c.isSeveredCase || c.id === 'case_sample_severed_1')) {
+        const sampleSevered: AppealCase = {
+          id: 'case_sample_severed_1',
+          filingDate: '2026-10-02',
+          blackCaseNo: 'อ.550/2569',
+          receivedNumberS1: '124/2569',
+          filingNumberS4: '45/2569',
+          court: 'ศาลอาญา (รัชดา)',
+          plaintiff: 'พนักงานอัยการ สำนักงานอัยการพิเศษฝ่ายคดีอาญา 4',
+          defendant: 'นายสุรชัย มั่นคง (จำเลยที่ 2 - สำนวนที่ศาลแยกฟ้อง)',
+          caseType: 'อาญา (ฉ้อโกงประชาชน)',
+          hasJudgment: false,
+          defendantPlea: 'denied',
+          isCompleted: false,
+          isSeveredCase: true,
+          severedFromCaseId: 'case_sample_1',
+          originalBlackCaseNo: 'อ.452/2569',
+          originalRedCaseNo: 'อ.891/2569',
+          originalReceivedNumberS1: '124/2569',
+          originalFilingNumberS4: '45/2569',
+          severedOrderDate: '2026-09-04',
+          severedDeadlineDate: '2026-10-15',
+          severedNotes: 'จำเลยที่ 2 ให้การปฏิเสธ ศาลสั่งให้พนักงานอัยการแยกฟ้องภายใน 15 วัน',
+          appointmentType: 'pre_trial',
+          appointmentDate: '2026-11-15',
+          appointmentTime: '09:00 น.',
+          appointmentCourtRoom: 'ห้องพิจารณาคดี 801',
+          appointmentNotes: 'นัดตรวจพยานหลักฐาน (สำนวนแยกฟ้อง)',
+          judgmentOutcome: 'อยู่ระหว่างนัดพิจารณา (สำนวนที่ศาลแยกฟ้อง)',
+          responsiblePerson: 'นายธนพล บุญเจริญ',
+          notes: 'สำนวนที่ศาลสั่งแยกฟ้องจากคดีดำ อ.452/2569 เลขรับ ส.1 124/2569 เลขฟ้อง ส.4 45/2569',
+          createdAt: '2026-10-02T10:00:00Z',
+          updatedAt: '2026-10-02T10:00:00Z',
+        };
+        const updated = [...parsed, sampleSevered];
+        saveCases(updated);
+        return updated;
+      }
+      return parsed;
     }
   } catch (e) {
     console.error('Failed to parse saved cases', e);
   }
-  return [];
+  const samples = getInitialSampleCases();
+  saveCases(samples);
+  return samples;
 }
 
 export function saveCases(cases: AppealCase[]) {
@@ -300,6 +342,39 @@ function getInitialSampleCases(): AppealCase[] {
       notes: 'จำเลยที่ 2 ยกฟ้อง ต้องตรวจสอบว่าจะอุทธรณ์คำพิพากษาในส่วนจำเลยที่ 2 หรือไม่ รีบตรวจร่าง',
       createdAt: '2026-09-04T10:00:00Z',
       updatedAt: '2026-09-04T10:00:00Z',
+    },
+    {
+      id: 'case_sample_severed_1',
+      filingDate: '2026-10-02',
+      blackCaseNo: 'อ.550/2569',
+      receivedNumberS1: '124/2569',
+      filingNumberS4: '45/2569',
+      court: 'ศาลอาญา (รัชดา)',
+      plaintiff: 'พนักงานอัยการ สำนักงานอัยการพิเศษฝ่ายคดีอาญา 4',
+      defendant: 'นายสุรชัย มั่นคง (จำเลยที่ 2 - สำนวนที่ศาลแยกฟ้อง)',
+      caseType: 'อาญา (ฉ้อโกงประชาชน)',
+      hasJudgment: false,
+      defendantPlea: 'denied',
+      isCompleted: false,
+      isSeveredCase: true,
+      severedFromCaseId: 'case_sample_1',
+      originalBlackCaseNo: 'อ.452/2569',
+      originalRedCaseNo: 'อ.891/2569',
+      originalReceivedNumberS1: '124/2569',
+      originalFilingNumberS4: '45/2569',
+      severedOrderDate: '2026-09-04',
+      severedDeadlineDate: '2026-10-15',
+      severedNotes: 'จำเลยที่ 2 ให้การปฏิเสธ ศาลสั่งให้พนักงานอัยการแยกฟ้องภายใน 15 วัน',
+      appointmentType: 'pre_trial',
+      appointmentDate: '2026-11-15',
+      appointmentTime: '09:00 น.',
+      appointmentCourtRoom: 'ห้องพิจารณาคดี 801',
+      appointmentNotes: 'นัดตรวจพยานหลักฐาน (สำนวนแยกฟ้อง)',
+      judgmentOutcome: 'อยู่ระหว่างนัดพิจารณา (สำนวนที่ศาลแยกฟ้อง)',
+      responsiblePerson: 'นายธนพล บุญเจริญ',
+      notes: 'สำนวนที่ศาลสั่งแยกฟ้องจากคดีดำ อ.452/2569 เลขรับ ส.1 124/2569 เลขฟ้อง ส.4 45/2569',
+      createdAt: '2026-10-02T10:00:00Z',
+      updatedAt: '2026-10-02T10:00:00Z',
     },
     {
       id: 'case_sample_rights_protection',

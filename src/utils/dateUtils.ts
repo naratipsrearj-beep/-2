@@ -81,6 +81,11 @@ export function getAppealUrgency(caseItem: AppealCase, refDate: Date = new Date(
     return 'completed';
   }
 
+  // สำนวนเบิกฟ้องที่ยังไม่มีคำพิพากษา จะยังไม่เริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน
+  if ((caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (!caseItem.hasJudgment && !caseItem.judgmentDate)) {
+    return 'pending_trial';
+  }
+
   // หากเป็นสำนวนที่ยังไม่มีคำพิพากษา (เช่น อยู่ระหว่างนัดคุ้มครองสิทธิ, จำเลยปฏิเสธ, มีวันนัดต่อๆ ไป)
   if (caseItem.hasJudgment === false || (!caseItem.judgmentDate && !caseItem.appealDeadline)) {
     return 'pending_trial';

@@ -21,14 +21,18 @@ import {
   Mail,
   Copy,
   QrCode,
-  Scale
+  Scale,
+  Palette
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
-import { getAppointmentLabel, getAppointmentBadgeStyle, isCaseConfessed, getRequisitionStatus } from '../utils/appointmentUtils';
+import { getAppointmentLabel, getAppointmentBadgeStyle, isCaseConfessed, getRequisitionStatus, isJudgmentRecorded } from '../utils/appointmentUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCaseUtils';
+import { getCaseCardStyle } from './DailyFilingByDateView';
+import { LinkedCasesModal } from './LinkedCasesModal';
+import { buildLinkedCasesMap, caseMatchesWithLinkedSearch, baseCaseMatcher } from '../utils/linkedCaseUtils';
 
 interface CaseTableProps {
   cases: AppealCase[];
@@ -37,6 +41,7 @@ interface CaseTableProps {
   onExtendDeadline: (caseItem: AppealCase) => void;
   onRecordJudgment?: (caseItem: AppealCase) => void;
   onEditCase?: (caseItem: AppealCase) => void;
+  onCreateSeveredCase?: (parentCase: AppealCase) => void;
   onSyncCalendar?: (caseItem: AppealCase) => void;
   onOpenJudgmentDoc?: (caseItem: AppealCase) => void;
   onSendEmailAlert?: (caseItem: AppealCase) => void;
@@ -57,6 +62,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onExtendDeadline,
   onRecordJudgment,
   onEditCase,
+  onCreateSeveredCase,
   onSyncCalendar,
   onOpenJudgmentDoc,
   onSendEmailAlert,
@@ -73,6 +79,10 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>(initialFilter);
   const [sortBy, setSortBy] = useState<'deadline' | 'filing' | 'judgment'>('deadline');
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const [selectedLinkedModalData, setSelectedLinkedModalData] = useState<{ current: AppealCase; linked: AppealCase[] } | null>(null);
+
+  // แคชความเชื่อมโยงของสำนวนคดีทั้งหมดเพื่อการค้นหาและการแสดงผลที่รวดเร็ว
+  const prebuiltLinkedMap = React.useMemo(() => buildLinkedCasesMap(cases), [cases]);
 
   useEffect(() => {
     if (externalSearchTerm !== undefined) {
@@ -110,7 +120,10 @@ export const CaseTable: React.FC<CaseTableProps> = ({
         return !c.isCompleted && (c.isRequisitionCase || c.appointmentType === 'requisition');
       }
       if (statusFilter === 'pending_trial') {
-        return !c.isCompleted && (c.hasJudgment === false || (!c.judgmentDate && !c.appealDeadline));
+        return !c.isCompleted && !isJudgmentRecorded(c);
+      }
+      if (statusFilter === 'severed') {
+        return c.isSeveredCase || Boolean(c.originalBlackCaseNo) || Boolean(c.severedFromCaseId);
       }
       if (statusFilter === 'completed') {
         return c.isCompleted;
@@ -118,72 +131,10 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       return true;
     })
     .filter((c) => {
-      // Search
+      // ค้นหาโดยรวมสำนวนที่เชื่อมโยงกัน (Linked Cases Search)
       if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase().trim();
-      if (!term) return true;
-
-      // Clean prefix if user spoke or typed conversational prefixes
-      const cleanTerm = term
-        .replace(/ค้นหา/g, '')
-        .replace(/คดีดำ/g, '')
-        .replace(/คดีแดง/g, '')
-        .replace(/ส\.1/g, '')
-        .replace(/ส\.4/g, '')
-        .replace(/เลขรับ/g, '')
-        .replace(/เลขฟ้อง/g, '')
-        .replace(/ฟ้องวันที่/g, '')
-        .replace(/วันที่ฟ้อง/g, '')
-        .replace(/วันฟ้อง/g, '')
-        .replace(/วันที่/g, '')
-        .replace(/ยื่นฟ้อง/g, '')
-        .replace(/ฟ้อง/g, '')
-        .trim();
-
-      // If user typed only keywords like "วันที่ฟ้อง", "ฟ้อง", "วันฟ้อง", "ค้นหา"
-      if (!cleanTerm && (term.includes('ฟ้อง') || term.includes('วันที่') || term.includes('ค้นหา'))) {
-        return true;
-      }
-
-      const q = cleanTerm || term;
-      const rawFilingDate = (c.filingDate || '').toLowerCase();
-      const thaiFilingDate = formatThaiDate(c.filingDate).toLowerCase();
-
-      // If user specifically searched black or red
-      if (term.includes('ดำ') && !term.includes('แดง') && cleanTerm) {
-        return c.blackCaseNo.toLowerCase().includes(cleanTerm);
-      }
-      if (term.includes('แดง') && cleanTerm) {
-        return Boolean(c.redCaseNo && c.redCaseNo.toLowerCase().includes(cleanTerm));
-      }
-      if ((term.includes('ส.1') || term.includes('เลขรับ')) && cleanTerm) {
-        return Boolean(c.receivedNumberS1 && c.receivedNumberS1.toLowerCase().includes(cleanTerm));
-      }
-      if ((term.includes('ส.4') || term.includes('เลขฟ้อง')) && cleanTerm) {
-        return Boolean(c.filingNumberS4 && c.filingNumberS4.toLowerCase().includes(cleanTerm));
-      }
-
-      const matchesDate =
-        rawFilingDate.includes(q) ||
-        thaiFilingDate.includes(q) ||
-        (cleanTerm && (rawFilingDate.includes(cleanTerm) || thaiFilingDate.includes(cleanTerm)));
-
-      return (
-        matchesDate ||
-        c.blackCaseNo.toLowerCase().includes(q) ||
-        c.blackCaseNo.toLowerCase().includes(term) ||
-        Boolean(c.redCaseNo && (c.redCaseNo.toLowerCase().includes(q) || c.redCaseNo.toLowerCase().includes(term))) ||
-        Boolean(c.receivedNumberS1 && (c.receivedNumberS1.toLowerCase().includes(q) || c.receivedNumberS1.toLowerCase().includes(term))) ||
-        Boolean(c.filingNumberS4 && (c.filingNumberS4.toLowerCase().includes(q) || c.filingNumberS4.toLowerCase().includes(term))) ||
-        Boolean(c.prosecutorName && (c.prosecutorName.toLowerCase().includes(q) || c.prosecutorName.toLowerCase().includes(term))) ||
-        Boolean(c.responsiblePerson && (c.responsiblePerson.toLowerCase().includes(q) || c.responsiblePerson.toLowerCase().includes(term))) ||
-        c.court.toLowerCase().includes(q) ||
-        c.plaintiff.toLowerCase().includes(q) ||
-        c.defendant.toLowerCase().includes(q) ||
-        c.caseType.toLowerCase().includes(q) ||
-        Boolean(c.judgmentOutcome && c.judgmentOutcome.toLowerCase().includes(q)) ||
-        Boolean(c.notes && c.notes.toLowerCase().includes(q))
-      );
+      const linkedRes = caseMatchesWithLinkedSearch(c, cases, searchTerm, baseCaseMatcher, prebuiltLinkedMap);
+      return linkedRes.matches;
     })
     .sort((a, b) => {
       if (sortBy === 'deadline') {
@@ -250,8 +201,8 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              มีนัดพิจารณา/ปฏิเสธ (
-              {cases.filter((c) => !c.isCompleted && (c.hasJudgment === false || (!c.judgmentDate && !c.appealDeadline))).length}
+              มีนัดพิจารณา/ปฏิเสธ/รอพิพากษา (
+              {cases.filter((c) => !c.isCompleted && !isJudgmentRecorded(c)).length}
               )
             </button>
             <button
@@ -264,6 +215,18 @@ export const CaseTable: React.FC<CaseTableProps> = ({
             >
               🚚 สำนวนเบิกฟ้อง (
               {cases.filter((c) => !c.isCompleted && (c.isRequisitionCase || c.appointmentType === 'requisition')).length}
+              )
+            </button>
+            <button
+              onClick={() => setStatusFilter('severed')}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === 'severed'
+                  ? 'bg-purple-700 text-white font-bold shadow-xs'
+                  : 'text-purple-800 hover:bg-purple-50'
+              }`}
+            >
+              ✂️ สำนวนที่ศาลแยกฟ้อง (
+              {cases.filter((c) => c.isSeveredCase || Boolean(c.originalBlackCaseNo) || Boolean(c.severedFromCaseId)).length}
               )
             </button>
             <button
@@ -360,6 +323,28 @@ export const CaseTable: React.FC<CaseTableProps> = ({
         </div>
       )}
 
+      {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอที่ 6 */}
+      <div className="bg-white border-b border-slate-200 px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-1.5 text-slate-800 font-bold">
+          <Palette className="w-4 h-4 text-indigo-600" />
+          <span>สีแถวสำนวนจำแนกตามคำให้การ / นัด:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>สีเขียว = จำเลยรับสารภาพ</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-300 text-amber-950 border-l-4 border-l-amber-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>สีส้ม/อำพัน = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+            <span>สีฟ้า = มีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / เบิกฟ้อง</span>
+          </span>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-xs table-auto">
@@ -395,16 +380,19 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                 const daysLeft = getDaysRemaining(caseItem);
                 const urgency = getAppealUrgency(caseItem);
                 const isCompleted = caseItem.isCompleted;
+                const tableStyle = getCaseCardStyle(caseItem);
 
                 return (
                   <tr
                     key={caseItem.id}
-                    className={`hover:bg-slate-50/80 transition ${
+                    className={`transition border-b border-slate-100 ${
                       isCompleted
-                        ? 'bg-slate-50/30 text-slate-500'
-                        : urgency === 'critical' || urgency === 'overdue'
-                        ? 'bg-rose-50/20'
-                        : ''
+                        ? 'bg-slate-50/50 text-slate-500 opacity-80'
+                        : tableStyle.colorName === 'emerald'
+                        ? 'bg-emerald-50/50 hover:bg-emerald-50/80 border-l-4 border-l-emerald-500'
+                        : tableStyle.colorName === 'amber'
+                        ? 'bg-amber-50/50 hover:bg-amber-50/80 border-l-4 border-l-amber-500'
+                        : 'bg-sky-50/50 hover:bg-sky-50/80 border-l-4 border-l-sky-500'
                     }`}
                   >
                     {/* Index */}
@@ -461,7 +449,57 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             🚚 เบิกฟ้อง
                           </span>
                         )}
+                        {caseItem.isSeveredCase && (
+                          <span
+                            className="text-[10px] font-bold text-purple-900 bg-purple-100 border border-purple-300 px-1.5 py-0.5 rounded shadow-2xs flex items-center gap-0.5"
+                            title={`สำนวนที่ศาลแยกฟ้อง ${caseItem.severedOrderDate ? `เมื่อ ${formatThaiDate(caseItem.severedOrderDate)}` : ''}`}
+                          >
+                            <span>✂️</span>
+                            <span>ศาลสั่งแยกฟ้อง</span>
+                          </span>
+                        )}
                       </div>
+
+                      {/* ข้อมูลเลขคดีเดิม (กรณีเป็นสำนวนแยกฟ้อง) */}
+                      {caseItem.isSeveredCase && caseItem.originalBlackCaseNo && (
+                        <div className="text-[10px] text-purple-900 bg-purple-50/80 border border-purple-200 rounded px-1.5 py-0.5 mt-1 font-medium truncate max-w-[170px]" title={`ศาลสั่งแยกฟ้องมาจากคดีเดิม: ดำ ${caseItem.originalBlackCaseNo}`}>
+                          <span className="text-purple-600 font-semibold">เดิม:</span> ดำ {caseItem.originalBlackCaseNo}
+                        </div>
+                      )}
+
+                      {/* สำนวนที่เชื่อมโยงกัน (Linked Cases Badge & Match Indicator) */}
+                      {(() => {
+                        const linked = prebuiltLinkedMap.get(caseItem.id) || [];
+                        const searchStatus = searchTerm.trim()
+                          ? caseMatchesWithLinkedSearch(caseItem, cases, searchTerm, baseCaseMatcher, prebuiltLinkedMap)
+                          : null;
+
+                        return (
+                          <div className="mt-1 flex flex-col gap-1">
+                            {searchStatus?.isLinkedMatch && searchStatus.matchedViaCases.length > 0 && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-900 bg-purple-100 border border-purple-300 rounded px-1.5 py-0.5 shadow-2xs w-fit"
+                                title={`พบสำนวนนี้เพราะเชื่อมโยงกับสำนวน ${searchStatus.matchedViaCases.map((m) => `ดำ ${m.blackCaseNo}`).join(', ')} ที่ตรงกับคำค้นหา`}
+                              >
+                                <span>🔗</span>
+                                <span>พบจากเชื่อมโยง: ดำ {searchStatus.matchedViaCases[0].blackCaseNo}</span>
+                              </span>
+                            )}
+
+                            {linked.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedLinkedModalData({ current: caseItem, linked })}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-300 rounded px-1.5 py-0.5 transition cursor-pointer text-left w-fit shadow-2xs"
+                                title={`คลิกเพื่อดูและเปรียบเทียบสำนวนที่เชื่อมโยงกัน (${linked.length} สำนวน) เช่น สำนวนเดิม / สำนวนแยกฟ้อง`}
+                              >
+                                <span>🔗</span>
+                                <span>เชื่อมโยง {linked.length} สำนวน</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Court & Parties */}
@@ -469,8 +507,17 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                       <div className="font-medium text-slate-800 truncate" title={caseItem.court}>
                         📍 {caseItem.court}
                       </div>
-                      <div className="text-slate-500 truncate text-[11px]" title={`โจทก์: ${caseItem.plaintiff} / จำเลย: ${caseItem.defendant}`}>
-                        จ: {caseItem.plaintiff} | ล: {caseItem.defendant}
+                      <div className="text-slate-500 truncate text-[11px]" title={`โจทก์: ${caseItem.plaintiff}`}>
+                        จ: {caseItem.plaintiff}
+                      </div>
+                      <div className="mt-0.5">
+                        <span
+                          className="inline-flex items-center gap-1 bg-white/95 border border-amber-300 text-slate-950 px-1.5 py-0.5 rounded font-['Prompt'] text-[11px] font-bold shadow-2xs max-w-full"
+                          title={`จำเลย: ${caseItem.defendant}`}
+                        >
+                          <span className="text-amber-800 font-extrabold text-[10px] shrink-0">👤 ล:</span>
+                          <span className="truncate">{caseItem.defendant}</span>
+                        </span>
                       </div>
 
                       {/* แสดงอัยการเจ้าของสำนวน (เด่นชัด ชัดเจน) และ อัยการเวรชี้ (ไม่แย่งจุดสนใจ) แยกบทบาทชัดเจน */}
@@ -535,11 +582,12 @@ export const CaseTable: React.FC<CaseTableProps> = ({
 
                     {/* Judgment Date */}
                     <td className="py-2.5 px-2 whitespace-nowrap">
-                      {caseItem.judgmentDate ? (
+                      {isJudgmentRecorded(caseItem) ? (
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-slate-800 font-medium">
-                              {formatThaiDate(caseItem.judgmentDate)}
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300 shadow-2xs">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <span>⚖️ {formatThaiDate(caseItem.judgmentDate!, { short: true })}</span>
                             </span>
                             {canEdit && onRecordJudgment && (
                               <button
@@ -574,7 +622,19 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
                             ยังไม่มีคำพิพากษา
                           </span>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">จำเลยให้การปฏิเสธ</span>
+                          {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') ? (
+                            <span className="text-[10px] font-semibold text-orange-800 block mt-0.5">
+                              🚚 เบิกฟ้อง (ยังไม่ทราบคำให้การ)
+                            </span>
+                          ) : caseItem.defendantPlea === 'pending' ? (
+                            <span className="text-[10px] text-sky-700 font-medium block mt-0.5">
+                              รอนัดพิจารณา (ยังไม่ทราบคำให้การ)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 block mt-0.5">
+                              จำเลยให้การปฏิเสธ
+                            </span>
+                          )}
                           {canEdit && onRecordJudgment && (
                             <button
                               type="button"
@@ -685,37 +745,38 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                               <button
                                 onClick={() => onRecordJudgment(caseItem)}
                                 className={`text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition font-bold cursor-pointer active:scale-95 ${
-                                  !caseItem.judgmentDate
+                                  !isJudgmentRecorded(caseItem)
                                     ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
                                     : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
                                 }`}
                                 title={
-                                  !caseItem.judgmentDate
+                                  !isJudgmentRecorded(caseItem)
                                     ? 'ศาลตัดสินแล้ว กรอกคำพิพากษาเพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'
-                                    : `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate)} - คลิกเพื่อแก้ไขคำพิพากษา`
+                                    : `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate || '')} - คลิกเพื่อแก้ไขคำพิพากษา`
                                 }
                               >
                                 <Scale className="w-3 h-3" />
-                                <span>{caseItem.judgmentDate ? 'แก้คำพิพากษา' : 'กรอกคำพิพากษา'}</span>
+                                <span>{isJudgmentRecorded(caseItem) ? 'แก้คำพิพากษา' : '+ กรอกคำพิพากษา'}</span>
                               </button>
                             )}
 
                             {!isCompleted ? (
                               <button
                                 onClick={() => onMarkComplete(caseItem)}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-xs"
-                                title="กดเสร็จสิ้นเมื่อยื่นอุทธรณ์แล้ว (จะหยุดเตือนทันที)"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer active:scale-95"
+                                title="กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
                               >
                                 <CheckCircle2 className="w-3 h-3" />
-                                <span>เสร็จสิ้น</span>
+                                <span>+ วันที่เสร็จ</span>
                               </button>
                             ) : (
                               <button
                                 onClick={() => onMarkComplete(caseItem)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] py-1 px-2 rounded-lg transition"
-                                title="แก้ไขสถานะเสร็จสิ้น"
+                                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[11px] py-1 px-2 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                title="แก้ไขวันที่เสร็จสิ้น หรือเปลี่ยนสถานะ"
                               >
-                                แก้ไข
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span>{caseItem.completedDate ? `แก้วันเสร็จ (${formatThaiDate(caseItem.completedDate, { short: true })})` : 'แก้วันเสร็จ'}</span>
                               </button>
                             )}
 

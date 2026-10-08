@@ -1,12 +1,20 @@
 import { AppealCase, CourtAppointmentType } from '../types/appeal';
 import { formatThaiDate } from './dateUtils';
 
+export function isCaseRequisition(c?: Partial<AppealCase> | null): boolean {
+  if (!c) return false;
+  return Boolean(c.isRequisitionCase || c.appointmentType === 'requisition');
+}
+
 /**
  * ตรวจสอบว่าคดีนี้จำเลยให้การรับสารภาพหรือไม่
  * ทั้งจากคำให้การโดยตรง, ผลคำพิพากษา, บันทึกหมายเหตุ, หรือคดีที่มีคำพิพากษาแล้ว
+ * หมายเหตุ: สำนวนเบิกฟ้องจะยังไม่ทราบว่ารับสารภาพหรือปฏิเสธ จึงคืนค่า false เสมอ
  */
 export function isCaseConfessed(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
+  // สำนวนเบิกฟ้อง: ยังไม่ทราบคำให้การว่ารับสารภาพหรือปฏิเสธ
+  if (isCaseRequisition(c)) return false;
   // จำเลยระบุคำให้การรับสารภาพโดยตรง
   if (c.defendantPlea === 'confessed') return true;
   // มีข้อความ "รับสารภาพ" ในผลคำพิพากษา
@@ -18,6 +26,82 @@ export function isCaseConfessed(c?: Partial<AppealCase> | null): boolean {
   // คดีที่มีคำพิพากษาและวันที่พิพากษาแล้ว โดยไม่ได้ระบุว่าปฏิเสธ
   if (Boolean(c.hasJudgment && c.judgmentDate) && c.defendantPlea !== 'denied') return true;
   return false;
+}
+
+/**
+ * ตรวจสอบว่าคดีนี้จำเลยให้การปฏิเสธหรือไม่
+ * หมายเหตุ: สำนวนเบิกฟ้อง หรือคดีที่รอนัด ยังไม่ถือว่าปฏิเสธ
+ */
+export function isCaseDenied(c?: Partial<AppealCase> | null): boolean {
+  if (!c) return false;
+  if (isCaseRequisition(c)) return false;
+  if (isCaseConfessed(c)) return false;
+  return c.defendantPlea === 'denied';
+}
+
+/**
+ * ตรวจสอบว่าสำนวนคดีมีนัดต่อหรือไม่ (เช่น จำเลยปฏิเสธ มีนัดสืบพยาน, มีนัดพร้อม, นัดคุ้มครองสิทธิ, นัดไกล่เกลี่ย, นัดฟังคำสั่ง, นัดอื่นๆ หรือสำนวนเบิกฟ้อง)
+ * ตามคำขอ: ในสำนวนที่มีนัดต่อ ไม่ต้องให้ขึ้น ผลคำพิพากษา/ความคืบหน้า โดยย่อ
+ */
+export function hasContinuousAppointment(c?: Partial<AppealCase> | null): boolean {
+  if (!c) return false;
+  // สำนวนเบิกฟ้อง ถือว่ามีนัดต่อเบิกตัวมาฟ้อง
+  if (isCaseRequisition(c)) return true;
+  // มีวันนัดศาล หรือประเภทนัดที่ไม่ใช่ none
+  if (c.appointmentDate) return true;
+  if (c.appointmentType && c.appointmentType !== 'none') return true;
+  if (c.subsequentAppointments && c.subsequentAppointments.length > 0) return true;
+  // จำเลยปฏิเสธ (อยู่ระหว่างนัดพิจารณาคดีต่อ)
+  if (c.defendantPlea === 'denied') return true;
+  return false;
+}
+
+/**
+ * ตรวจสอบว่าสำนวนคดีนี้มีการกรอกคำพิพากษาแล้วจริงหรือไม่
+ * กฎเหล็ก:
+ * 1. ถ้าคดีระบุชัดเจนว่ายังไม่มีคำพิพากษา (hasJudgment === false) ถือว่ายังไม่กรอกคำพิพากษาเด็ดขาด
+ * 2. วันที่อ่านคำพิพากษาต้องมีจริงและไม่ว่างเปล่า (judgmentDate)
+ * 3. สำหรับสำนวนที่ปฏิเสธ หรือสำนวนที่มีนัดต่อ: ต้องมีการยืนยัน hasJudgment เป็น true ชัดเจน
+ * 4. ต้องมีการกรอกผลคำพิพากษา (judgmentOutcome) หรือเนื้อหาคำพิพากษา (fullJudgmentText) จริง
+ *    หรือได้รับการตรวจทานยืนยันแล้ว (judgmentVerified === true)
+ *    ข้อความ placeholder เช่น "อยู่ระหว่างนัดคุ้มครองสิทธิ..." หรือ "สำนวนเบิกฟ้อง..." หรือ "รอคำให้การ"
+ *    หรือกรณีที่ยังไม่มีการกรอกผลคำพิพากษาใดๆ แม้จะมีวันที่ที่ระบบใส่เริ่มต้นไว้
+ *    จะถือว่า "ยังไม่ได้กรอกคำพิพากษา" เพื่อให้สอดคล้องกับข้อเท็จจริงของสำนวน
+ */
+export function isJudgmentRecorded(c?: Partial<AppealCase> | null): boolean {
+  if (!c) return false;
+  // 1. ถ้าคดีระบุว่ายังไม่มีคำพิพากษา ถือว่ายังไม่กรอกเด็ดขาด
+  if (c.hasJudgment === false) return false;
+
+  // 2. วันที่อ่านคำพิพากษาต้องมีจริงและไม่ว่างเปล่า
+  if (!c.judgmentDate || typeof c.judgmentDate !== 'string' || c.judgmentDate.trim() === '') {
+    return false;
+  }
+
+  // 3. สำหรับสำนวนที่ปฏิเสธ หรือสำนวนที่มีนัดต่อ: ต้องมีการยืนยัน hasJudgment เป็น true ชัดเจน
+  if (isCaseDenied(c) || hasContinuousAppointment(c)) {
+    if (c.hasJudgment !== true) {
+      return false;
+    }
+  }
+
+  // 4. ต้องมีผลคำพิพากษาหรือเนื้อหาคำพิพากษาที่กรอกไว้จริง
+  const outcome = typeof c.judgmentOutcome === 'string' ? c.judgmentOutcome.trim() : '';
+  const fullText = typeof c.fullJudgmentText === 'string' ? c.fullJudgmentText.trim() : '';
+  const hasOutcomeText = Boolean(
+    (outcome !== '' &&
+      !outcome.includes('อยู่ระหว่าง') &&
+      !outcome.includes('สำนวนเบิกฟ้อง') &&
+      !outcome.includes('รอคำให้การ')) ||
+    fullText !== '' ||
+    c.judgmentVerified === true
+  );
+
+  if (!hasOutcomeText) {
+    return false;
+  }
+
+  return true;
 }
 
 /**

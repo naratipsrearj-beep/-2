@@ -1,6 +1,6 @@
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate } from './dateUtils';
-import { getAppointmentLabel, isCaseConfessed } from './appointmentUtils';
+import { getAppointmentLabel, isCaseConfessed, isJudgmentRecorded } from './appointmentUtils';
 
 /**
  * 7 Column Headers as specifically requested by user:
@@ -55,15 +55,19 @@ export function formatRedCaseNo(c: AppealCase): string {
 
 /**
  * ช่องที่ 4: ชื่ออัยการเจ้าของสำนวน
+ * ดึงชื่ออัยการเจ้าของสำนวนที่รับผิดชอบสำนวนคดี (responsiblePerson)
+ * หมายเหตุ: ต้องดึงชื่ออัยการเจ้าของสำนวนที่รับผิดชอบโดยตรง ไม่ดึงอัยการเวรชี้ (prosecutorName) มาใส่แทน
  */
 export function formatProsecutorName(c: AppealCase): string {
-  if (c.prosecutorName && c.prosecutorName.trim()) {
-    return c.prosecutorName.trim();
-  }
+  // ดึงชื่ออัยการเจ้าของสำนวนที่รับผิดชอบสำนวนคดีโดยตรง (responsiblePerson) ก่อนเสมอ
   if (c.responsiblePerson && c.responsiblePerson.trim()) {
     return c.responsiblePerson.trim();
   }
-  return 'ไม่ระบุ';
+  // กรณีสำนวนยังไม่ได้ระบุชื่อเจ้าของสำนวน
+  if (c.prosecutorName && c.prosecutorName.trim()) {
+    return c.prosecutorName.trim();
+  }
+  return 'รอกำหนด';
 }
 
 /**
@@ -77,9 +81,18 @@ export function formatDefendant(c: AppealCase): string {
  * ช่องที่ 6: การดำเนินการว่าเป็นสำนวนรับสารภาพหรือสำนวนมีนัดต่อ
  */
 export function formatProcedureStatus(c: AppealCase, concise: boolean = false): string {
-  // 1. สำนวนรับสารภาพ
+  // 1. สำนวนเบิกฟ้อง (ยังไม่ทราบคำให้การว่ารับสารภาพหรือปฏิเสธ)
+  if (c.isRequisitionCase || c.appointmentType === 'requisition') {
+    const targetDate = c.requisitionDate || c.appointmentDate;
+    if (targetDate) {
+      return `สำนวนเบิกฟ้อง (นัด ${formatThaiDate(targetDate, { short: true })})`;
+    }
+    return 'สำนวนเบิกฟ้อง (รอเบิกตัว)';
+  }
+
+  // 2. สำนวนรับสารภาพ
   if (isCaseConfessed(c)) {
-    if (!concise && c.hasJudgment && c.judgmentDate) {
+    if (!concise && isJudgmentRecorded(c) && c.judgmentDate) {
       return `สำนวนรับสารภาพ (พิพากษา ${formatThaiDate(c.judgmentDate, { short: true })})`;
     }
     return 'สำนวนรับสารภาพ';

@@ -31,6 +31,7 @@ interface AddCaseModalProps {
   suggestedDutyOfficer?: string;
   dutyRosters?: MonthlyDutyRoster[];
   hasSheetConnected: boolean;
+  existingCases?: AppealCase[];
 }
 
 export const AddCaseModal: React.FC<AddCaseModalProps> = ({
@@ -42,6 +43,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   suggestedDutyOfficer,
   dutyRosters = [],
   hasSheetConnected,
+  existingCases = [],
 }) => {
   const [filingDate, setFilingDate] = useState<string>(initialFilingDate || getTodayString());
   const [blackCaseNo, setBlackCaseNo] = useState('');
@@ -54,6 +56,17 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   const [defendant, setDefendant] = useState('');
   const [caseType, setCaseType] = useState('อาญา');
   const [isDutyPickerOpen, setIsDutyPickerOpen] = useState(false);
+
+  // สำนวนที่ศาลสั่งแยกฟ้อง
+  const [isSeveredCase, setIsSeveredCase] = useState(false);
+  const [severedFromCaseId, setSeveredFromCaseId] = useState('');
+  const [originalBlackCaseNo, setOriginalBlackCaseNo] = useState('');
+  const [originalRedCaseNo, setOriginalRedCaseNo] = useState('');
+  const [originalReceivedNumberS1, setOriginalReceivedNumberS1] = useState('');
+  const [originalFilingNumberS4, setOriginalFilingNumberS4] = useState('');
+  const [severedOrderDate, setSeveredOrderDate] = useState('');
+  const [severedDeadlineDate, setSeveredDeadlineDate] = useState('');
+  const [severedNotes, setSeveredNotes] = useState('');
 
   // Case Status: Has Judgment rendered vs. Pending Hearings / Rights Protection / Denied Plea
   const [hasJudgment, setHasJudgment] = useState<boolean>(false);
@@ -209,7 +222,9 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
         defendant: defendant.trim(),
         caseType,
         hasJudgment,
-        defendantPlea: hasJudgment ? 'confessed' : defendantPlea,
+        defendantPlea: hasJudgment
+          ? 'confessed'
+          : (isRequisitionCase || appointmentType === 'requisition' ? 'pending' : defendantPlea),
         judgmentDate: hasJudgment && judgmentDate ? judgmentDate : undefined,
         appealDeadline: hasJudgment && deadlineInfo.deadlineDate ? deadlineInfo.deadlineDate : undefined,
         judgmentOutcome: hasJudgment
@@ -225,6 +240,18 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
         isRequisitionCase: isRequisitionCase || appointmentType === 'requisition',
         requisitionDate: isRequisitionCase ? (requisitionDate || appointmentDate || undefined) : (appointmentType === 'requisition' ? appointmentDate : undefined),
         requisitionNotes: requisitionNotes.trim() || undefined,
+
+        // สำนวนที่ศาลแยกฟ้อง
+        isSeveredCase,
+        severedFromCaseId: isSeveredCase ? (severedFromCaseId || undefined) : undefined,
+        originalBlackCaseNo: isSeveredCase ? (originalBlackCaseNo.trim() || undefined) : undefined,
+        originalRedCaseNo: isSeveredCase ? (originalRedCaseNo.trim() || undefined) : undefined,
+        originalReceivedNumberS1: isSeveredCase ? (originalReceivedNumberS1.trim() || undefined) : undefined,
+        originalFilingNumberS4: isSeveredCase ? (originalFilingNumberS4.trim() || undefined) : undefined,
+        severedOrderDate: isSeveredCase ? (severedOrderDate || undefined) : undefined,
+        severedDeadlineDate: isSeveredCase ? (severedDeadlineDate || undefined) : undefined,
+        severedNotes: isSeveredCase ? (severedNotes.trim() || undefined) : undefined,
+
         appointmentType: (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection' ? 'none' : appointmentType,
         appointmentTypeName: appointmentType === 'other' ? appointmentTypeName.trim() : undefined,
         appointmentDate: ((hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection') ? undefined : (appointmentType !== 'none' && appointmentDate ? appointmentDate : undefined),
@@ -286,11 +313,12 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
               </span>
               <span className="text-[11px] font-normal text-slate-500">เลือกสถานะเริ่มต้นของสำนวน</span>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
               {/* Option 1: คุ้มครองสิทธิ / ปฏิเสธ */}
               <button
                 type="button"
                 onClick={() => {
+                  setIsSeveredCase(false);
                   setHasJudgment(false);
                   setDefendantPlea('denied');
                   setIsRequisitionCase(false);
@@ -299,17 +327,17 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
                     ? 'border-indigo-500 bg-indigo-50/90 ring-2 ring-indigo-500/20 text-indigo-950 font-medium'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
                     ? 'border-indigo-600 bg-indigo-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
+                  {!isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
                     <Check className="w-3 h-3" />
                   )}
                 </div>
@@ -323,40 +351,39 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                 </div>
               </button>
 
-              {/* Option 2: คำพิพากษาแล้ว / รับสารภาพ */}
+              {/* Option 2: จำเลยรับสารภาพ */}
               <button
                 type="button"
                 onClick={() => {
-                  setHasJudgment(true);
+                  setIsSeveredCase(false);
                   setDefendantPlea('confessed');
                   setIsRequisitionCase(false);
                   if (appointmentType === 'rights_protection' || appointmentType === 'requisition') {
                     setAppointmentType('none');
                     setAppointmentDate('');
                   }
-                  if (!judgmentDate) setJudgmentDate(getTodayString());
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  hasJudgment && !isRequisitionCase && appointmentType !== 'requisition'
-                    ? 'border-amber-500 bg-amber-50/90 ring-2 ring-amber-500/20 text-amber-950 font-medium'
+                  !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
+                    ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-500/20 text-emerald-950 font-medium'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  hasJudgment && !isRequisitionCase && appointmentType !== 'requisition'
-                    ? 'border-amber-600 bg-amber-600 text-white'
+                  !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
+                    ? 'border-emerald-600 bg-emerald-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (
+                  {!isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed' && (
                     <Check className="w-3 h-3" />
                   )}
                 </div>
                 <div>
                   <span className="text-xs font-bold block leading-tight">
-                    ⚖️ พิพากษาแล้ว (รับสารภาพ)
+                    🟢 จำเลยรับสารภาพ
                   </span>
                   <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    ใส่วันพิพากษา • เริ่มนับเวลาอุทธรณ์ 1 เดือน
+                    {hasJudgment ? 'ศาลอ่านคำพิพากษาแล้ว (คุมอุทธรณ์ 1 ด.)' : 'ยังไม่กรอกคำพิพากษา / รอศาลพิพากษา'}
                   </span>
                 </div>
               </button>
@@ -365,6 +392,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsSeveredCase(false);
                   setHasJudgment(false);
                   setDefendantPlea('pending');
                   setIsRequisitionCase(true);
@@ -376,17 +404,17 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  isRequisitionCase || appointmentType === 'requisition'
+                  !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
                     ? 'border-orange-500 bg-orange-50/90 ring-2 ring-orange-500/20 text-orange-950 font-medium'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  isRequisitionCase || appointmentType === 'requisition'
+                  !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
                     ? 'border-orange-600 bg-orange-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {(isRequisitionCase || appointmentType === 'requisition') && (
+                  {!isSeveredCase && (isRequisitionCase || appointmentType === 'requisition') && (
                     <Check className="w-3 h-3" />
                   )}
                 </div>
@@ -404,6 +432,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsSeveredCase(false);
                   setHasJudgment(false);
                   setDefendantPlea('pending');
                   setIsRequisitionCase(false);
@@ -412,17 +441,17 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
                     ? 'border-sky-500 bg-sky-50/90 ring-2 ring-sky-500/20 text-sky-950 font-medium'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
                     ? 'border-sky-600 bg-sky-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection' && (
+                  {!isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection' && (
                     <Check className="w-3 h-3" />
                   )}
                 </div>
@@ -435,8 +464,215 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   </span>
                 </div>
               </button>
+
+              {/* Option 5: สำนวนที่ศาลแยกฟ้อง */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSeveredCase(true);
+                  setHasJudgment(false);
+                  setDefendantPlea('denied');
+                  setIsRequisitionCase(false);
+                  if (appointmentType === 'none' || appointmentType === 'requisition') {
+                    setAppointmentType('pre_trial');
+                  }
+                }}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  isSeveredCase
+                    ? 'border-purple-500 bg-purple-50/90 ring-2 ring-purple-500/20 text-purple-950 font-medium'
+                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
+                  isSeveredCase
+                    ? 'border-purple-600 bg-purple-600 text-white'
+                    : 'border-slate-300'
+                }`}>
+                  {isSeveredCase && <Check className="w-3 h-3" />}
+                </div>
+                <div>
+                  <span className="text-xs font-bold block leading-tight text-purple-950">
+                    ✂️ สำนวนที่ศาลแยกฟ้อง
+                  </span>
+                  <span className="text-[11px] text-purple-800/80 block mt-0.5 leading-tight">
+                    ศาลสั่งแยกฟ้อง • เชื่อมโยง ส.1 / ส.4
+                  </span>
+                </div>
+              </button>
             </div>
           </div>
+
+          {/* ข้อมูลสำนวนที่ศาลสั่งแยกฟ้อง (เชื่อมโยง ส.1 และ ส.4) */}
+          {isSeveredCase && (
+            <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-4 space-y-3.5 animate-in fade-in">
+              <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-lg bg-purple-600 text-white flex items-center justify-center text-xs font-bold shadow-xs">
+                    ✂️
+                  </span>
+                  <div>
+                    <h4 className="text-xs font-bold text-purple-950">
+                      ข้อมูลสำนวนที่ศาลสั่งแยกฟ้อง (เชื่อมโยง ส.1 และ ส.4)
+                    </h4>
+                    <p className="text-[11px] text-purple-800/80">
+                      กรอกเลข ส.1 และ ส.4 เพื่อให้ระบบค้นหาและแสดงผลเชื่อมโยงกับสำนวนเดิมโดยอัตโนมัติ
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                  คดีแยกฟ้อง
+                </span>
+              </div>
+
+              {/* เลือกสำนวนเดิมจากระบบเพื่อดึงข้อมูล ส.1, ส.4 และเลขคดีดำเดิมอัตโนมัติ */}
+              {existingCases && existingCases.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-purple-900 mb-1 flex items-center justify-between">
+                    <span>🔗 เลือกสำนวนเดิมในระบบที่ศาลสั่งแยกฟ้อง (ช่วยกรอกข้อมูลอัตโนมัติ)</span>
+                    <span className="text-[10px] text-purple-700 font-normal">เลือกเพื่อดึงข้อมูล หรือพิมพ์เองด้านล่าง</span>
+                  </label>
+                  <select
+                    value={severedFromCaseId}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setSeveredFromCaseId(selId);
+                      const parent = existingCases.find((c) => c.id === selId);
+                      if (parent) {
+                        setOriginalBlackCaseNo(parent.blackCaseNo);
+                        setOriginalRedCaseNo(parent.redCaseNo || '');
+                        if (!receivedNumberS1) setReceivedNumberS1(parent.receivedNumberS1 || '');
+                        if (!filingNumberS4) setFilingNumberS4(parent.filingNumberS4 || '');
+                        if (!originalReceivedNumberS1) setOriginalReceivedNumberS1(parent.receivedNumberS1 || '');
+                        if (!originalFilingNumberS4) setOriginalFilingNumberS4(parent.filingNumberS4 || '');
+                        if (!court) setCourt(parent.court);
+                        if (!plaintiff) setPlaintiff(parent.plaintiff);
+                        if (!prosecutorName) setProsecutorName(parent.prosecutorName || '');
+                      }
+                    }}
+                    className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-medium"
+                  >
+                    <option value="">-- เลือกสำนวนคดีเดิม (หรือเว้นว่างเพื่อพิมพ์เอง) --</option>
+                    {existingCases.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        ดำ {c.blackCaseNo} {c.redCaseNo ? `(แดง ${c.redCaseNo})` : ''} - {c.defendant} {c.receivedNumberS1 ? `[ส.1: ${c.receivedNumberS1}]` : ''} {c.filingNumberS4 ? `[ส.4: ${c.filingNumberS4}]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-purple-900 mb-1">
+                    หมายเลขคดีดำเดิมที่ศาลสั่งแยกฟ้อง *
+                  </label>
+                  <input
+                    type="text"
+                    required={isSeveredCase}
+                    placeholder="เช่น อ.120/2569"
+                    value={originalBlackCaseNo}
+                    onChange={(e) => setOriginalBlackCaseNo(e.target.value)}
+                    className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-medium"
+                  />
+                  <p className="text-[10px] text-purple-700 mt-1">
+                    เมื่อค้นหาเลขคดีดำเดิมนี้ ระบบจะค้นพบสำนวนนี้ด้วย
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-900 mb-1">
+                    หมายเลขคดีแดงเดิม (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น อ.234/2569 (ถ้าศาลมีคำพิพากษาบางส่วน)"
+                    value={originalRedCaseNo}
+                    onChange={(e) => setOriginalRedCaseNo(e.target.value)}
+                    className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-purple-900 mb-1 flex items-center justify-between">
+                    <span>ข้อมูลเลขรับ ส.1 (สารบบรับสำนวน) *</span>
+                    <span className="text-[10px] text-purple-700 font-semibold bg-purple-100 px-1.5 py-0.2 rounded">
+                      🔗 เลขเชื่อมโยง
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น 124/2569 หรือ ส.1 124/2569"
+                    value={receivedNumberS1}
+                    onChange={(e) => setReceivedNumberS1(e.target.value)}
+                    className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-bold text-slate-800"
+                  />
+                  <p className="text-[10px] text-purple-700 mt-1">
+                    ใช้ค้นหาสำนวนที่เชื่อมโยงกันด้วยเลข ส.1
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-900 mb-1 flex items-center justify-between">
+                    <span>ข้อมูลเลขฟ้อง ส.4 (สารบบการยื่นฟ้อง) *</span>
+                    <span className="text-[10px] text-purple-700 font-semibold bg-purple-100 px-1.5 py-0.2 rounded">
+                      🔗 เลขเชื่อมโยง
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น 45/2569 หรือ ส.4 45/2569"
+                    value={filingNumberS4}
+                    onChange={(e) => setFilingNumberS4(e.target.value)}
+                    className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-bold text-slate-800"
+                  />
+                  <p className="text-[10px] text-purple-700 mt-1">
+                    ใช้ค้นหาสำนวนที่เชื่อมโยงกันด้วยเลข ส.4
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-purple-900 mb-1">
+                    วันที่ศาลสั่งแยกฟ้อง
+                  </label>
+                  <input
+                    type="date"
+                    value={severedOrderDate}
+                    onChange={(e) => setSeveredOrderDate(e.target.value)}
+                    className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-900 mb-1">
+                    กำหนดเวลายื่นฟ้องใหม่ตามคำสั่งศาล
+                  </label>
+                  <input
+                    type="date"
+                    value={severedDeadlineDate}
+                    onChange={(e) => setSeveredDeadlineDate(e.target.value)}
+                    className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-purple-900 mb-1">
+                  หมายเหตุ / เหตุผลที่ศาลสั่งแยกฟ้อง
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น จำเลยที่ 2 ให้การปฏิเสธ ศาลสั่งให้พนักงานอัยการแยกฟ้องภายใน 15 วัน"
+                  value={severedNotes}
+                  onChange={(e) => setSeveredNotes(e.target.value)}
+                  className="w-full text-xs border border-purple-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Row 1: Filing date & Case Type */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -694,7 +930,37 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
             </div>
           </div>
 
-          {/* SECTION A: Judgment Section (Active ONLY when hasJudgment is true) */}
+          {/* SECTION A: Judgment Section */}
+          {defendantPlea === 'confessed' && (
+            <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hasJudgment}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setHasJudgment(val);
+                    if (!val) {
+                      setJudgmentDate('');
+                      setJudgmentOutcome('');
+                    } else if (!judgmentDate) {
+                      setJudgmentDate(getTodayString());
+                    }
+                  }}
+                  className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-800">
+                  {hasJudgment
+                    ? 'ศาลมีคำพิพากษาแล้ว (กรอกวันและผลคำพิพากษาด้านล่าง เพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน)'
+                    : 'สำนวนนี้ยังไม่กรอกคำพิพากษา / ศาลยังไม่อ่านคำพิพากษา (ติ๊กถูกหากต้องการกรอกคำพิพากษา)'}
+                </span>
+              </label>
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${hasJudgment ? 'bg-emerald-200 text-emerald-900 font-bold' : 'bg-slate-200 text-slate-700'}`}>
+                {hasJudgment ? 'กรอกคำพิพากษาแล้ว' : 'ยังไม่กรอกคำพิพากษา'}
+              </span>
+            </div>
+          )}
+
           {hasJudgment ? (
             <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-3 animate-in fade-in">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1101,8 +1367,11 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setIsRequisitionCase(checked);
-                      if (checked && (!requisitionDate && appointmentDate)) {
-                        setRequisitionDate(appointmentDate);
+                      if (checked) {
+                        setDefendantPlea('pending');
+                        if (!requisitionDate && appointmentDate) {
+                          setRequisitionDate(appointmentDate);
+                        }
                       }
                     }}
                     className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500"

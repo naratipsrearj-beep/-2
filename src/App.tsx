@@ -1110,6 +1110,39 @@ export default function App() {
     }
   };
 
+  // Clear Judgment (ปรับสถานะเป็นยังไม่กรอกคำพิพากษา)
+  const handleClearJudgment = async (caseId: string) => {
+    const target = cases.find((c) => c.id === caseId);
+    if (!target) return;
+
+    const updatedCase: AppealCase = {
+      ...target,
+      hasJudgment: false,
+      judgmentDate: undefined,
+      judgmentOutcome: undefined,
+      fullJudgmentText: undefined,
+      appealDeadline: undefined,
+      extendedDeadline: undefined,
+      extensionCount: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
+    setCases(newCases);
+    saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore clear judgment error:', e));
+    showToast(`ปรับสถานะสำนวนดำ ${target.blackCaseNo} เป็น "ยังไม่กรอกคำพิพากษา" เรียบร้อยแล้ว`);
+
+    const currentToken = token || (await getAccessToken());
+    if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
+      try {
+        await updateAppealCaseInSheet(currentToken, sheetConfig.spreadsheetId, updatedCase);
+      } catch (err) {
+        console.error('Failed to update Google Sheet', err);
+      }
+    }
+  };
+
   // Daily Judgment Follow-Up Handlers
   const handleAddFollowUp = async (itemData: Omit<DailyJudgmentFollowUp, 'id' | 'createdAt'>) => {
     const newId = `followup_${Date.now()}`;
@@ -1627,6 +1660,7 @@ export default function App() {
           suggestedDutyOfficer={todayDutyOfficer}
           dutyRosters={dutyRosters}
           hasSheetConnected={!!sheetConfig}
+          existingCases={cases}
         />
       )}
 
@@ -1707,6 +1741,7 @@ export default function App() {
         onSave={handleSaveEditedCase}
         suggestedDutyOfficer={todayDutyOfficer}
         dutyRosters={dutyRosters}
+        existingCases={cases}
       />
 
       {/* Record Judgment Modal (สำหรับบันทึกคำพิพากษาและเริ่มคุมอุทธรณ์ 1 เดือนเมื่อศาลตัดสิน) */}
@@ -1718,6 +1753,7 @@ export default function App() {
           setSelectedCaseForRecordJudgment(null);
         }}
         onSaveJudgmentDate={handleSaveJudgmentDate}
+        onClearJudgment={handleClearJudgment}
       />
 
       {/* User Permissions Management Modal (Admin only) */}

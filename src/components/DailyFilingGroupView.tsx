@@ -16,12 +16,22 @@ import {
   ExternalLink,
   Edit3,
   Scale,
-  Shield
+  Shield,
+  Truck,
+  Palette
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
-import { getAppointmentLabel, getAppointmentBadgeStyle, isCaseConfessed } from '../utils/appointmentUtils';
+import {
+  getAppointmentLabel,
+  getAppointmentBadgeStyle,
+  isCaseConfessed,
+  hasContinuousAppointment,
+  isCaseDenied,
+  isJudgmentRecorded
+} from '../utils/appointmentUtils';
+import { getCaseCardStyle } from './DailyFilingByDateView';
 
 interface DailyFilingGroupViewProps {
   cases: AppealCase[];
@@ -218,6 +228,28 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
         </div>
       </div>
 
+      {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอที่ 6 */}
+      <div className="bg-white border border-slate-200 rounded-xl p-2.5 sm:px-3.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
+        <div className="flex items-center gap-1.5 text-slate-800 font-bold">
+          <Palette className="w-4 h-4 text-indigo-600" />
+          <span>สีพื้นหลังจำแนกตามคำให้การ / นัด:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>สีเขียว = จำเลยรับสารภาพ</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 border-l-4 border-l-amber-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>สีส้ม/อำพัน = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+            <span>สีฟ้า = มีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / เบิกฟ้อง</span>
+          </span>
+        </div>
+      </div>
+
       {/* Voice notice */}
       {voiceNotice && (
         <div className="bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl text-xs text-amber-900 flex items-center justify-between">
@@ -242,6 +274,28 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
           ⚠️ {errorMessage}
         </div>
       )}
+
+      {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอ */}
+      <div className="bg-white border border-slate-200 rounded-xl p-2.5 sm:px-3.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
+        <div className="flex items-center gap-1.5 text-slate-800 font-bold">
+          <Palette className="w-4 h-4 text-indigo-600" />
+          <span>สีพื้นหลังจำแนกตามคำให้การ / นัด:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>สีเขียว = จำเลยรับสารภาพ</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 border-l-4 border-l-amber-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>สีส้ม/อำพัน = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+            <span>สีฟ้า = มีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / เบิกฟ้อง</span>
+          </span>
+        </div>
+      </div>
 
       {/* Date Groups */}
       {filteredDates.length === 0 ? (
@@ -342,13 +396,14 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                     const daysLeft = getDaysRemaining(caseItem);
                     const urgency = getAppealUrgency(caseItem);
                     const isCompleted = caseItem.isCompleted;
+                    const rowStyle = getCaseCardStyle(caseItem);
+                    const hasNextAppt = hasContinuousAppointment(caseItem);
+                    const hasJudgmentRecorded = isJudgmentRecorded(caseItem);
 
                     return (
                       <div
                         key={caseItem.id}
-                        className={`p-3.5 sm:p-4 hover:bg-slate-50/80 transition flex flex-col md:flex-row md:items-center justify-between gap-3 ${
-                          isCompleted ? 'bg-slate-50/40 opacity-75' : urgency === 'critical' || urgency === 'overdue' ? 'bg-rose-50/20' : ''
-                        }`}
+                        className={`p-3.5 sm:p-4 transition flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 ${rowStyle.cardClass}`}
                       >
                         {/* Case Details */}
                         <div className="space-y-1.5 flex-1 min-w-0">
@@ -364,6 +419,25 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                               <span className="text-[11px] text-slate-400 bg-slate-100/80 px-1.5 py-0.5 rounded border border-slate-200">
                                 ยังไม่มีเลขแดง
                               </span>
+                            )}
+                            {hasJudgmentRecorded ? (
+                              <span
+                                className="text-[11px] font-bold text-emerald-900 bg-emerald-100/90 px-1.5 py-0.5 rounded border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                                title={caseItem.judgmentDate ? `กรอกคำพิพากษาแล้ว (${formatThaiDate(caseItem.judgmentDate)})` : 'กรอกคำพิพากษาแล้ว'}
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>⚖️ กรอกคำพิพากษาแล้ว</span>
+                              </span>
+                            ) : (
+                              (hasNextAppt || isCaseDenied(caseItem)) ? null : (
+                                <span
+                                  className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 flex items-center gap-1"
+                                  title="ยังไม่กรอกคำพิพากษา"
+                                >
+                                  <Scale className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                  <span>ยังไม่กรอกคำพิพากษา</span>
+                                </span>
+                              )
                             )}
                             {caseItem.receivedNumberS1 && (
                               <span
@@ -470,23 +544,33 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
 
                           <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-4 gap-y-1.5">
                             <div><span className="text-slate-500">โจทก์:</span> {caseItem.plaintiff}</div>
-                            <div><span className="text-slate-500">จำเลย:</span> {caseItem.defendant}</div>
+                            <div
+                              className="inline-flex items-center gap-1.5 bg-white/95 border border-amber-300 text-slate-950 px-2.5 py-0.5 rounded-lg shadow-2xs font-['Prompt']"
+                              title={`จำเลย: ${caseItem.defendant || '-'}`}
+                            >
+                              <span className="text-amber-800 font-extrabold text-[11px] shrink-0">👤 จำเลย:</span>
+                              <span className="text-slate-950 font-bold text-xs sm:text-sm tracking-wide">
+                                {caseItem.defendant || '-'}
+                              </span>
+                            </div>
                             <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-950 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg shadow-2xs">
                               <span className="text-indigo-700 font-bold">👔 อัยการเจ้าของสำนวน:</span>
                               <span className="text-indigo-900 font-bold">{caseItem.responsiblePerson || 'รอกำหนด'}</span>
                             </div>
                           </div>
 
-                          {caseItem.fullJudgmentText ? (
-                            <div className="text-xs text-slate-800 bg-blue-50/50 p-2 rounded border border-blue-200/60">
-                              <span className="font-semibold text-blue-900">คำพิพากษา (Google Doc):</span>{' '}
-                              <span className="line-clamp-2">{caseItem.fullJudgmentText}</span>
-                            </div>
-                          ) : caseItem.judgmentOutcome ? (
-                            <div className="text-xs text-slate-700 bg-slate-50 p-2 rounded border border-slate-200/70">
-                              <span className="font-medium text-slate-800">ผลคำพิพากษา:</span> {caseItem.judgmentOutcome}
-                            </div>
-                          ) : null}
+                          {!hasNextAppt && (
+                            caseItem.fullJudgmentText ? (
+                              <div className="text-xs text-slate-800 bg-blue-50/50 p-2 rounded border border-blue-200/60">
+                                <span className="font-semibold text-blue-900">คำพิพากษา (Google Doc):</span>{' '}
+                                <span className="line-clamp-2">{caseItem.fullJudgmentText}</span>
+                              </div>
+                            ) : caseItem.judgmentOutcome ? (
+                              <div className="text-xs text-slate-700 bg-slate-50 p-2 rounded border border-slate-200/70">
+                                <span className="font-medium text-slate-800">ผลคำพิพากษา:</span> {caseItem.judgmentOutcome}
+                              </div>
+                            ) : null
+                          )}
                         </div>
 
                         {/* Deadlines & Actions */}
@@ -518,6 +602,16 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                       <span>จำเลยรับสารภาพ (รอคำพิพากษา)</span>
                                     </div>
+                                  ) : (caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') ? (
+                                    <div className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-950 bg-orange-50 border border-orange-300 px-2 py-0.5 rounded-full shadow-2xs">
+                                      <Truck className="w-3 h-3 text-orange-600" />
+                                      <span>🚚 สำนวนเบิกฟ้อง (ยังไม่ทราบคำให้การ)</span>
+                                    </div>
+                                  ) : caseItem.defendantPlea === 'pending' ? (
+                                    <div className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-900 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">
+                                      <Clock className="w-3 h-3 text-sky-600" />
+                                      <span>รอนัดพิจารณา (ยังไม่ทราบคำให้การ)</span>
+                                    </div>
                                   ) : (
                                     <div className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
                                       <Shield className="w-3 h-3 text-indigo-600" />
@@ -542,10 +636,10 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                                   <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                   เสร็จสิ้นแล้ว (ไม่แจ้งเตือน)
                                 </span>
-                              ) : !caseItem.judgmentDate && !caseItem.appealDeadline ? (
+                              ) : !hasJudgmentRecorded ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
                                   <Clock className="w-3 h-3 text-indigo-600" />
-                                  รอนัดพิจารณา {caseItem.subsequentAppointments && caseItem.subsequentAppointments.length > 0 ? `(มีอีก ${caseItem.subsequentAppointments.length} นัด)` : ''}
+                                  {isCaseConfessed(caseItem) ? 'จำเลยรับสารภาพ (รอคำพิพากษา)' : 'รอนัดพิจารณา'} {caseItem.subsequentAppointments && caseItem.subsequentAppointments.length > 0 ? `(มีอีก ${caseItem.subsequentAppointments.length} นัด)` : ''}
                                 </span>
                               ) : urgency === 'overdue' ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
@@ -585,14 +679,31 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                               </button>
                             )}
 
-                            {onRecordJudgment && !caseItem.judgmentDate && (
+                            {onRecordJudgment && (
                               <button
                                 onClick={() => onRecordJudgment(caseItem)}
-                                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 text-xs py-1.5 px-2.5 rounded-lg transition font-medium flex items-center gap-1 shadow-2xs"
-                                title="เมื่อศาลมีคำพิพากษาแล้ว ระบุวันพิพากษาเพื่อเริ่มคุมกำหนดเวลาอุทธรณ์ 1 เดือน"
+                                className={`text-xs py-1.5 px-2.5 rounded-lg transition font-medium flex items-center gap-1 shadow-2xs ${
+                                  hasJudgmentRecorded
+                                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold'
+                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+                                }`}
+                                title={
+                                  hasJudgmentRecorded && caseItem.judgmentDate
+                                    ? `แก้ไขคำพิพากษา (กรอกแล้วเมื่อ ${formatThaiDate(caseItem.judgmentDate)})`
+                                    : 'เมื่อศาลมีคำพิพากษาแล้ว ระบุวันพิพากษาเพื่อเริ่มคุมกำหนดเวลาอุทธรณ์ 1 เดือน'
+                                }
                               >
-                                <Scale className="w-3.5 h-3.5 text-indigo-700" />
-                                <span>พิพากษาแล้ว</span>
+                                {hasJudgmentRecorded ? (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>แก้คำพิพากษา (กรอกแล้ว)</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Scale className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>+ กรอกคำพิพากษา</span>
+                                  </>
+                                )}
                               </button>
                             )}
 
@@ -641,19 +752,20 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                             {!isCompleted ? (
                               <button
                                 onClick={() => onMarkComplete(caseItem)}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-1.5 px-3 rounded-lg flex items-center gap-1 transition shadow-xs"
-                                title="กดเสร็จสิ้นเมื่อยื่นอุทธรณ์หรือยุติสำนวนแล้ว (จะหยุดแจ้งเตือน)"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-1.5 px-3 rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer active:scale-95"
+                                title="กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติการดำเนินคดี)"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>เสร็จสิ้นสำนวน</span>
+                                <span>+ กรอกวันที่เสร็จสิ้น</span>
                               </button>
                             ) : (
                               <button
                                 onClick={() => onMarkComplete(caseItem)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs py-1.5 px-2.5 rounded-lg transition"
-                                title="แก้ไขสถานะหรือเปิดสำนวนใหม่"
+                                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs py-1.5 px-2.5 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                title="แก้ไขวันที่เสร็จสิ้น หรือเปลี่ยนสถานะ"
                               >
-                                แก้ไขสถานะ
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>{caseItem.completedDate ? `แก้วันเสร็จ (${formatThaiDate(caseItem.completedDate, { short: true })})` : 'แก้วันเสร็จสิ้น'}</span>
                               </button>
                             )}
 

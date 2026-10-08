@@ -109,9 +109,13 @@ export const EmailAlertModal: React.FC<EmailAlertModalProps> = ({
               </span>
               <span className="text-slate-500">{caseItem.court}</span>
             </div>
-            {caseItem.prosecutorName && (
-              <div className="text-amber-900 font-semibold text-[11px]">
-                <span className="text-slate-500 font-normal">อัยการเจ้าของสำนวน:</span> ⚖️ {caseItem.prosecutorName}
+            {(caseItem.responsiblePerson || caseItem.prosecutorName) && (
+              <div className="text-indigo-950 font-semibold text-[11px] flex items-center gap-1.5 flex-wrap">
+                <span className="text-indigo-700 font-bold">👔 อัยการเจ้าของสำนวน:</span>
+                <span>{caseItem.responsiblePerson || caseItem.prosecutorName}</span>
+                {caseItem.prosecutorName && caseItem.responsiblePerson && caseItem.prosecutorName !== caseItem.responsiblePerson && (
+                  <span className="text-slate-500 font-normal text-[10px]">(เวรชี้: {caseItem.prosecutorName})</span>
+                )}
               </div>
             )}
             <div className="text-slate-600">

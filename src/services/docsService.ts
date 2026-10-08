@@ -56,7 +56,7 @@ export async function createDailyFilingDoc(
       `เลขรับ ส.1: ${c.receivedNumberS1 || '-'} | เลขฟ้อง ส.4: ${c.filingNumberS4 || '-'}`,
       `ศาล: ${c.court} | ประเภทคดี: ${c.caseType}`,
       `โจทก์: ${c.plaintiff} | จำเลย: ${c.defendant}`,
-      `อัยการเจ้าของสำนวน: ${c.prosecutorName || '-'} | ผู้รับผิดชอบ: ${c.responsiblePerson}`,
+      `อัยการเจ้าของสำนวน: ${c.responsiblePerson || '-'} | อัยการเวรชี้: ${c.prosecutorName || '-'}`,
       c.judgmentDate
         ? `วันที่ศาลอ่านคำพิพากษา: ${formatThaiDate(c.judgmentDate, { short: false })} | วันครบกำหนดอุทธรณ์ 1 เดือน: ${formatThaiDate(effectiveDeadline, { short: false })}`
         : `สถานะคำพิพากษา: ยังไม่มีคำพิพากษา (จำเลยให้การปฏิเสธ / สำนวนมีนัด)`,
@@ -275,9 +275,10 @@ export async function createDailyDutySummaryDoc(
   const documentId = data.documentId;
   const docUrl = `https://docs.google.com/document/d/${documentId}/edit`;
 
-  const confessedCount = casesInDay.filter((c) => c.defendantPlea === 'confessed' || c.hasJudgment || Boolean(c.judgmentDate)).length;
-  const deniedCount = casesInDay.filter((c) => c.defendantPlea === 'denied' || c.appointmentType === 'witness_examination' || c.appointmentType === 'pre_trial').length;
-  const otherCount = casesInDay.length - confessedCount - deniedCount;
+  const confessedCount = casesInDay.filter((c) => !c.isRequisitionCase && c.appointmentType !== 'requisition' && (c.defendantPlea === 'confessed' || c.hasJudgment || Boolean(c.judgmentDate))).length;
+  const deniedCount = casesInDay.filter((c) => !c.isRequisitionCase && c.appointmentType !== 'requisition' && (c.defendantPlea === 'denied' || c.appointmentType === 'witness_examination' || c.appointmentType === 'pre_trial')).length;
+  const requisitionCount = casesInDay.filter((c) => Boolean(c.isRequisitionCase || c.appointmentType === 'requisition')).length;
+  const otherCount = casesInDay.length - confessedCount - deniedCount - requisitionCount;
 
   const content = [
     `บันทึกข้อความ`,
@@ -293,14 +294,15 @@ export async function createDailyDutySummaryDoc(
     `[ สรุปสถิติผลการดำเนินกระบวนพิจารณาในศาล ]`,
     `  ๑. จำเลยให้การรับสารภาพ / ศาลมีคำพิพากษาในวันฟ้อง: ${confessedCount} สำนวน`,
     `  ๒. จำเลยให้การปฏิเสธ / ศาลมีนัดตรวจพยานหลักฐานหรือสืบพยาน: ${deniedCount} สำนวน`,
-    `  ๓. สำนวนมีนัดอื่น ๆ / อยู่ระหว่างรอผล: ${otherCount < 0 ? 0 : otherCount} สำนวน`,
+    ...(requisitionCount > 0 ? [`  ๓. สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ): ${requisitionCount} สำนวน`] : []),
+    `  ${requisitionCount > 0 ? '๔' : '๓'}. สำนวนมีนัดอื่น ๆ / อยู่ระหว่างรอผล: ${otherCount < 0 ? 0 : otherCount} สำนวน`,
     `\n--------------------------------------------------------------------------------\n`,
     `[ บัญชีรายละเอียดสำนวนคดี ]\n`,
     ...casesInDay.map((c, i) =>
       [
         `${i + 1}. คดีหมายเลขดำที่ ${c.blackCaseNo} ${c.redCaseNo ? `/ แดง ${c.redCaseNo}` : ''}`,
         `   โจทก์: ${c.plaintiff} | จำเลย: ${c.defendant}`,
-        `   ผลการชี้คดี/คำพิพากษา: ${c.judgmentOutcome || (c.hasJudgment ? 'ตัดสินแล้ว' : 'จำเลยปฏิเสธ/มีนัดต่อ')}`,
+        `   ผลการชี้คดี/คำพิพากษา: ${c.judgmentOutcome || (c.hasJudgment ? 'ตัดสินแล้ว' : (c.isRequisitionCase || c.appointmentType === 'requisition' ? 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)' : 'จำเลยปฏิเสธ/มีนัดต่อ'))}`,
         c.appealDeadline ? `   วันครบกำหนดอุทธรณ์ ๑ เดือน: ${formatThaiDate(c.extendedDeadline || c.appealDeadline)}` : '',
         `   เวรชี้/เจ้าของสำนวน: ${c.prosecutorName || c.responsiblePerson}`,
         `\n`,

@@ -304,7 +304,7 @@ export const DailyCasesToSheetsModal: React.FC<DailyCasesToSheetsModalProps> = (
                             )}
                           </td>
                           <td className="py-2 px-3 text-slate-800 font-medium whitespace-nowrap">
-                            ⚖️ {row[3]}
+                            👔 {row[3]}
                           </td>
                           <td className="py-2 px-3 text-slate-800">
                             {row[4]}

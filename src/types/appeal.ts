@@ -61,6 +61,17 @@ export interface AppealCase {
   requisitionDate?: string;          // วันที่เบิกฟ้อง (YYYY-MM-DD)
   requisitionNotes?: string;         // หมายเหตุการเบิกฟ้อง เช่น เบิกตัวจากเรือนจำ
 
+  // สำนวนที่ศาลแยกฟ้อง (Severed / Split Prosecution Case)
+  isSeveredCase?: boolean;           // เป็นสำนวนที่ศาลสั่งแยกฟ้องหรือไม่
+  severedFromCaseId?: string;        // ID ของสำนวนคดีเดิมที่ถูกศาลสั่งแยกฟ้อง
+  originalBlackCaseNo?: string;      // เลขคดีดำเดิมที่ศาลสั่งแยกฟ้อง เช่น อ.120/2569
+  originalRedCaseNo?: string;        // เลขคดีแดงเดิม (ถ้ามี)
+  originalReceivedNumberS1?: string;// เลขรับ ส.1 ของสำนวนเดิม
+  originalFilingNumberS4?: string;  // เลขฟ้อง ส.4 ของสำนวนเดิม
+  severedOrderDate?: string;         // วันที่ศาลมีคำสั่งให้แยกฟ้อง
+  severedDeadlineDate?: string;      // กำหนดเวลายื่นฟ้องใหม่ตามคำสั่งศาล (เช่น ภายใน 15 วัน)
+  severedNotes?: string;             // หมายเหตุการแยกฟ้อง เช่น จำเลยที่ 2 ให้การปฏิเสธ ศาลสั่งให้แยกฟ้อง
+
   // นัดของศาลในสำนวน (นัดแรก / นัดปัจจุบัน เช่น นัดคุ้มครองสิทธิ)
   appointmentType?: CourtAppointmentType;
   appointmentTypeName?: string;        // ชื่อระบุกรณีเลือก "นัดอื่นๆ"

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Scale, Calendar, CheckCircle2, AlertCircle, Clock, Sparkles, FileText } from 'lucide-react';
+import { X, Scale, Calendar, CheckCircle2, AlertCircle, Clock, Sparkles, FileText, Trash2 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { isJudgmentRecorded } from '../utils/appointmentUtils';
 
 interface RecordJudgmentModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface RecordJudgmentModalProps {
     },
     syncToCalendar: boolean
   ) => void;
+  onClearJudgment?: (caseId: string) => void;
 }
 
 const QUICK_OUTCOME_SUGGESTIONS = [
@@ -35,6 +37,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   caseItem,
   onClose,
   onSaveJudgmentDate,
+  onClearJudgment,
 }) => {
   const [judgmentDate, setJudgmentDate] = useState<string>(getTodayString());
   const [redCaseNo, setRedCaseNo] = useState<string>('');
@@ -80,6 +83,10 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
       setErrorMsg('ไม่สามารถคำนวณวันครบกำหนดอุทธรณ์ได้ กรุณาตรวจสอบวันที่');
       return;
     }
+    if (!judgmentOutcome.trim() && !fullJudgmentText.trim()) {
+      setErrorMsg('กรุณาระบุหรือเลือกผลคำพิพากษา (เช่น ลงโทษตามฟ้อง, จำคุก รอการลงโทษ, ยกฟ้อง) เพื่อบันทึกคำพิพากษา');
+      return;
+    }
 
     onSaveJudgmentDate(
       caseItem.id,
@@ -95,7 +102,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
     onClose();
   };
 
-  const isEditingExisting = Boolean(caseItem.judgmentDate);
+  const isEditingExisting = isJudgmentRecorded(caseItem);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -128,9 +135,13 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
               <span className="text-slate-500">โจทก์: {caseItem.plaintiff}</span>
               <span className="text-slate-500">จำเลย: {caseItem.defendant}</span>
             </div>
-            {caseItem.prosecutorName && (
-              <div className="text-amber-800">
-                <span>อัยการเจ้าของสำนวน/เวรชี้: {caseItem.prosecutorName}</span>
+            {(caseItem.responsiblePerson || caseItem.prosecutorName) && (
+              <div className="text-indigo-950 font-medium flex items-center gap-1.5 flex-wrap">
+                <span className="text-indigo-700 font-semibold">👔 อัยการเจ้าของสำนวน:</span>
+                <span className="font-semibold">{caseItem.responsiblePerson || 'รอกำหนด'}</span>
+                {caseItem.prosecutorName && (
+                  <span className="text-slate-500 text-[11px]">(⚖️ เวรชี้: {caseItem.prosecutorName})</span>
+                )}
               </div>
             )}
             <div className="text-[11px] text-indigo-700 bg-indigo-50/80 p-1.5 rounded border border-indigo-100 mt-1">
@@ -271,21 +282,39 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5 flex-shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{isEditingExisting ? 'บันทึกการแก้ไขคำพิพากษา' : 'เริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'}</span>
-            </button>
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2.5 flex-shrink-0">
+            <div>
+              {onClearJudgment && (caseItem.judgmentDate || caseItem.hasJudgment || caseItem.judgmentOutcome) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClearJudgment(caseItem.id);
+                    onClose();
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition cursor-pointer flex items-center gap-1 active:scale-95"
+                  title="ยกเลิกคำพิพากษา และตั้งสถานะสำนวนเป็นยังไม่กรอกคำพิพากษา"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>ล้างคำพิพากษา (ตั้งเป็นยังไม่กรอก)</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{isEditingExisting ? 'บันทึกคำพิพากษา' : 'บันทึกคำพิพากษาและเริ่มคุมอุทธรณ์ 1 เดือน'}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
