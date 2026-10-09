@@ -165,7 +165,9 @@ export async function fetchAppealCases(accessToken: string, spreadsheetId: strin
     const isCompleted = (row[13] || '').trim() === 'เสร็จสิ้นแล้ว';
     const completionReason = parseCompletionReason(row[15]);
     const rawJudgmentDate = (row[8] || '').trim();
-    const hasJudgment = Boolean(rawJudgmentDate);
+    const rawOutcome = (row[9] || '').trim();
+    const isPlaceholderOutcome = !rawOutcome || /(อยู่ระหว่าง|สำนวนเบิกฟ้อง|รอคำให้การ|รอฟัง|รออ่าน|นัดฟัง|ยังไม่|รอผล|รอนัด|จำเลยปฏิเสธ|คุ้มครองสิทธิ|สืบเสาะ)/.test(rawOutcome);
+    const hasJudgment = Boolean(rawJudgmentDate && !isPlaceholderOutcome);
 
     return {
       id: row[18] || `case_${Date.now()}_${index}`,

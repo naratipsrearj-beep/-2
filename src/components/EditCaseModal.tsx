@@ -233,6 +233,10 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
         alert('กรุณาระบุวันที่ศาลอ่านคำพิพากษา สำหรับสำนวนที่มีคำพิพากษาแล้ว');
         return;
       }
+      if (!judgmentOutcome.trim()) {
+        alert('กรุณากรอกผลคำพิพากษาโดยย่อ (เช่น ลงโทษจำคุก, ปรับ, รอการลงโทษ, ยกฟ้อง) หากศาลยังไม่อ่านคำพิพากษา หรือยังไม่ทราบผลคำพิพากษา กรุณาเอาเครื่องหมายถูกออกจากช่อง "ศาลมีคำพิพากษาแล้ว"');
+        return;
+      }
     } else {
       // Pending trial / rights protection / denied plea
       if (appointmentType !== 'none' && !appointmentDate) {
@@ -342,44 +346,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <span className="text-[11px] font-normal text-slate-500">เลือกสถานะของสำนวน</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-              {/* Option 1: คุ้มครองสิทธิ / ปฏิเสธ */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSeveredCase(false);
-                  setHasJudgment(false);
-                  setDefendantPlea('denied');
-                  setIsRequisitionCase(false);
-                  if (appointmentType === 'none' || appointmentType === 'requisition') {
-                    setAppointmentType('rights_protection');
-                  }
-                }}
-                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
-                    ? 'border-indigo-500 bg-indigo-50/90 ring-2 ring-indigo-500/20 text-indigo-950 font-medium'
-                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
-                }`}
-              >
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300'
-                }`}>
-                  {!isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
-                    <Check className="w-3 h-3" />
-                  )}
-                </div>
-                <div>
-                  <span className="text-xs font-bold block leading-tight">
-                    🛡️ คุ้มครองสิทธิ (จำเลยปฏิเสธ)
-                  </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    ไม่บังคับใส่วันพิพากษา • เลือกวันนัดต่อๆ ไป
-                  </span>
-                </div>
-              </button>
-
-              {/* Option 2: จำเลยรับสารภาพ */}
+              {/* Option 1: จำเลยรับสารภาพ */}
               <button
                 type="button"
                 onClick={() => {
@@ -412,6 +379,43 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   </span>
                   <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
                     {hasJudgment ? 'ศาลอ่านคำพิพากษาแล้ว (คุมอุทธรณ์ 1 ด.)' : 'ยังไม่กรอกคำพิพากษา / รอศาลพิพากษา'}
+                  </span>
+                </div>
+              </button>
+
+              {/* Option 2: คุ้มครองสิทธิ */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSeveredCase(false);
+                  setHasJudgment(false);
+                  setDefendantPlea('denied');
+                  setIsRequisitionCase(false);
+                  if (appointmentType === 'none' || appointmentType === 'requisition') {
+                    setAppointmentType('rights_protection');
+                  }
+                }}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                    ? 'border-indigo-500 bg-indigo-50/90 ring-2 ring-indigo-500/20 text-indigo-950 font-medium'
+                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
+                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300'
+                }`}>
+                  {!isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
+                    <Check className="w-3 h-3" />
+                  )}
+                </div>
+                <div>
+                  <span className="text-xs font-bold block leading-tight">
+                    🛡️ คุ้มครองสิทธิ
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
+                    จำเลยปฏิเสธ • กำหนดวันนัดต่อๆ ไป
                   </span>
                 </div>
               </button>
@@ -956,35 +960,33 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
           </div>
 
           {/* SECTION A: Judgment Section */}
-          {defendantPlea === 'confessed' && (
-            <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasJudgment}
-                  onChange={(e) => {
-                    const val = e.target.checked;
-                    setHasJudgment(val);
-                    if (!val) {
-                      setJudgmentDate('');
-                      setJudgmentOutcome('');
-                    } else if (!judgmentDate) {
-                      setJudgmentDate(getTodayString());
-                    }
-                  }}
-                  className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-                />
-                <span className="text-xs font-bold text-slate-800">
-                  {hasJudgment
-                    ? 'ศาลมีคำพิพากษาแล้ว (กรอกวันและผลคำพิพากษาด้านล่าง เพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน)'
-                    : 'สำนวนนี้ยังไม่กรอกคำพิพากษา / ศาลยังไม่อ่านคำพิพากษา (ติ๊กถูกหากต้องการกรอกคำพิพากษา)'}
-                </span>
-              </label>
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${hasJudgment ? 'bg-emerald-200 text-emerald-900 font-bold' : 'bg-slate-200 text-slate-700'}`}>
-                {hasJudgment ? 'กรอกคำพิพากษาแล้ว' : 'ยังไม่กรอกคำพิพากษา'}
+          <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasJudgment}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setHasJudgment(val);
+                  if (!val) {
+                    setJudgmentDate('');
+                    setJudgmentOutcome('');
+                  } else if (!judgmentDate) {
+                    setJudgmentDate(getTodayString());
+                  }
+                }}
+                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+              />
+              <span className="text-xs font-bold text-slate-800">
+                {hasJudgment
+                  ? 'ศาลมีคำพิพากษาแล้ว (กรอกวันและผลคำพิพากษาด้านล่าง เพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน)'
+                  : 'สำนวนนี้ยังไม่กรอกคำพิพากษา / ศาลยังไม่อ่านคำพิพากษา (ติ๊กถูกหากต้องการกรอกคำพิพากษา)'}
               </span>
-            </div>
-          )}
+            </label>
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${hasJudgment ? 'bg-emerald-200 text-emerald-900 font-bold' : 'bg-slate-200 text-slate-700'}`}>
+              {hasJudgment ? 'กรอกคำพิพากษาแล้ว' : 'ยังไม่กรอกคำพิพากษา'}
+            </span>
+          </div>
 
           {hasJudgment ? (
             <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-3 animate-in fade-in">

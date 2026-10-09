@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Calendar,
   ChevronDown,
@@ -52,7 +52,9 @@ import {
   isCaseConfessed,
   isCaseDenied,
   hasContinuousAppointment,
-  isJudgmentRecorded
+  isJudgmentRecorded,
+  shouldAlertMissingJudgment,
+  isCaseRequisition
 } from '../utils/appointmentUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
@@ -326,11 +328,65 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return getDutyOfficersForDate(dutyRosters, selectedDate);
   }, [dutyRosters, selectedDate]);
 
-  // Voice Search setup
+  // Voice Search setup for in-page search
   const handleVoiceResult = (result: VoiceSearchResult) => {
     setDateSearch(result.rawTranscript);
   };
   const { isListening, transcript, startListening, stopListening } = useVoiceSearch(handleVoiceResult);
+
+  // Top quick search & filter state ("ปุ่มค้นหาตรงด้านบนของหน้านี้ เพื่อความสะดวกในการค้นหาแล้วกรอกข้อมูล")
+  const topSearchInputRef = useRef<HTMLInputElement>(null);
+  const [topSearchQuery, setTopSearchQuery] = useState<string>('');
+  const [topFilterStatus, setTopFilterStatus] = useState<
+    'all' | 'unrecorded' | 'recorded' | 'confessed' | 'denied' | 'requisition'
+  >('all');
+
+  const handleTopVoiceResult = (result: VoiceSearchResult) => {
+    setTopSearchQuery(result.rawTranscript);
+  };
+  const {
+    isListening: isTopListening,
+    transcript: topTranscript,
+    startListening: startTopListening,
+    stopListening: stopTopListening,
+  } = useVoiceSearch(handleTopVoiceResult);
+
+  const isGlobalSearchActive = Boolean(topSearchQuery.trim() || topFilterStatus !== 'all');
+
+  const globalFilteredCases = useMemo(() => {
+    if (!isGlobalSearchActive) return [];
+    return cases.filter((c) => {
+      // 1. Text Search across key fields
+      if (topSearchQuery.trim() && !caseMatchesDailySearch(c, topSearchQuery)) {
+        return false;
+      }
+      // 2. Status filter
+      // สำหรับ unrecorded: แจ้งเตือนเฉพาะสำนวนที่รับสารภาพเท่านั้น สำนวนที่ปฏิเสธจะไม่แจ้งเตือน/ไม่นำมาแสดง
+      if (topFilterStatus === 'unrecorded' && !shouldAlertMissingJudgment(c)) return false;
+      if (topFilterStatus === 'recorded' && !isJudgmentRecorded(c)) return false;
+      if (topFilterStatus === 'confessed' && !isCaseConfessed(c)) return false;
+      if (topFilterStatus === 'denied' && !isCaseDenied(c)) return false;
+      if (topFilterStatus === 'requisition' && !isCaseRequisition(c)) return false;
+      return true;
+    });
+  }, [cases, topSearchQuery, topFilterStatus, isGlobalSearchActive]);
+
+  const allCasesStats = useMemo(() => {
+    // แจ้งเตือนเฉพาะสำนวนที่รับสารภาพเท่านั้นที่ยังไม่กรอกคำพิพากษา (สำนวนที่ปฏิเสธไม่ต้องเตือน)
+    const unrecorded = cases.filter((c) => shouldAlertMissingJudgment(c)).length;
+    const recorded = cases.filter((c) => isJudgmentRecorded(c)).length;
+    const confessed = cases.filter((c) => isCaseConfessed(c)).length;
+    const denied = cases.filter((c) => isCaseDenied(c)).length;
+    const requisition = cases.filter((c) => isCaseRequisition(c)).length;
+    return {
+      total: cases.length,
+      unrecorded,
+      recorded,
+      confessed,
+      denied,
+      requisition,
+    };
+  }, [cases]);
 
   // Group cases by filing date
   const groupedByFilingDate = useMemo(() => {
@@ -420,8 +476,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
     const criminal = list.filter((c) => c.caseType.includes('อาญา')).length;
     const civil = list.filter((c) => !c.caseType.includes('อาญา')).length;
-    const withJudgment = list.filter((c) => c.hasJudgment || c.judgmentDate).length;
-    const pendingTrial = list.filter((c) => !c.hasJudgment && !c.judgmentDate).length;
+    const withJudgment = list.filter((c) => isJudgmentRecorded(c)).length;
+    const pendingTrial = list.filter((c) => !isJudgmentRecorded(c)).length;
     const completed = list.filter((c) => c.isCompleted).length;
     const urgent = list.filter((c) => {
       if (c.isCompleted) return false;
@@ -507,6 +563,393 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
   return (
     <div className="space-y-5 animate-in fade-in duration-200">
+      {/* ========================================================================= */}
+      {/* 1. TOP QUICK SEARCH BAR ("ช่วยเพิ่มปุ่มค้นหาตรงด้านบนของหน้านี้ เพื่อความสะดวกในการค้นหาแล้วกรอกข้อมูล") */}
+      {/* ========================================================================= */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-900/50 rounded-2xl p-4 sm:p-5 shadow-lg relative overflow-hidden">
+        {/* Glow backdrop flair */}
+        <div className="absolute right-0 top-0 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="relative z-10 space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-amber-500/25 shrink-0">
+                <Search className="w-5 h-5 text-slate-950" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm sm:text-base font-bold text-white font-['Prompt']">
+                    ค้นหาสำนวนเพื่อกรอกข้อมูล / บันทึกคำพิพากษา
+                  </h3>
+                  <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                    ค้นหาแล้วกรอกได้ทันที
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-200/80 mt-0.5">
+                  ค้นหาด้วยเลขคดีดำ (เช่น อ.1858, 2570), เลขแดง, เลข ส.1, ส.4, จำเลย หรืออัยการ เพื่อเปิดบันทึกคำพิพากษาหรือแก้ไขข้อมูลได้ทันที
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Summary Badges */}
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              <button
+                type="button"
+                onClick={() => setTopFilterStatus(topFilterStatus === 'unrecorded' ? 'all' : 'unrecorded')}
+                className={`text-xs px-3 py-1.5 rounded-xl border font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                  topFilterStatus === 'unrecorded'
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md ring-2 ring-amber-300'
+                    : 'bg-white/10 hover:bg-white/20 text-amber-300 border-amber-400/30'
+                }`}
+                title="คลิกเพื่อกรองเฉพาะสำนวนที่จำเลยรับสารภาพแต่ยังไม่ได้กรอกคำพิพากษา (สำนวนที่ปฏิเสธจะไม่แจ้งเตือน)"
+              >
+                <Scale className="w-3.5 h-3.5 text-amber-400" />
+                <span>รับสารภาพ (ยังไม่กรอกคำพิพากษา {allCasesStats.unrecorded})</span>
+              </button>
+
+              {canEdit && onAddNewCaseForDate && (
+                <button
+                  type="button"
+                  onClick={() => onAddNewCaseForDate(selectedDate)}
+                  className="text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ กรอกคดีใหม่</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Search Input Box */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                ref={topSearchInputRef}
+                type="text"
+                value={isTopListening ? topTranscript : topSearchQuery}
+                onChange={(e) => setTopSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (!topSearchQuery.trim() && topFilterStatus === 'all') {
+                      setTopFilterStatus('unrecorded');
+                    }
+                  }
+                }}
+                placeholder="🔍 พิมพ์เลขคดีดำ (เช่น 2570, อ.1858), คดีแดง, เลข ส.1, ส.4, จำเลย, หรืออัยการเจ้าของสำนวน..."
+                className={`w-full text-xs sm:text-sm pl-10 pr-20 py-2.5 rounded-xl border transition focus:outline-none ${
+                  isTopListening
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-100 ring-2 ring-rose-400'
+                    : 'border-white/20 bg-white/10 text-white placeholder-slate-400 focus:bg-white/15 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
+                }`}
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {topSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTopSearchQuery('');
+                      topSearchInputRef.current?.focus();
+                    }}
+                    className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+                    title="ล้างคำค้นหา"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={isTopListening ? stopTopListening : startTopListening}
+                  className={`p-1.5 rounded-lg border transition ${
+                    isTopListening
+                      ? 'bg-rose-500 text-white border-rose-600 animate-pulse'
+                      : 'bg-white/10 hover:bg-white/20 text-slate-300 border-white/20'
+                  }`}
+                  title="ค้นหาด้วยเสียง"
+                >
+                  {isTopListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* ค้นหา Button ("ช่วยเพิ่มปุ่มค้นหน้าตรงด้านบนของหน้านี้ เพื่อความสะดวกในการค้นหาแล้วกรอกข้อมูล") */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!topSearchQuery.trim() && topFilterStatus === 'all') {
+                  setTopFilterStatus('unrecorded');
+                }
+                topSearchInputRef.current?.focus();
+              }}
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs sm:text-sm font-bold px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 transition shadow-md cursor-pointer shrink-0 active:scale-95"
+              title="ค้นหาสำนวนเพื่อกรอกข้อมูล / บันทึกคำพิพากษา"
+            >
+              <Search className="w-4 h-4 stroke-[2.5]" />
+              <span>ค้นหาสำนวน</span>
+            </button>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap pt-1 text-xs">
+            <span className="text-slate-400 text-[11px] font-medium mr-1">กรองด่วน:</span>
+            <button
+              type="button"
+              onClick={() => { setTopFilterStatus('all'); setTopSearchQuery(''); }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] ${
+                topFilterStatus === 'all' && !topSearchQuery.trim()
+                  ? 'bg-white/20 text-white border-white/30 font-semibold'
+                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              ทั้งหมด ({allCasesStats.total})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopFilterStatus(topFilterStatus === 'unrecorded' ? 'all' : 'unrecorded')}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+                topFilterStatus === 'unrecorded'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-xs'
+                  : 'bg-amber-500/15 text-amber-300 border-amber-400/30 hover:bg-amber-500/25'
+              }`}
+            >
+              <span>⚖️ รับสารภาพ (ยังไม่กรอกคำพิพากษา {allCasesStats.unrecorded})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopFilterStatus(topFilterStatus === 'recorded' ? 'all' : 'recorded')}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+                topFilterStatus === 'recorded'
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                  : 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30 hover:bg-emerald-500/25'
+              }`}
+            >
+              <span>✅ กรอกคำพิพากษาแล้ว ({allCasesStats.recorded})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopFilterStatus(topFilterStatus === 'confessed' ? 'all' : 'confessed')}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+                topFilterStatus === 'confessed'
+                  ? 'bg-emerald-400 text-slate-950 border-emerald-300 font-bold'
+                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              <span>🟢 จำเลยรับสารภาพ ({allCasesStats.confessed})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopFilterStatus(topFilterStatus === 'denied' ? 'all' : 'denied')}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+                topFilterStatus === 'denied'
+                  ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
+                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              <span>🟠 จำเลยปฏิเสธ ({allCasesStats.denied})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopFilterStatus(topFilterStatus === 'requisition' ? 'all' : 'requisition')}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+                topFilterStatus === 'requisition'
+                  ? 'bg-orange-400 text-slate-950 border-orange-300 font-bold'
+                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              <span>🚚 เบิกฟ้อง ({allCasesStats.requisition})</span>
+            </button>
+
+            {isGlobalSearchActive && (
+              <button
+                type="button"
+                onClick={() => { setTopSearchQuery(''); setTopFilterStatus('all'); }}
+                className="text-[11px] text-rose-300 hover:text-rose-100 underline underline-offset-2 ml-auto cursor-pointer"
+              >
+                ✕ ปิดผลการค้นหา
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Dynamic Search Results Panel */}
+        {isGlobalSearchActive && (
+          <div className="mt-4 pt-4 border-t border-white/15 animate-in fade-in duration-150 space-y-2.5">
+            <div className="flex items-center justify-between text-xs text-indigo-200">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>
+                  ผลการค้นหา: พบ <strong className="text-amber-300 font-bold">{globalFilteredCases.length}</strong> สำนวนคดี
+                  {topSearchQuery && ` (คำค้น: "${topSearchQuery}")`}
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-300 hidden sm:inline">
+                คลิกปุ่ม &quot;+ กรอกคำพิพากษา&quot; หรือ &quot;แก้ไข&quot; เพื่อกรอกข้อมูลได้ทันที
+              </span>
+            </div>
+
+            {globalFilteredCases.length === 0 ? (
+              <div className="bg-white/5 rounded-xl p-5 text-center border border-white/10">
+                <Search className="w-7 h-7 text-slate-400 mx-auto mb-1.5" />
+                <p className="text-sm font-semibold text-white">ไม่พบสำนวนคดีที่ตรงกับคำค้นหา &quot;{topSearchQuery}&quot;</p>
+                <p className="text-xs text-slate-300 mt-1">ลองพิมพ์เฉพาะตัวเลขคดี เช่น 2570, 1858 หรือล้างคำค้นหา</p>
+                {canEdit && onAddNewCaseForDate && (
+                  <button
+                    type="button"
+                    onClick={() => onAddNewCaseForDate(selectedDate)}
+                    className="mt-3 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-4 py-2 rounded-xl transition inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ กรอกข้อมูลคดีใหม่ในระบบ</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                {globalFilteredCases.map((c) => {
+                  const hasJudgment = isJudgmentRecorded(c);
+                  return (
+                    <div
+                      key={c.id}
+                      className="bg-white text-slate-900 rounded-xl p-3 sm:p-3.5 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-indigo-300 transition"
+                    >
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-950 font-['Prompt'] text-sm">
+                            ดำ {c.blackCaseNo}
+                          </span>
+                          {c.redCaseNo ? (
+                            <span className="text-xs font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                              แดง {c.redCaseNo}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                              ยังไม่มีเลขแดง
+                            </span>
+                          )}
+
+                          {/* Status Badge */}
+                          {hasJudgment ? (
+                            <span
+                              className="text-xs font-bold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1"
+                              title={c.judgmentDate ? `กรอกคำพิพากษาแล้วเมื่อ ${formatThaiDate(c.judgmentDate)}` : 'กรอกคำพิพากษาแล้ว'}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>⚖️ กรอกคำพิพากษาแล้ว</span>
+                              {c.judgmentDate && (
+                                <span className="text-[11px] text-emerald-800">({formatThaiDate(c.judgmentDate, { short: true })})</span>
+                              )}
+                            </span>
+                          ) : shouldAlertMissingJudgment(c) ? (
+                            <span className="text-xs font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 flex items-center gap-1 shadow-2xs">
+                              <Scale className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>รับสารภาพ (ยังไม่กรอกคำพิพากษา)</span>
+                            </span>
+                          ) : isCaseDenied(c) ? (
+                            <span className="text-xs font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              🟠 จำเลยให้การปฏิเสธ (อยู่ระหว่างนัดพิจารณา)
+                            </span>
+                          ) : isCaseRequisition(c) ? (
+                            <span className="text-xs font-semibold text-orange-800 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                              🚚 สำนวนเบิกฟ้อง
+                            </span>
+                          ) : null}
+
+                          {c.receivedNumberS1 && (
+                            <span className="text-xs font-medium text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                              ส.1: {c.receivedNumberS1}
+                            </span>
+                          )}
+                          {c.filingNumberS4 && (
+                            <span className="text-xs font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              ส.4: {c.filingNumberS4}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span>
+                            <strong>วันที่ฟ้อง:</strong> {formatThaiDate(c.filingDate)}
+                          </span>
+                          <span>
+                            <strong>จำเลย:</strong> {c.defendant || '-'}
+                          </span>
+                          <span>
+                            <strong>👔 อัยการเจ้าของสำนวน:</strong> {c.responsiblePerson || c.prosecutorName || '-'}
+                          </span>
+                        </div>
+
+                        {hasJudgment && c.judgmentOutcome && (
+                          <div className="text-xs text-emerald-950 bg-emerald-50/70 p-1.5 rounded-lg border border-emerald-200">
+                            <strong>ผลคำพิพากษา:</strong> {c.judgmentOutcome}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action buttons on this matched case */}
+                      <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
+                        {canEdit && onRecordJudgment && (
+                          <button
+                            type="button"
+                            onClick={() => onRecordJudgment(c)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95 ${
+                              hasJudgment
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                : shouldAlertMissingJudgment(c)
+                                ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 border border-amber-600 font-extrabold shadow-sm'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                            }`}
+                            title={
+                              hasJudgment
+                                ? 'แก้ไขคำพิพากษา'
+                                : shouldAlertMissingJudgment(c)
+                                ? 'จำเลยรับสารภาพ กรอกคำพิพากษาคดีนี้'
+                                : 'กรอกคำพิพากษา (เมื่อศาลมีคำตัดสิน)'
+                            }
+                          >
+                            <Scale className={`w-3.5 h-3.5 ${hasJudgment ? 'text-emerald-700' : shouldAlertMissingJudgment(c) ? 'text-slate-950' : 'text-slate-500'}`} />
+                            <span>{hasJudgment ? 'แก้คำพิพากษา' : shouldAlertMissingJudgment(c) ? '+ กรอกคำพิพากษา' : 'กรอกคำพิพากษา'}</span>
+                          </button>
+                        )}
+
+                        {canEdit && onEditCase && (
+                          <button
+                            type="button"
+                            onClick={() => onEditCase(c)}
+                            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition flex items-center gap-1 cursor-pointer"
+                            title="แก้ไขข้อมูลสำนวนคดีนี้"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>แก้ไข</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (c.filingDate) {
+                              setSelectedDate(c.filingDate);
+                              setViewMode('single_date');
+                              setTopSearchQuery('');
+                              setTopFilterStatus('all');
+                              if (onToast) onToast(`สลับไปดูวันที่ยื่นฟ้อง ${formatThaiDate(c.filingDate)}`);
+                            }
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition flex items-center gap-1 cursor-pointer"
+                          title="ไปที่วันที่ยื่นฟ้องของสำนวนนี้"
+                        >
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          <span>ดูในวันที่ฟ้อง</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Top Banner & Mode Toggle */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -529,30 +972,45 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             </div>
           </div>
 
-          {/* View Mode Toggle: Single Date vs All Dates Overview */}
-          <div className="flex items-center gap-2 self-start md:self-auto bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+          {/* View Mode Toggle & Quick Search Button */}
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
             <button
-              onClick={() => setViewMode('single_date')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                viewMode === 'single_date'
-                  ? 'bg-white text-indigo-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              type="button"
+              onClick={() => {
+                topSearchInputRef.current?.focus();
+                topSearchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-xs cursor-pointer active:scale-95"
+              title="คลิกเพื่อเลื่อนไปค้นหาสำนวนเพื่อกรอกข้อมูลด้านบน"
             >
-              <CalendarCheck2 className="w-3.5 h-3.5" />
-              <span>เลือกดูตามวันที่ฟ้อง</span>
+              <Search className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>ค้นหาสำนวนเพื่อกรอกข้อมูล</span>
             </button>
-            <button
-              onClick={() => setViewMode('all_dates')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                viewMode === 'all_dates'
-                  ? 'bg-white text-indigo-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>ดูทุกวันที่ฟ้อง ({distinctFilingDates.length} วัน)</span>
-            </button>
+
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+              <button
+                onClick={() => setViewMode('single_date')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  viewMode === 'single_date'
+                    ? 'bg-white text-indigo-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>เลือกดูตามวันที่ฟ้อง</span>
+              </button>
+              <button
+                onClick={() => setViewMode('all_dates')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  viewMode === 'all_dates'
+                    ? 'bg-white text-indigo-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>ดูทุกวันที่ฟ้อง ({distinctFilingDates.length} วัน)</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1192,17 +1650,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 <span className="text-[11px] text-emerald-800 font-semibold">({formatThaiDate(caseItem.judgmentDate, { short: true })})</span>
                               )}
                             </span>
-                          ) : (
-                            (hasNextAppt || isCaseDenied(caseItem)) ? null : (
-                              <span
-                                className="text-[11px] font-medium text-slate-500 bg-slate-100/80 px-1.5 py-0.5 rounded-md border border-slate-200 flex items-center gap-1"
-                                title="สำนวนนี้ยังไม่ได้กรอกคำพิพากษา"
-                              >
-                                <Scale className="w-3 h-3 text-slate-400 shrink-0" />
-                                <span>ยังไม่กรอกคำพิพากษา</span>
-                              </span>
-                            )
-                          )}
+                          ) : shouldAlertMissingJudgment(caseItem) ? (
+                            <span
+                              className="text-xs font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300 flex items-center gap-1 shadow-2xs"
+                              title="สำนวนจำเลยรับสารภาพ ยังไม่ได้กรอกคำพิพากษา"
+                            >
+                              <Scale className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>รับสารภาพ (ยังไม่กรอกคำพิพากษา)</span>
+                            </span>
+                          ) : null}
 
                           {/* สถิติผลการดำเนินคดี Badge */}
                           {procCat === 'confessed' && (
@@ -1488,19 +1944,32 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                   className={`px-2.5 py-1 text-xs font-semibold rounded-md transition shadow-2xs flex items-center gap-1 cursor-pointer active:scale-95 ${
                                     hasJudgmentRecorded
                                       ? 'text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 font-bold'
-                                      : 'text-white bg-amber-600 hover:bg-amber-700'
+                                      : shouldAlertMissingJudgment(caseItem)
+                                      ? 'text-white bg-amber-600 hover:bg-amber-700 font-bold'
+                                      : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200'
                                   }`}
-                                  title={hasJudgmentRecorded && caseItem.judgmentDate ? `แก้ไขคำพิพากษา (กรอกแล้วเมื่อ ${formatThaiDate(caseItem.judgmentDate)})` : 'กรอกคำพิพากษา'}
+                                  title={
+                                    hasJudgmentRecorded && caseItem.judgmentDate
+                                      ? `แก้ไขคำพิพากษา (กรอกแล้วเมื่อ ${formatThaiDate(caseItem.judgmentDate)})`
+                                      : shouldAlertMissingJudgment(caseItem)
+                                      ? 'จำเลยรับสารภาพ กรุณากรอกคำพิพากษา'
+                                      : 'กรอกคำพิพากษา (เมื่อศาลมีคำตัดสิน)'
+                                  }
                                 >
                                   {hasJudgmentRecorded ? (
                                     <>
                                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                       <span>แก้คำพิพากษา (กรอกแล้ว)</span>
                                     </>
-                                  ) : (
+                                  ) : shouldAlertMissingJudgment(caseItem) ? (
                                     <>
                                       <Scale className="w-3.5 h-3.5" />
                                       <span>+ กรอกคำพิพากษา</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Scale className="w-3.5 h-3.5 text-slate-500" />
+                                      <span>กรอกคำพิพากษา</span>
                                     </>
                                   )}
                                 </button>
@@ -1830,17 +2299,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                   <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                                   <span>⚖️ กรอกคำพิพากษาแล้ว</span>
                                 </span>
-                              ) : (
-                                (hasContinuousAppointment(caseItem) || isCaseDenied(caseItem)) ? null : (
-                                  <span
-                                    className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 flex items-center gap-1"
-                                    title="ยังไม่กรอกคำพิพากษา"
-                                  >
-                                    <Scale className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                    <span>ยังไม่กรอกคำพิพากษา</span>
-                                  </span>
-                                )
-                              )}
+                              ) : shouldAlertMissingJudgment(caseItem) ? (
+                                <span
+                                  className="text-[10px] font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300 flex items-center gap-1 shadow-2xs"
+                                  title="สำนวนจำเลยรับสารภาพ ยังไม่ได้กรอกคำพิพากษา"
+                                >
+                                  <Scale className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                  <span>รับสารภาพ (ยังไม่กรอกคำพิพากษา)</span>
+                                </span>
+                              ) : null}
                               {caseItem.receivedNumberS1 && <span className="text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-medium border border-blue-200">ส.1: {caseItem.receivedNumberS1}</span>}
                               {caseItem.filingNumberS4 && <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium border border-emerald-200">ส.4: {caseItem.filingNumberS4}</span>}
                               {caseItem.responsiblePerson && (
@@ -1898,12 +2365,16 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                     className={`px-2.5 py-1 text-xs font-bold rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer active:scale-95 ${
                                       hasJudgmentRecorded
                                         ? 'text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300'
-                                        : 'text-white bg-amber-600 hover:bg-amber-700'
+                                        : shouldAlertMissingJudgment(caseItem)
+                                        ? 'text-white bg-amber-600 hover:bg-amber-700'
+                                        : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200'
                                     }`}
                                     title={
                                       hasJudgmentRecorded && caseItem.judgmentDate
                                         ? `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate)} - คลิกเพื่อแก้ไขคำพิพากษา`
-                                        : 'ศาลตัดสินแล้ว กรอกคำพิพากษาเพื่อเริ่มคุมอุทธรณ์ 1 เดือน'
+                                        : shouldAlertMissingJudgment(caseItem)
+                                        ? 'จำเลยรับสารภาพ กรอกคำพิพากษาเพื่อเริ่มคุมอุทธรณ์ 1 เดือน'
+                                        : 'กรอกคำพิพากษา (เมื่อศาลมีคำตัดสิน)'
                                     }
                                   >
                                     {hasJudgmentRecorded ? (
@@ -1911,10 +2382,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                         <span>แก้คำพิพากษา (กรอกแล้ว)</span>
                                       </>
-                                    ) : (
+                                    ) : shouldAlertMissingJudgment(caseItem) ? (
                                       <>
                                         <Scale className="w-3.5 h-3.5" />
                                         <span>+ กรอกคำพิพากษา</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Scale className="w-3.5 h-3.5 text-slate-500" />
+                                        <span>กรอกคำพิพากษา</span>
                                       </>
                                     )}
                                   </button>

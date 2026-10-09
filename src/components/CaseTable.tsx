@@ -27,7 +27,15 @@ import {
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
-import { getAppointmentLabel, getAppointmentBadgeStyle, isCaseConfessed, getRequisitionStatus, isJudgmentRecorded } from '../utils/appointmentUtils';
+import {
+  getAppointmentLabel,
+  getAppointmentBadgeStyle,
+  isCaseConfessed,
+  isCaseDenied,
+  getRequisitionStatus,
+  isJudgmentRecorded,
+  shouldAlertMissingJudgment
+} from '../utils/appointmentUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCaseUtils';
 import { getCaseCardStyle } from './DailyFilingByDateView';
@@ -630,20 +638,24 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <span className="text-[10px] text-sky-700 font-medium block mt-0.5">
                               รอนัดพิจารณา (ยังไม่ทราบคำให้การ)
                             </span>
+                          ) : isCaseConfessed(caseItem) ? (
+                            <span className="text-[10px] font-semibold text-emerald-800 block mt-0.5">
+                              🟢 จำเลยรับสารภาพ (ยังไม่กรอกคำพิพากษา)
+                            </span>
                           ) : (
                             <span className="text-[10px] text-slate-500 block mt-0.5">
                               จำเลยให้การปฏิเสธ
                             </span>
                           )}
-                          {canEdit && onRecordJudgment && (
+                          {canEdit && onRecordJudgment && shouldAlertMissingJudgment(caseItem) && (
                             <button
                               type="button"
                               onClick={() => onRecordJudgment(caseItem)}
                               className="mt-1 text-[11px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
-                              title="ศาลตัดสินแล้ว คลิกเพื่อกรอกคำพิพากษาและเริ่มคุมอุทธรณ์ 1 เดือน"
+                              title="จำเลยรับสารภาพ คลิกเพื่อกรอกคำพิพากษาและเริ่มคุมอุทธรณ์ 1 เดือน"
                             >
                               <Scale className="w-3 h-3 text-amber-700" />
-                              <span>+ กรอกคำพิพากษา</span>
+                              <span>+ กรอกคำพิพากษา (รับสารภาพ)</span>
                             </button>
                           )}
                         </div>
@@ -745,18 +757,22 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                               <button
                                 onClick={() => onRecordJudgment(caseItem)}
                                 className={`text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition font-bold cursor-pointer active:scale-95 ${
-                                  !isJudgmentRecorded(caseItem)
+                                  isJudgmentRecorded(caseItem)
+                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                                    : shouldAlertMissingJudgment(caseItem)
                                     ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
-                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                                 }`}
                                 title={
-                                  !isJudgmentRecorded(caseItem)
-                                    ? 'ศาลตัดสินแล้ว กรอกคำพิพากษาเพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'
-                                    : `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate || '')} - คลิกเพื่อแก้ไขคำพิพากษา`
+                                  isJudgmentRecorded(caseItem)
+                                    ? `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate || '')} - คลิกเพื่อแก้ไขคำพิพากษา`
+                                    : shouldAlertMissingJudgment(caseItem)
+                                    ? 'จำเลยรับสารภาพ กรอกคำพิพากษาเพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'
+                                    : 'กรอกคำพิพากษา (เมื่อศาลมีคำตัดสิน)'
                                 }
                               >
-                                <Scale className="w-3 h-3" />
-                                <span>{isJudgmentRecorded(caseItem) ? 'แก้คำพิพากษา' : '+ กรอกคำพิพากษา'}</span>
+                                <Scale className={`w-3 h-3 ${isJudgmentRecorded(caseItem) ? 'text-amber-800' : shouldAlertMissingJudgment(caseItem) ? 'text-white' : 'text-slate-500'}`} />
+                                <span>{isJudgmentRecorded(caseItem) ? 'แก้คำพิพากษา' : shouldAlertMissingJudgment(caseItem) ? '+ กรอกคำพิพากษา' : 'กรอกคำพิพากษา'}</span>
                               </button>
                             )}
 
