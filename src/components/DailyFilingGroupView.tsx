@@ -30,7 +30,8 @@ import {
   hasContinuousAppointment,
   isCaseDenied,
   isJudgmentRecorded,
-  shouldAlertMissingJudgment
+  shouldAlertMissingJudgment,
+  isCaseUnspecifiedStage
 } from '../utils/appointmentUtils';
 import { getCaseCardStyle } from './DailyFilingByDateView';
 
@@ -229,24 +230,32 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
         </div>
       </div>
 
-      {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอที่ 6 */}
+      {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอ */}
       <div className="bg-white border border-slate-200 rounded-xl p-2.5 sm:px-3.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
         <div className="flex items-center gap-1.5 text-slate-800 font-bold">
           <Palette className="w-4 h-4 text-indigo-600" />
           <span>สีพื้นหลังจำแนกตามคำให้การ / นัด:</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-500 shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>สีเขียว = จำเลยรับสารภาพ</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 border border-rose-300 text-rose-950 border-l-4 border-l-rose-600 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
+            <span>สีแดง = ยังไม่เลือกสถานะสำนวน (เตือน)</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 border-l-4 border-l-amber-500 shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-            <span>สีส้ม/อำพัน = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-950 border-l-4 border-l-yellow-500 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+            <span>สีเหลือง = จำเลยรับสารภาพ</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-100 border border-orange-300 text-orange-950 border-l-4 border-l-orange-500 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+            <span>สีส้ม = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-600 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+            <span>สีเขียว = สำนวนมีเบิกฟ้อง</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-100 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs font-semibold">
             <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-            <span>สีฟ้า = มีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / เบิกฟ้อง</span>
+            <span>สีฟ้า = มีนัดอื่นๆ</span>
           </span>
         </div>
       </div>
@@ -283,17 +292,25 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
           <span>สีพื้นหลังจำแนกตามคำให้การ / นัด:</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-500 shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>สีเขียว = จำเลยรับสารภาพ</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 border border-rose-300 text-rose-950 border-l-4 border-l-rose-600 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
+            <span>สีแดง = ยังไม่เลือกสถานะสำนวน (เตือน)</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 border-l-4 border-l-amber-500 shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-            <span>สีส้ม/อำพัน = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-950 border-l-4 border-l-yellow-500 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+            <span>สีเหลือง = จำเลยรับสารภาพ</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-100 border border-orange-300 text-orange-950 border-l-4 border-l-orange-500 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+            <span>สีส้ม = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-600 shadow-2xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+            <span>สีเขียว = สำนวนมีเบิกฟ้อง</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-100 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs font-semibold">
             <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-            <span>สีฟ้า = มีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / เบิกฟ้อง</span>
+            <span>สีฟ้า = มีนัดอื่นๆ</span>
           </span>
         </div>
       </div>
@@ -419,6 +436,15 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                             ) : (
                               <span className="text-[11px] text-slate-400 bg-slate-100/80 px-1.5 py-0.5 rounded border border-slate-200">
                                 ยังไม่มีเลขแดง
+                              </span>
+                            )}
+                            {isCaseUnspecifiedStage(caseItem) && !caseItem.isCompleted && (
+                              <span
+                                className="text-[11px] font-bold text-white bg-rose-600 px-2 py-0.5 rounded border border-rose-700 flex items-center gap-1 shadow-2xs animate-pulse"
+                                title="สำนวนนี้ยังไม่ได้เลือกสถานะการพิจารณาของศาล (คุมสำนวนที่จะฟ้องในวันไว้ก่อน)"
+                              >
+                                <AlertTriangle className="w-3 h-3 text-amber-200" />
+                                <span>🚨 ยังไม่เลือกสถานะสำนวน (คุมสำนวนฟ้องไว้ก่อน)</span>
                               </span>
                             )}
                             {hasJudgmentRecorded ? (

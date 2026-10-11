@@ -19,7 +19,8 @@ import {
   Eye,
   ShieldAlert,
   Users,
-  KeyRound
+  KeyRound,
+  BarChart3
 } from 'lucide-react';
 
 import { AppealCase, DailyJudgmentFollowUp, SheetConfig, CaseCompletionReason, MonthlyDutyRoster, DailyDutyRecord } from './types/appeal';
@@ -82,11 +83,12 @@ import { UrgentAlertBanner } from './components/UrgentAlertBanner';
 import { CaseTable } from './components/CaseTable';
 import { DailyFilingByDateView } from './components/DailyFilingByDateView';
 import { DutyRosterView } from './components/DutyRosterView';
+import { MonthlyProsecutorSummaryView } from './components/MonthlyProsecutorSummaryView';
 import { UploadDutyRosterModal } from './components/UploadDutyRosterModal';
 import { AddCaseModal } from './components/AddCaseModal';
 import { CompleteModal } from './components/CompleteModal';
 import { ExtendDeadlineModal } from './components/ExtendDeadlineModal';
-import { formatThaiDate } from './utils/dateUtils';
+import { formatThaiDate, getTodayString } from './utils/dateUtils';
 import { SpreadsheetModal } from './components/SpreadsheetModal';
 import { ConfirmationDialog } from './components/ConfirmationDialog';
 import { VoiceSearchBar } from './components/VoiceSearchBar';
@@ -96,6 +98,7 @@ import { CourtAppointmentModal } from './components/CourtAppointmentModal';
 import { CourtPetitionModal } from './components/CourtPetitionModal';
 import { EditCaseModal } from './components/EditCaseModal';
 import { RecordJudgmentModal } from './components/RecordJudgmentModal';
+import { JudgmentRecheckModal } from './components/JudgmentRecheckModal';
 import { LoginScreen } from './components/LoginScreen';
 import { UserPermissionsModal } from './components/UserPermissionsModal';
 import { RequestEditModal } from './components/RequestEditModal';
@@ -163,8 +166,9 @@ export default function App() {
   const [isUploadDutyModalOpen, setIsUploadDutyModalOpen] = useState(false);
   const [addCaseInitialResponsiblePerson, setAddCaseInitialResponsiblePerson] = useState<string | undefined>();
 
-  // Navigation tabs: 'all' | 'filing_date' | 'duty_roster'
-  const [activeTab, setActiveTab] = useState<'all' | 'filing_date' | 'duty_roster'>('all');
+  // Navigation tabs: 'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor'
+  const [activeTab, setActiveTab] = useState<'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor'>('all');
+  const [monthlySummaryInitialMonth, setMonthlySummaryInitialMonth] = useState<string | undefined>();
   const [statsFilter, setStatsFilter] = useState<string>('all');
   const [globalVoiceQuery, setGlobalVoiceQuery] = useState<string>('');
 
@@ -185,6 +189,11 @@ export default function App() {
   const [isEditCaseOpen, setIsEditCaseOpen] = useState(false);
   const [selectedCaseForRecordJudgment, setSelectedCaseForRecordJudgment] = useState<AppealCase | null>(null);
   const [isRecordJudgmentOpen, setIsRecordJudgmentOpen] = useState(false);
+  const [recheckTarget, setRecheckTarget] = useState<{
+    type: 'case' | 'followup';
+    data: AppealCase | DailyJudgmentFollowUp;
+  } | null>(null);
+  const [isRecheckModalOpen, setIsRecheckModalOpen] = useState(false);
   const [sentAlertHistory, setSentAlertHistory] = useState<Record<string, { lastSentDate: string; daysLeft: number }>>(() => {
     try {
       const raw = localStorage.getItem('sent_email_alert_history');
@@ -1058,6 +1067,114 @@ export default function App() {
     showToast(`เชื่อมโยงอัยการเวรชี้ "${officerName}" ให้ ${unassignedCases.length} สำนวนเรียบร้อยแล้ว`);
   };
 
+  // Quick Change Plea Status (เปลี่ยนสถานะคำให้การจำเลยเป็น รับสารภาพ, ปฏิเสธ, เบิกฟ้อง, หรือรอนัด)
+  const handleQuickChangePleaStatus = async (
+    caseItem: AppealCase,
+    newStatus: 'confessed' | 'denied' | 'pending' | 'requisition' | 'unspecified'
+  ) => {
+    let updatedCase: AppealCase;
+    if (newStatus === 'confessed') {
+      updatedCase = {
+        ...caseItem,
+        isUnspecifiedStage: false,
+        courtStageStatus: 'confessed',
+        defendantPlea: 'confessed',
+        isRequisitionCase: false,
+        appointmentType: (caseItem.appointmentType === 'requisition' || caseItem.appointmentType === 'rights_protection') ? 'none' : caseItem.appointmentType,
+        updatedAt: new Date().toISOString(),
+      };
+      if (updatedCase.subsequentAppointments) {
+        updatedCase.subsequentAppointments = updatedCase.subsequentAppointments.filter((a) => a.type !== 'rights_protection');
+      }
+      showToast(`เลือกสถานะสำนวนคดีดำ ${caseItem.blackCaseNo} เป็น "จำเลยรับสารภาพ" (สีเหลือง) เรียบร้อยแล้ว`);
+    } else if (newStatus === 'denied') {
+      updatedCase = {
+        ...caseItem,
+        isUnspecifiedStage: false,
+        courtStageStatus: 'rights_protection',
+        defendantPlea: 'denied',
+        isRequisitionCase: false,
+        hasJudgment: false,
+        judgmentDate: undefined,
+        judgmentOutcome: 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)',
+        appealDeadline: undefined,
+        extendedDeadline: undefined,
+        extensionCount: undefined,
+        appointmentType: (!caseItem.appointmentType || caseItem.appointmentType === 'none' || caseItem.appointmentType === 'requisition') ? 'rights_protection' : caseItem.appointmentType,
+        appointmentTypeName: (!caseItem.appointmentType || caseItem.appointmentType === 'none' || caseItem.appointmentType === 'requisition') ? 'นัดคุ้มครองสิทธิ' : caseItem.appointmentTypeName,
+        appointmentDate: caseItem.appointmentDate || getTodayString(),
+        updatedAt: new Date().toISOString(),
+      };
+      showToast(`เลือกสถานะสำนวนคดีดำ ${caseItem.blackCaseNo} เป็น "จำเลยให้การปฏิเสธ / คุ้มครองสิทธิ" (สีส้ม) เรียบร้อยแล้ว`);
+    } else if (newStatus === 'requisition') {
+      updatedCase = {
+        ...caseItem,
+        isUnspecifiedStage: false,
+        courtStageStatus: 'requisition',
+        isRequisitionCase: true,
+        appointmentType: 'requisition',
+        appointmentTypeName: 'สำนวนเบิกฟ้อง',
+        appointmentDate: caseItem.appointmentDate || getTodayString(),
+        requisitionDate: caseItem.requisitionDate || caseItem.appointmentDate || getTodayString(),
+        defendantPlea: 'pending',
+        hasJudgment: false,
+        judgmentDate: undefined,
+        judgmentOutcome: 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)',
+        appealDeadline: undefined,
+        extendedDeadline: undefined,
+        extensionCount: undefined,
+        updatedAt: new Date().toISOString(),
+      };
+      showToast(`เลือกสถานะสำนวนคดีดำ ${caseItem.blackCaseNo} เป็น "สำนวนมีเบิกฟ้อง" (สีเขียว) เรียบร้อยแล้ว`);
+    } else if (newStatus === 'unspecified') {
+      updatedCase = {
+        ...caseItem,
+        isUnspecifiedStage: true,
+        courtStageStatus: 'unspecified',
+        defendantPlea: undefined,
+        appointmentType: 'none',
+        hasJudgment: false,
+        judgmentDate: undefined,
+        judgmentOutcome: '',
+        appealDeadline: undefined,
+        extendedDeadline: undefined,
+        extensionCount: undefined,
+        isRequisitionCase: false,
+        updatedAt: new Date().toISOString(),
+      };
+      showToast(`ปรับสถานะสำนวนคดีดำ ${caseItem.blackCaseNo} เป็น "ยังไม่เลือกสถานะ (คุมสำนวนฟ้องไว้ก่อน)" (สีแดงเตือน) เรียบร้อยแล้ว`);
+    } else {
+      updatedCase = {
+        ...caseItem,
+        isUnspecifiedStage: false,
+        courtStageStatus: 'other',
+        defendantPlea: 'pending',
+        isRequisitionCase: false,
+        updatedAt: new Date().toISOString(),
+      };
+      showToast(`เลือกสถานะสำนวนคดีดำ ${caseItem.blackCaseNo} เป็น "มีนัดอื่นๆ / ยังไม่ทราบคำให้การ" (สีฟ้า) เรียบร้อยแล้ว`);
+    }
+
+    const newCases = cases.map((c) => (c.id === caseItem.id ? updatedCase : c));
+    setCases(newCases);
+    saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e: any) => console.warn('Firestore update case error:', e));
+
+    const currentToken = token || (await getAccessToken());
+    if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
+      try {
+        await updateAppealCaseInSheet(currentToken, sheetConfig.spreadsheetId, updatedCase);
+      } catch (err) {
+        console.error('Failed to update case status in Google Sheet', err);
+      }
+    }
+  };
+
+  // Quick Change Requisition Case Status (รองรับการเรียกใช้เดิม)
+  const handleQuickChangeRequisitionStatus = async (caseItem: AppealCase, newStatus: 'confessed' | 'denied') => {
+    return handleQuickChangePleaStatus(caseItem, newStatus);
+  };
+
   // Record Judgment for case transitioning from pending hearings to appeal tracking
   const handleSaveJudgmentDate = async (
     caseId: string,
@@ -1067,6 +1184,11 @@ export default function App() {
       judgmentOutcome: string;
       appealDeadline: string;
       fullJudgmentText?: string;
+      judgmentPhotoUrl?: string | null;
+      judgmentPhotoName?: string;
+      judgmentVerified?: boolean;
+      judgmentVerifiedBy?: string;
+      judgmentRecheckNotes?: string;
     },
     syncToCalendar: boolean
   ) => {
@@ -1082,6 +1204,16 @@ export default function App() {
       fullJudgmentText:
         judgmentData.fullJudgmentText !== undefined ? judgmentData.fullJudgmentText : target.fullJudgmentText,
       appealDeadline: judgmentData.appealDeadline,
+      judgmentPhotoUrl:
+        judgmentData.judgmentPhotoUrl !== undefined ? judgmentData.judgmentPhotoUrl : target.judgmentPhotoUrl,
+      judgmentPhotoName:
+        judgmentData.judgmentPhotoName !== undefined ? judgmentData.judgmentPhotoName : target.judgmentPhotoName,
+      judgmentVerified:
+        judgmentData.judgmentVerified !== undefined ? judgmentData.judgmentVerified : target.judgmentVerified,
+      judgmentVerifiedBy:
+        judgmentData.judgmentVerifiedBy !== undefined ? judgmentData.judgmentVerifiedBy : target.judgmentVerifiedBy,
+      judgmentRecheckNotes:
+        judgmentData.judgmentRecheckNotes !== undefined ? judgmentData.judgmentRecheckNotes : target.judgmentRecheckNotes,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1108,6 +1240,77 @@ export default function App() {
         console.error('Failed to sync to calendar', err);
       }
     }
+  };
+
+  // Recheck handlers: Save verified judgment text & screenshot photo
+  const handleSaveCaseRecheck = async (
+    caseId: string,
+    judgmentText: string,
+    photoUrl?: string,
+    photoName?: string,
+    isVerified?: boolean,
+    verifiedBy?: string,
+    notes?: string
+  ) => {
+    const target = cases.find((c) => c.id === caseId);
+    if (!target) return;
+
+    const updatedCase: AppealCase = {
+      ...target,
+      fullJudgmentText: judgmentText,
+      judgmentOutcome: target.judgmentOutcome || (judgmentText.slice(0, 80) + (judgmentText.length > 80 ? '...' : '')),
+      judgmentPhotoUrl: photoUrl !== undefined ? photoUrl : target.judgmentPhotoUrl,
+      judgmentPhotoName: photoName !== undefined ? photoName : target.judgmentPhotoName,
+      judgmentVerified: isVerified !== undefined ? isVerified : target.judgmentVerified,
+      judgmentVerifiedBy: verifiedBy || target.judgmentVerifiedBy,
+      judgmentRecheckNotes: notes !== undefined ? notes : target.judgmentRecheckNotes,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
+    setCases(newCases);
+    saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore save recheck error:', e));
+    showToast(`บันทึกการตรวจทานคำพิพากษาคดีดำ ${target.blackCaseNo} เรียบร้อยแล้ว`);
+  };
+
+  const handleSaveFollowUpRecheck = async (
+    followUpId: string,
+    judgmentSummary: string,
+    photoUrl?: string,
+    photoName?: string,
+    isVerified?: boolean,
+    verifiedBy?: string,
+    notes?: string
+  ) => {
+    const target = followUps.find((f) => f.id === followUpId);
+    if (!target) return;
+
+    const updatedFollowUp: DailyJudgmentFollowUp = {
+      ...target,
+      judgmentSummary,
+      judgmentPhotoUrl: photoUrl !== undefined ? photoUrl : target.judgmentPhotoUrl,
+      judgmentPhotoName: photoName !== undefined ? photoName : target.judgmentPhotoName,
+      judgmentVerified: isVerified !== undefined ? isVerified : target.judgmentVerified,
+      judgmentVerifiedBy: verifiedBy || target.judgmentVerifiedBy,
+      notes: notes !== undefined ? notes : target.notes,
+    };
+
+    const newFollowUps = followUps.map((f) => (f.id === followUpId ? updatedFollowUp : f));
+    setFollowUps(newFollowUps);
+    saveFollowUps(newFollowUps);
+    saveFollowUpToFirestore(updatedFollowUp).catch((e) => console.warn('Firestore save follow-up recheck error:', e));
+    showToast(`บันทึกการตรวจทานคำพิพากษาคดี ${target.caseNumber} เรียบร้อยแล้ว`);
+  };
+
+  const handleOpenCaseRecheck = (caseItem: AppealCase) => {
+    setRecheckTarget({ type: 'case', data: caseItem });
+    setIsRecheckModalOpen(true);
+  };
+
+  const handleOpenFollowUpRecheck = (followUp: DailyJudgmentFollowUp) => {
+    setRecheckTarget({ type: 'followup', data: followUp });
+    setIsRecheckModalOpen(true);
   };
 
   // Clear Judgment (ปรับสถานะเป็นยังไม่กรอกคำพิพากษา)
@@ -1458,6 +1661,7 @@ export default function App() {
           onSyncCalendar={handleSyncCalendarSingle}
           onSendEmailAlert={(caseItem) => setSelectedCaseForEmailAlert(caseItem)}
           onSendAllUrgentEmails={handleSendAllUrgentEmails}
+          onQuickChangeRequisitionStatus={handleQuickChangeRequisitionStatus}
         />
 
         {/* Voice-to-Text Search Bar */}
@@ -1532,6 +1736,22 @@ export default function App() {
                 {dutyRosters.length} รอบเดือน
               </span>
             </button>
+
+            {/* Tab 4: สรุปสิ้นเดือน (แยกรายอัยการ) */}
+            <button
+              onClick={() => setActiveTab('monthly_prosecutor')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTab === 'monthly_prosecutor'
+                  ? 'bg-emerald-700 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-300" />
+              <span>สรุปสิ้นเดือน (แยกรายอัยการ)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'monthly_prosecutor' ? 'bg-emerald-900 text-amber-300' : 'bg-emerald-50 text-emerald-800'}`}>
+                รับสารภาพ/ปฏิเสธ
+              </span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1565,6 +1785,7 @@ export default function App() {
               setSelectedCaseForRecordJudgment(caseItem);
               setIsRecordJudgmentOpen(true);
             }}
+            onOpenJudgmentRecheck={handleOpenCaseRecheck}
             onEditCase={(caseItem) => {
               setSelectedCaseForEdit(caseItem);
               setIsEditCaseOpen(true);
@@ -1576,6 +1797,8 @@ export default function App() {
             onDeleteCase={handleDeleteCase}
             onAddNewCase={() => setIsAddCaseOpen(true)}
             onOpenCourtPetition={(caseItem) => setSelectedCaseForCourtPetition({ caseItem })}
+            onQuickChangeRequisitionStatus={handleQuickChangeRequisitionStatus}
+            onQuickChangePleaStatus={handleQuickChangePleaStatus}
             onToast={showToast}
           />
         )}
@@ -1600,6 +1823,7 @@ export default function App() {
               setSelectedCaseForRecordJudgment(caseItem);
               setIsRecordJudgmentOpen(true);
             }}
+            onOpenJudgmentRecheck={handleOpenCaseRecheck}
             onOpenJudgmentDoc={(caseItem) => setSelectedCaseForJudgmentDoc(caseItem)}
             onExportDailyDoc={handleExportDailyDoc}
             onOpenAppointmentModal={(caseItem) => setSelectedCaseForAppointment(caseItem)}
@@ -1611,6 +1835,12 @@ export default function App() {
             onBatchAssignOfficerToDate={handleBatchAssignOfficerToDate}
             onDeleteCase={handleDeleteCase}
             onOpenCourtPetition={(caseItem) => setSelectedCaseForCourtPetition({ caseItem })}
+            onQuickChangeRequisitionStatus={handleQuickChangeRequisitionStatus}
+            onQuickChangePleaStatus={handleQuickChangePleaStatus}
+            onOpenMonthlyProsecutorSummary={(yearMonth) => {
+              setMonthlySummaryInitialMonth(yearMonth);
+              setActiveTab('monthly_prosecutor');
+            }}
             onToast={showToast}
           />
         )}
@@ -1628,6 +1858,21 @@ export default function App() {
             onUseOfficerForNewCase={handleUseOfficerForNewCase}
             onFilterCasesByOfficer={handleFilterCasesByOfficer}
             showToast={showToast}
+          />
+        )}
+
+        {/* Tab 4: Monthly Prosecutor Filing Summary (ทุกสิ้นเดือน สรุปปริมาณคดีแยกรายอัยการ พร้อมรับสารภาพ/ปฏิเสธ) */}
+        {activeTab === 'monthly_prosecutor' && (
+          <MonthlyProsecutorSummaryView
+            cases={cases}
+            initialYearMonth={monthlySummaryInitialMonth}
+            onSelectCase={(caseItem) => {
+              setSelectedCaseForEdit(caseItem);
+              setIsEditCaseOpen(true);
+            }}
+            onUpdateCase={handleSaveEditedCase}
+            onQuickChangePleaStatus={handleQuickChangePleaStatus}
+            onToast={showToast}
           />
         )}
       </main>
@@ -1754,6 +1999,21 @@ export default function App() {
         }}
         onSaveJudgmentDate={handleSaveJudgmentDate}
         onClearJudgment={handleClearJudgment}
+        onOpenFullRecheckModal={(c) => handleOpenCaseRecheck(c)}
+      />
+
+      {/* Judgment Recheck Modal (ตรวจทานเทียบเคียงข้อความคำพิพากษากับภาพถ่าย/แคปหน้าจอต้นฉบับ แบบแบ่ง 2 ฝั่ง) */}
+      <JudgmentRecheckModal
+        isOpen={isRecheckModalOpen && !!recheckTarget}
+        target={recheckTarget}
+        onClose={() => {
+          setIsRecheckModalOpen(false);
+          setRecheckTarget(null);
+        }}
+        token={token}
+        onSaveCaseRecheck={handleSaveCaseRecheck}
+        onSaveFollowUpRecheck={handleSaveFollowUpRecheck}
+        onLoginPrompt={handleLogin}
       />
 
       {/* User Permissions Management Modal (Admin only) */}

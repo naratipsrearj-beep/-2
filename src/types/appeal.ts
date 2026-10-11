@@ -44,6 +44,10 @@ export interface AppealCase {
   // สถานะคำพิพากษาและคำให้การจำเลย
   hasJudgment?: boolean;       // จริง = มีคำพิพากษาแล้ว (คุมระยะเวลาอุทธรณ์ 1 เดือน), เท็จ = ยังไม่มีคำพิพากษา (อยู่ระหว่างพิจารณา/จำเลยปฏิเสธ)
   defendantPlea?: 'denied' | 'confessed' | 'pending'; // คำให้การจำเลย: ปฏิเสธ / รับสารภาพ / รอนัด
+  
+  // สถานะสำนวนในการพิจารณาของศาล (รองรับกรณีคุมสำนวนที่จะฟ้องในวันไว้ก่อนโดยยังไม่เลือกสถานะ)
+  courtStageStatus?: 'unspecified' | 'confessed' | 'rights_protection' | 'requisition' | 'other' | 'severed';
+  isUnspecifiedStage?: boolean; // จริง = ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน มีแถบสีแดงเตือน)
 
   judgmentDate?: string;       // วันที่พิพากษา (YYYY-MM-DD) (ไม่บังคับหากมีนัด/จำเลยปฏิเสธ)
   appealDeadline?: string;     // วันครบกำหนดอุทธรณ์ 1 เดือน (YYYY-MM-DD) (คำนวณเมื่อมีคำพิพากษา)

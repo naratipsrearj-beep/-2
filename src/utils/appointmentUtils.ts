@@ -1,8 +1,33 @@
 import { AppealCase, CourtAppointmentType } from '../types/appeal';
 import { formatThaiDate } from './dateUtils';
 
+/**
+ * ตรวจสอบว่าสำนวนนี้ยังไม่ได้เลือกสถานะการพิจารณาของศาลหรือไม่
+ * (เช่น ผู้ใช้บันทึกคุมสำนวนที่จะฟ้องในวันไว้ก่อน โดยยังไม่ระบุผลการพิจารณา)
+ */
+export function isCaseUnspecifiedStage(c?: Partial<AppealCase> | null): boolean {
+  if (!c) return false;
+  if (c.isUnspecifiedStage === true || c.courtStageStatus === 'unspecified') return true;
+  // หากไม่มีคำพิพากษา, ไม่มีคำให้การ, ไม่มีนัด, ไม่ใช่เบิกฟ้อง, ไม่ใช่แยกฟ้อง และยังไม่เสร็จสิ้น
+  if (
+    !c.hasJudgment &&
+    !c.judgmentDate &&
+    !c.defendantPlea &&
+    (!c.appointmentType || c.appointmentType === 'none') &&
+    !c.isRequisitionCase &&
+    !c.isSeveredCase &&
+    !c.isCompleted
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function isCaseRequisition(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
+  if (isCaseUnspecifiedStage(c)) return false;
+  // หากทราบผลคำให้การแล้วว่าจำเลยรับสารภาพหรือปฏิเสธ จะไม่ถือว่าเป็นสำนวนเบิกฟ้องที่รอผลอีกต่อไป
+  if (c.defendantPlea === 'confessed' || c.defendantPlea === 'denied') return false;
   return Boolean(c.isRequisitionCase || c.appointmentType === 'requisition');
 }
 
@@ -10,16 +35,33 @@ export function isCaseRequisition(c?: Partial<AppealCase> | null): boolean {
  * ตรวจสอบว่าคดีนี้จำเลยให้การปฏิเสธหรือไม่
  * หมายเหตุ:
  * - จำเลยระบุคำให้การปฏิเสธ (denied)
+ * - หากเดิมเป็นสำนวนมีนัดอื่นๆ หรือเบิกฟ้อง แล้วต่อมาทราบว่าปฏิเสธ ให้ถือว่าปฏิเสธทันที
  * - นัดคุ้มครองสิทธิ (rights_protection) ซึ่งจัดให้สำหรับจำเลยที่ให้การปฏิเสธ
  * - นัดสืบพยาน (witness_examination) หรือ นัดพร้อมตรวจพยาน (pre_trial)
  * - มีข้อความระบุว่า "ปฏิเสธ" หรือ "ให้การปฏิเสธ" ในหมายเหตุ หรือผลคำพิพากษา
  */
 export function isCaseDenied(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
-  if (isCaseRequisition(c)) return false;
+  if (isCaseUnspecifiedStage(c)) return false;
+  // หากจำเลยระบุว่ารับสารภาพโดยตรง ต้องไม่ถือว่าปฏิเสธเด็ดขาด
+  if (c.defendantPlea === 'confessed') return false;
+
+  // 1. จำเลยระบุคำให้การปฏิเสธชัดเจน (มีความสำคัญสูงสุด หากเดิมเป็นสำนวนมีนัดอื่นแล้วต่อมาทราบว่าปฏิเสธ)
   if (c.defendantPlea === 'denied') return true;
+
+  // หากคดีมีคำพิพากษาและวันที่พิพากษาแล้ว (และไม่ได้ระบุว่าปฏิเสธข้างต้น) ถือว่าคดีเสร็จไปด้วยคำพิพากษา/รับสารภาพ
+  if (Boolean(c.hasJudgment && c.judgmentDate)) return false;
+
+  // สำนวนเบิกฟ้องที่ยังรอผล (และยังไม่ทราบคำให้การ)
+  if (isCaseRequisition(c)) return false;
+
+  // 2. นัดคุ้มครองสิทธิ (rights_protection) ซึ่งจัดให้สำหรับจำเลยที่ปฏิเสธ และยังไม่มีคำพิพากษา
   if (c.appointmentType === 'rights_protection') return true;
+
+  // 3. นัดสืบพยาน หรือนัดพร้อมตรวจพยานหลักฐาน
   if (c.appointmentType === 'witness_examination' || c.appointmentType === 'pre_trial') return true;
+
+  // 4. มีข้อความระบุว่า "ปฏิเสธ" ในหมายเหตุ หรือผลคำพิพากษา
   if (typeof c.notes === 'string' && c.notes.includes('ปฏิเสธ')) return true;
   if (typeof c.appointmentNotes === 'string' && c.appointmentNotes.includes('ปฏิเสธ')) return true;
   if (typeof c.judgmentOutcome === 'string' && c.judgmentOutcome.includes('ปฏิเสธ')) return true;
@@ -28,51 +70,50 @@ export function isCaseDenied(c?: Partial<AppealCase> | null): boolean {
 
 /**
  * ตรวจสอบว่าคดีนี้จำเลยให้การรับสารภาพหรือไม่
- * ทั้งจากคำให้การโดยตรง, ผลคำพิพากษา, บันทึกหมายเหตุ, หรือคดีที่มีคำพิพากษาแล้ว
+ * ทั้งจากคำให้การโดยตรง, มีคำพิพากษาแล้ว, ผลคำพิพากษา, หรือบันทึกหมายเหตุ
  * หมายเหตุ:
- * - สำนวนเบิกฟ้อง: ยังไม่ทราบว่ารับสารภาพหรือปฏิเสธ คืนค่า false
- * - สำนวนที่จำเลยปฏิเสธ: คืนค่า false เสมอ
+ * - หากเดิมเป็นสำนวนมีนัดอื่นๆ หรือเบิกฟ้อง แล้วต่อมาทราบว่าจำเลยรับสารภาพ ให้ถือว่ารับสารภาพทันที
  */
 export function isCaseConfessed(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
-  // สำนวนเบิกฟ้อง: ยังไม่ทราบคำให้การว่ารับสารภาพหรือปฏิเสธ
-  if (isCaseRequisition(c)) return false;
-  // สำนวนที่ปฏิเสธ: ต้องไม่ถือว่ารับสารภาพเด็ดขาด
-  if (isCaseDenied(c)) return false;
-  // จำเลยระบุคำให้การรับสารภาพโดยตรง
+  if (isCaseUnspecifiedStage(c)) return false;
+  // หากจำเลยระบุว่าปฏิเสธชัดเจน ต้องไม่ถือว่ารับสารภาพ
+  if (c.defendantPlea === 'denied') return false;
+
+  // 1. จำเลยระบุคำให้การรับสารภาพโดยตรง (มีความสำคัญสูงสุด หากเดิมเป็นสำนวนมีนัดอื่นแล้วต่อมาทราบว่ารับสารภาพ)
   if (c.defendantPlea === 'confessed') return true;
 
-  // ตรวจสอบข้อความปฏิเสธ
-  const textHasDenied = (txt?: string | null) => {
-    if (!txt) return false;
-    const l = txt.toLowerCase();
-    return l.includes('ปฏิเสธ') || l.includes('ไม่รับสารภาพ');
-  };
-  if (textHasDenied(c.notes) || textHasDenied(c.appointmentNotes) || textHasDenied(c.judgmentOutcome)) {
-    return false;
-  }
+  // สำนวนเบิกฟ้องที่ยังรอผล (และยังไม่ระบุคำให้การ)
+  if (isCaseRequisition(c)) return false;
 
-  // มีข้อความ "รับสารภาพ" ในผลคำพิพากษา
+  // 2. คดีที่มีคำพิพากษาและวันที่พิพากษาแล้ว (และไม่ได้ระบุว่าปฏิเสธ)
+  if (Boolean(c.hasJudgment && c.judgmentDate)) return true;
+
+  // 3. ตรวจสอบข้อความปฏิเสธ
+  if (isCaseDenied(c)) return false;
+
+  // 4. มีข้อความ "รับสารภาพ" ในผลคำพิพากษา
   if (typeof c.judgmentOutcome === 'string' && c.judgmentOutcome.toLowerCase().includes('รับสารภาพ')) return true;
   // มีข้อความ "รับสารภาพ" ในหมายเหตุ
   if (typeof c.notes === 'string' && c.notes.toLowerCase().includes('รับสารภาพ')) return true;
   // มีข้อความ "รับสารภาพ" ในหมายเหตุนัด
   if (typeof c.appointmentNotes === 'string' && c.appointmentNotes.toLowerCase().includes('รับสารภาพ')) return true;
-  // คดีที่มีคำพิพากษาและวันที่พิพากษาแล้ว โดยไม่ได้ระบุว่าปฏิเสธ
-  if (Boolean(c.hasJudgment && c.judgmentDate) && c.defendantPlea !== 'denied') return true;
+
   return false;
 }
 
 /**
  * ตรวจสอบว่าสำนวนคดีมีนัดต่อหรือไม่ (เช่น จำเลยปฏิเสธ มีนัดสืบพยาน, มีนัดพร้อม, นัดคุ้มครองสิทธิ, นัดไกล่เกลี่ย, นัดฟังคำสั่ง, นัดอื่นๆ หรือสำนวนเบิกฟ้อง)
- * ตามคำขอ: ในสำนวนที่มีนัดต่อ ไม่ต้องให้ขึ้น ผลคำพิพากษา/ความคืบหน้า โดยย่อ
+ * หมายเหตุ: หากคดีมีคำพิพากษาแล้ว หรือเป็นสำนวนที่จำเลยรับสารภาพ จะถือว่ากระบวนพิจารณานัดเสร็จสิ้นแล้ว ไม่ใช่นัดต่อ
  */
 export function hasContinuousAppointment(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
+  // หากมีคำพิพากษาแล้ว หรือจำเลยรับสารภาพ ถือว่านัดเสร็จสิ้นแล้ว
+  if (Boolean(c.hasJudgment && c.judgmentDate) || c.defendantPlea === 'confessed') return false;
   // สำนวนเบิกฟ้อง ถือว่ามีนัดต่อเบิกตัวมาฟ้อง
   if (isCaseRequisition(c)) return true;
   // มีวันนัดศาล หรือประเภทนัดที่ไม่ใช่ none
-  if (c.appointmentDate) return true;
+  if (c.appointmentDate && c.appointmentType && c.appointmentType !== 'none') return true;
   if (c.appointmentType && c.appointmentType !== 'none') return true;
   if (c.subsequentAppointments && c.subsequentAppointments.length > 0) return true;
   // จำเลยปฏิเสธ (อยู่ระหว่างนัดพิจารณาคดีต่อ)
@@ -183,6 +224,7 @@ export function isJudgmentRecorded(c?: Partial<AppealCase> | null): boolean {
 export function shouldAlertMissingJudgment(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
   if (c.isCompleted) return false;
+  if (isCaseUnspecifiedStage(c)) return false;
   if (isJudgmentRecorded(c)) return false;
   if (isCaseDenied(c)) return false;
   if (isCaseRequisition(c)) return false;
@@ -292,3 +334,151 @@ export function getRequisitionStatus(dateStr?: string): {
     return { daysLeft: 999, isToday: false, isUrgent: false, isPast: false, label: '' };
   }
 }
+
+/**
+ * ตรวจสอบว่าคดีนี้เป็น "สำนวนเบิกฟ้องที่ยังไม่เปลี่ยนสถานะเป็นรับสารภาพหรือปฏิเสธ" หรือไม่
+ * ตามคำขอของผู้ใช้:
+ * - ในการเลือกสำนวนเบิกฟ้อง ให้แจ้งเตือนทุกๆ 5 วัน หากยังไม่เปลี่ยนสถานะเป็นสำนวนรับสารภาพ หรือ ปฏิเสธ
+ */
+export function isPendingRequisitionCase(c?: Partial<AppealCase> | null): boolean {
+  if (!c) return false;
+  if (c.isCompleted) return false;
+  // ต้องเป็นสำนวนเบิกฟ้อง
+  if (!isCaseRequisition(c)) return false;
+  // หากเปลี่ยนสถานะเป็นรับสารภาพแล้ว -> ไม่ต้องเตือน
+  if (c.defendantPlea === 'confessed' || isCaseConfessed(c)) return false;
+  // หากเปลี่ยนสถานะเป็นปฏิเสธแล้ว -> ไม่ต้องเตือน
+  if (c.defendantPlea === 'denied' || isCaseDenied(c)) return false;
+  return true;
+}
+
+export interface RequisitionIntervalAlertInfo {
+  isPending: boolean;              // เป็นสำนวนเบิกฟ้องที่ค้างอยู่จริงหรือไม่
+  daysElapsed: number;             // จำนวนวันที่รอมาแล้วนับแต่วันที่ฟ้อง/วันที่เริ่มเบิกฟ้อง
+  isAlertDue: boolean;             // ถึงรอบการแจ้งเตือนแล้วหรือไม่ (daysElapsed >= 5)
+  cycle: number;                   // รอบการเตือน (รอบที่ 1 เมื่อ >= 5, รอบที่ 2 เมื่อ >= 10, ...)
+  isExactIntervalToday: boolean;   // ครบรอบ 5 วันพอดีในวันนี้ (เช่น วันที่ 5, 10, 15, 20...)
+  daysUntilNextAlert: number;      // อีกกี่วันจะถึงรอบเตือนถัดไป (1 - 5)
+  baseDate: string;                // วันที่ใช้อ้างอิงคำนวณ (filingDate / requisitionDate)
+  alertTitle: string;              // ข้อความหัวเรื่องแจ้งเตือน
+  alertDescription: string;        // รายละเอียด
+  badgeLabel: string;              // ป้ายข้อความย่อ
+  urgencyLevel: 'critical' | 'warning' | 'info' | 'none';
+}
+
+/**
+ * คำนวณรอบการแจ้งเตือนทุกๆ 5 วัน สำหรับสำนวนเบิกฟ้องที่ยังไม่เปลี่ยนสถานะเป็นรับสารภาพหรือปฏิเสธ
+ */
+export function getRequisitionAlertInfo(
+  c?: Partial<AppealCase> | null,
+  refDate: Date = new Date()
+): RequisitionIntervalAlertInfo {
+  if (!c || !isPendingRequisitionCase(c)) {
+    return {
+      isPending: false,
+      daysElapsed: 0,
+      isAlertDue: false,
+      cycle: 0,
+      isExactIntervalToday: false,
+      daysUntilNextAlert: 0,
+      baseDate: '',
+      alertTitle: '',
+      alertDescription: '',
+      badgeLabel: '',
+      urgencyLevel: 'none',
+    };
+  }
+
+  // วันที่ตั้งต้นในการคำนวณ:
+  // ใช้วันที่ฟ้อง (filingDate) หรือวันที่เบิกฟ้อง (requisitionDate)
+  const baseDate = c.filingDate || c.requisitionDate || (c.createdAt ? c.createdAt.slice(0, 10) : '');
+  
+  if (!baseDate) {
+    return {
+      isPending: true,
+      daysElapsed: 0,
+      isAlertDue: false,
+      cycle: 0,
+      isExactIntervalToday: false,
+      daysUntilNextAlert: 5,
+      baseDate: '',
+      alertTitle: 'สำนวนเบิกฟ้อง (รอผล)',
+      alertDescription: 'ยังไม่เปลี่ยนสถานะเป็นรับสารภาพหรือปฏิเสธ',
+      badgeLabel: '🚚 เบิกฟ้อง (รอผล)',
+      urgencyLevel: 'info',
+    };
+  }
+
+  try {
+    const [y, m, d] = baseDate.split('-').map(Number);
+    const baseZero = new Date(y, m - 1, d);
+    const todayZero = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+    
+    const diffDays = Math.floor((todayZero.getTime() - baseZero.getTime()) / (1000 * 60 * 60 * 24));
+    const daysElapsed = Math.max(0, diffDays);
+
+    const isAlertDue = daysElapsed >= 5;
+    const cycle = isAlertDue ? Math.floor(daysElapsed / 5) : 0;
+    const isExactIntervalToday = isAlertDue && daysElapsed % 5 === 0;
+    
+    // จำนวนวันจะถึงรอบ 5 วันถัดไป
+    const remainder = daysElapsed % 5;
+    const daysUntilNextAlert = remainder === 0 ? 5 : 5 - remainder;
+
+    let urgencyLevel: 'critical' | 'warning' | 'info' | 'none' = 'info';
+    if (daysElapsed >= 10) {
+      urgencyLevel = 'critical';
+    } else if (daysElapsed >= 5) {
+      urgencyLevel = 'warning';
+    }
+
+    let badgeLabel = '';
+    let alertTitle = '';
+    let alertDescription = '';
+
+    if (isAlertDue) {
+      if (isExactIntervalToday) {
+        badgeLabel = `🔔 เตือนรอบที่ ${cycle} (ครบ ${daysElapsed} วันพอดี)`;
+        alertTitle = `แจ้งเตือนรอบที่ ${cycle}: สำนวนเบิกฟ้องครบกำหนด ${daysElapsed} วัน`;
+        alertDescription = `ยังไม่เปลี่ยนสถานะเป็น "รับสารภาพ" หรือ "ปฏิเสธ" (แจ้งเตือนทุก 5 วัน)`;
+      } else {
+        badgeLabel = `🔔 เตือนรอบที่ ${cycle} (รอ ${daysElapsed} วัน)`;
+        alertTitle = `แจ้งเตือนรอบที่ ${cycle}: สำนวนเบิกฟ้องค้างมาแล้ว ${daysElapsed} วัน`;
+        alertDescription = `ยังไม่เปลี่ยนสถานะเป็น "รับสารภาพ" หรือ "ปฏิเสธ" (รอบถัดไปอีก ${daysUntilNextAlert} วัน)`;
+      }
+    } else {
+      badgeLabel = `🚚 เบิกฟ้อง (รอ ${daysElapsed} วัน • เตือนในอีก ${daysUntilNextAlert} วัน)`;
+      alertTitle = `สำนวนเบิกฟ้อง: รอผลมาแล้ว ${daysElapsed} วัน`;
+      alertDescription = `รอบแจ้งเตือนถัดไปในอีก ${daysUntilNextAlert} วัน (แจ้งเตือนทุกๆ 5 วัน หากยังไม่เปลี่ยนสถานะ)`;
+    }
+
+    return {
+      isPending: true,
+      daysElapsed,
+      isAlertDue,
+      cycle,
+      isExactIntervalToday,
+      daysUntilNextAlert,
+      baseDate,
+      alertTitle,
+      alertDescription,
+      badgeLabel,
+      urgencyLevel,
+    };
+  } catch {
+    return {
+      isPending: true,
+      daysElapsed: 0,
+      isAlertDue: false,
+      cycle: 0,
+      isExactIntervalToday: false,
+      daysUntilNextAlert: 5,
+      baseDate,
+      alertTitle: 'สำนวนเบิกฟ้อง (รอผล)',
+      alertDescription: 'ยังไม่เปลี่ยนสถานะเป็นรับสารภาพหรือปฏิเสธ',
+      badgeLabel: '🚚 เบิกฟ้อง (รอผล)',
+      urgencyLevel: 'info',
+    };
+  }
+}
+

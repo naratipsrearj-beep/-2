@@ -1,5 +1,5 @@
 import { AppealCase, DailyJudgmentFollowUp, CaseCompletionReason, FollowUpStatus } from '../types/appeal';
-import { DAILY_EXPORT_HEADERS, getDailyExportRows } from '../utils/dailyExportUtils';
+import { DAILY_EXPORT_HEADERS, getDailyExportRows, getProcedureStyleInfo } from '../utils/dailyExportUtils';
 import { formatThaiDate } from '../utils/dateUtils';
 
 const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -737,6 +737,31 @@ export async function exportDailyFilingCasesToGoogleSheet(
               fields: 'pixelSize',
             },
           },
+          // 4. จัดสีพื้นหลังช่อง "การดำเนินการ" (Column 6: startColumnIndex: 5, endColumnIndex: 6)
+          // สำนวนรับสารภาพ: สีเหลือง, สำนวนปฏิเสธ: สีส้ม, สำนวนมีเบิกฟ้อง: สีเขียว
+          ...cases.map((c, rIdx) => {
+            const procStyle = getProcedureStyleInfo(c);
+            return {
+              repeatCell: {
+                range: {
+                  sheetId: 0,
+                  startRowIndex: rIdx + 2,
+                  endRowIndex: rIdx + 3,
+                  startColumnIndex: 5,
+                  endColumnIndex: 6,
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: procStyle.sheetsRgb,
+                    textFormat: { bold: true },
+                    horizontalAlignment: 'CENTER',
+                    verticalAlignment: 'MIDDLE',
+                  },
+                },
+                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)',
+              },
+            };
+          }),
         ],
       }),
     });

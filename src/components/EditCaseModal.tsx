@@ -14,11 +14,19 @@ import {
   Edit3,
   Save,
   UserCheck,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  Image as ImageIcon,
+  Upload,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, CaseAppointment, MonthlyDutyRoster, CaseCompletionReason } from '../types/appeal';
 import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
-import { isJudgmentRecorded } from '../utils/appointmentUtils';
+import { isJudgmentRecorded, isCaseUnspecifiedStage } from '../utils/appointmentUtils';
 import { appointmentTypeOptions } from './CourtAppointmentModal';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate, getAllOfficersGroupedByMonth } from '../services/dutyService';
@@ -65,12 +73,24 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   const [severedDeadlineDate, setSeveredDeadlineDate] = useState('');
   const [severedNotes, setSeveredNotes] = useState('');
 
+  // สถานะยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน)
+  const [isUnspecifiedStage, setIsUnspecifiedStage] = useState<boolean>(false);
+
   // Case Status: Has Judgment vs. Pending Hearings / Rights Protection / Denied Plea
   const [hasJudgment, setHasJudgment] = useState<boolean>(false);
   const [defendantPlea, setDefendantPlea] = useState<'denied' | 'confessed' | 'pending'>('denied');
 
   const [judgmentDate, setJudgmentDate] = useState<string>('');
   const [judgmentOutcome, setJudgmentOutcome] = useState('');
+  const [fullJudgmentText, setFullJudgmentText] = useState<string>('');
+  const [judgmentPhotoUrl, setJudgmentPhotoUrl] = useState<string | null>(null);
+  const [judgmentPhotoName, setJudgmentPhotoName] = useState<string>('');
+  const [judgmentVerified, setJudgmentVerified] = useState<boolean>(false);
+  const [judgmentVerifiedBy, setJudgmentVerifiedBy] = useState<string>('');
+  const [photoZoom, setPhotoZoom] = useState<number>(1);
+  const [photoRotation, setPhotoRotation] = useState<number>(0);
+  const [photoHighContrast, setPhotoHighContrast] = useState<boolean>(false);
+  const judgmentFileInputRef = React.useRef<HTMLInputElement>(null);
   const [hasExtension, setHasExtension] = useState<boolean>(false);
   const [extendedDeadline, setExtendedDeadline] = useState<string>('');
   const [extensionCount, setExtensionCount] = useState<number>(1);
@@ -144,12 +164,23 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setSeveredDeadlineDate(caseItem.severedDeadlineDate || '');
       setSeveredNotes(caseItem.severedNotes || '');
 
+      const unspecified = isCaseUnspecifiedStage(caseItem);
+      setIsUnspecifiedStage(unspecified);
+
       const caseHasJudgment = isJudgmentRecorded(caseItem);
       setHasJudgment(caseHasJudgment);
-      setDefendantPlea(caseItem.defendantPlea || (caseHasJudgment ? 'confessed' : (isReq ? 'pending' : 'denied')));
+      setDefendantPlea(caseItem.defendantPlea || (caseHasJudgment ? 'confessed' : (isReq ? 'pending' : (unspecified ? 'pending' : 'denied'))));
 
       setJudgmentDate(caseHasJudgment ? (caseItem.judgmentDate || '') : '');
       setJudgmentOutcome(caseHasJudgment ? (caseItem.judgmentOutcome || '') : '');
+      setFullJudgmentText(caseItem.fullJudgmentText || '');
+      setJudgmentPhotoUrl(caseItem.judgmentPhotoUrl || null);
+      setJudgmentPhotoName(caseItem.judgmentPhotoName || (caseItem.judgmentPhotoUrl ? 'ภาพแคปคำพิพากษา.png' : ''));
+      setJudgmentVerified(!!caseItem.judgmentVerified);
+      setJudgmentVerifiedBy(caseItem.judgmentVerifiedBy || '');
+      setPhotoZoom(1);
+      setPhotoRotation(0);
+      setPhotoHighContrast(false);
       setHasExtension(Boolean(caseItem.extendedDeadline));
       setExtendedDeadline(caseItem.extendedDeadline || '');
       setExtensionCount(caseItem.extensionCount || 1);
@@ -179,6 +210,38 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setDeadlineInfo({ deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false });
     }
   }, [judgmentDate, hasJudgment]);
+
+  // Paste listener for screenshot of judgment
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              if (event.target?.result) {
+                setJudgmentPhotoUrl(event.target.result as string);
+                setJudgmentPhotoName(`ภาพแคปคำพิพากษา_${caseItem?.blackCaseNo || 'ศาล'}.png`);
+                setHasJudgment(true);
+              }
+            };
+            reader.readAsDataURL(file);
+            e.preventDefault();
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [isOpen, caseItem]);
 
   if (!isOpen || !caseItem) return null;
 
@@ -228,7 +291,10 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       return;
     }
 
-    if (hasJudgment) {
+    if (isUnspecifiedStage) {
+      // กรณียังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน)
+      // ไม่บังคับคำพิพากษาหรือวันที่นัด
+    } else if (hasJudgment) {
       if (!judgmentDate) {
         alert('กรุณาระบุวันที่ศาลอ่านคำพิพากษา สำหรับสำนวนที่มีคำพิพากษาแล้ว');
         return;
@@ -257,27 +323,50 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       plaintiff: plaintiff.trim(),
       defendant: defendant.trim(),
       caseType,
-      hasJudgment,
-      defendantPlea: hasJudgment
-        ? (caseItem.defendantPlea === 'denied' ? 'denied' : 'confessed')
-        : (isRequisitionCase || appointmentType === 'requisition' ? 'pending' : defendantPlea),
-      judgmentDate: hasJudgment && judgmentDate ? judgmentDate : undefined,
-      appealDeadline: hasJudgment && deadlineInfo.deadlineDate ? deadlineInfo.deadlineDate : (hasJudgment ? caseItem.appealDeadline : undefined),
-      extendedDeadline: hasJudgment && hasExtension && extendedDeadline ? extendedDeadline : undefined,
-      extensionCount: hasJudgment && hasExtension && extendedDeadline ? extensionCount : undefined,
-      judgmentOutcome: hasJudgment
-        ? judgmentOutcome.trim()
+      isUnspecifiedStage,
+      courtStageStatus: isUnspecifiedStage
+        ? 'unspecified'
+        : (hasJudgment || defendantPlea === 'confessed')
+          ? 'confessed'
+          : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+            ? 'rights_protection'
+            : (isRequisitionCase || appointmentType === 'requisition')
+              ? 'requisition'
+              : isSeveredCase
+                ? 'severed'
+                : 'other',
+      hasJudgment: (isUnspecifiedStage || defendantPlea === 'denied' || isRequisitionCase || appointmentType === 'requisition') ? false : hasJudgment,
+      defendantPlea: isUnspecifiedStage
+        ? undefined
         : (isRequisitionCase || appointmentType === 'requisition')
-          ? (judgmentOutcome.trim() || 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
-          : (appointmentType !== 'none'
-            ? `อยู่ระหว่าง${appointmentType === 'rights_protection' ? 'นัดคุ้มครองสิทธิ' : 'นัดพิจารณา'} (${defendantPlea === 'denied' ? 'จำเลยให้การปฏิเสธ' : 'รอคำให้การ'})`
-            : judgmentOutcome),
+          ? 'pending'
+          : defendantPlea,
+      judgmentDate: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && judgmentDate) ? judgmentDate : undefined,
+      appealDeadline: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && deadlineInfo.deadlineDate) ? deadlineInfo.deadlineDate : (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' ? caseItem.appealDeadline : undefined),
+      extendedDeadline: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && hasExtension && extendedDeadline) ? extendedDeadline : undefined,
+      extensionCount: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && hasExtension && extendedDeadline) ? extensionCount : undefined,
+      judgmentOutcome: isUnspecifiedStage
+        ? ''
+        : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+          ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)')
+          : (isRequisitionCase || appointmentType === 'requisition')
+            ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
+            : (hasJudgment || defendantPlea === 'confessed')
+              ? (hasJudgment ? judgmentOutcome.trim() : (judgmentOutcome.trim() || 'จำเลยรับสารภาพ (รอศาลอ่านคำพิพากษา)'))
+              : (appointmentType !== 'none'
+                ? 'อยู่ระหว่างนัดพิจารณา (รอคำให้การ)'
+                : judgmentOutcome),
+      fullJudgmentText: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? (fullJudgmentText.trim() || undefined) : undefined,
+      judgmentPhotoUrl: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? (judgmentPhotoUrl || null) : null,
+      judgmentPhotoName: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? (judgmentPhotoName || undefined) : undefined,
+      judgmentVerified: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? judgmentVerified : undefined,
+      judgmentVerifiedBy: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && judgmentVerified) ? (judgmentVerifiedBy.trim() || undefined) : undefined,
       responsiblePerson: responsiblePerson.trim() || 'ผู้ดูแลสำนวน',
       notes: notes.trim() || undefined,
       isCompleted,
       completedDate: isCompleted ? (completedDate || getTodayString()) : undefined,
       completionReason: isCompleted ? completionReason : undefined,
-      isRequisitionCase: isRequisitionCase || appointmentType === 'requisition',
+      isRequisitionCase: (!isUnspecifiedStage && defendantPlea !== 'confessed' && defendantPlea !== 'denied') ? (isRequisitionCase || appointmentType === 'requisition') : false,
       requisitionDate: isRequisitionCase ? (requisitionDate || appointmentDate || undefined) : (appointmentType === 'requisition' ? appointmentDate : undefined),
       requisitionNotes: requisitionNotes.trim() || undefined,
 
@@ -343,13 +432,49 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 <Shield className="w-4 h-4 text-indigo-600" />
                 <span>สถานะสำนวนในการพิจารณาของศาล:</span>
               </span>
-              <span className="text-[11px] font-normal text-slate-500">เลือกสถานะของสำนวน</span>
+              <span className="text-[11px] font-normal text-slate-500">เลือกสถานะของสำนวน หรือปรับเป็นยังไม่เลือกเพื่อคุมสำนวนไว้ก่อน</span>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-              {/* Option 1: จำเลยรับสารภาพ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5">
+              {/* Option 0: ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน มีแถบสีแดงเตือน) */}
               <button
                 type="button"
                 onClick={() => {
+                  setIsUnspecifiedStage(true);
+                  setIsSeveredCase(false);
+                  setHasJudgment(false);
+                  setDefendantPlea('pending');
+                  setIsRequisitionCase(false);
+                  setAppointmentType('none');
+                  setAppointmentDate('');
+                }}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  isUnspecifiedStage
+                    ? 'border-rose-500 bg-rose-50/95 ring-2 ring-rose-500/25 text-rose-950 font-medium shadow-xs'
+                    : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
+                  isUnspecifiedStage
+                    ? 'border-rose-600 bg-rose-600 text-white'
+                    : 'border-slate-300'
+                }`}>
+                  {isUnspecifiedStage && <Check className="w-3 h-3" />}
+                </div>
+                <div>
+                  <span className="text-xs font-bold block leading-tight text-rose-950">
+                    🚨 ยังไม่เลือกสถานะ
+                  </span>
+                  <span className="text-[11px] text-rose-800/80 block mt-0.5 leading-tight">
+                    คุมสำนวนที่จะฟ้องในวันไว้ก่อน (แถบสีแดงเตือน)
+                  </span>
+                </div>
+              </button>
+
+              {/* Option 1: จำเลยรับสารภาพ (สีเหลือง) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setDefendantPlea('confessed');
                   setIsRequisitionCase(false);
@@ -359,34 +484,35 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
-                    ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-500/20 text-emerald-950 font-medium'
+                  !isUnspecifiedStage && !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
+                    ? 'border-yellow-500 bg-yellow-100 ring-2 ring-yellow-400/40 text-yellow-950 font-medium border-l-4 border-l-yellow-500 shadow-2xs'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
                   !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
-                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                    ? 'border-yellow-600 bg-yellow-500 text-yellow-950'
                     : 'border-slate-300'
                 }`}>
                   {!isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed' && (
-                    <Check className="w-3 h-3" />
+                    <Check className="w-3 h-3 stroke-[3]" />
                   )}
                 </div>
                 <div>
-                  <span className="text-xs font-bold block leading-tight">
-                    🟢 จำเลยรับสารภาพ
+                  <span className="text-xs font-bold block leading-tight text-yellow-950">
+                    🟡 จำเลยรับสารภาพ
                   </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    {hasJudgment ? 'ศาลอ่านคำพิพากษาแล้ว (คุมอุทธรณ์ 1 ด.)' : 'ยังไม่กรอกคำพิพากษา / รอศาลพิพากษา'}
+                  <span className="text-[11px] text-yellow-900/80 block mt-0.5 leading-tight">
+                    {hasJudgment ? 'ศาลอ่านคำพิพากษาแล้ว (คุมอุทธรณ์ 1 ด. • สำนวนสีเหลือง)' : 'ยังไม่กรอกคำพิพากษา / รอศาลตัดสิน (สำนวนสีเหลือง)'}
                   </span>
                 </div>
               </button>
 
-              {/* Option 2: คุ้มครองสิทธิ */}
+              {/* Option 2: คุ้มครองสิทธิ (จำเลยปฏิเสธ - สีส้ม) */}
               <button
                 type="button"
                 onClick={() => {
+                  setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setHasJudgment(false);
                   setDefendantPlea('denied');
@@ -396,34 +522,35 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
-                    ? 'border-indigo-500 bg-indigo-50/90 ring-2 ring-indigo-500/20 text-indigo-950 font-medium'
+                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                    ? 'border-orange-500 bg-orange-100 ring-2 ring-orange-400/40 text-orange-950 font-medium border-l-4 border-l-orange-500 shadow-2xs'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                    ? 'border-orange-600 bg-orange-500 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
-                    <Check className="w-3 h-3" />
+                  {!isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
+                    <Check className="w-3 h-3 stroke-[3]" />
                   )}
                 </div>
                 <div>
-                  <span className="text-xs font-bold block leading-tight">
-                    🛡️ คุ้มครองสิทธิ
+                  <span className="text-xs font-bold block leading-tight text-orange-950">
+                    🟠 จำเลยปฏิเสธ (คุ้มครองสิทธิ)
                   </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    จำเลยปฏิเสธ • กำหนดวันนัดต่อๆ ไป
+                  <span className="text-[11px] text-orange-900/80 block mt-0.5 leading-tight">
+                    จำเลยให้การปฏิเสธ • กำหนดวันนัดคุ้มครองสิทธิ/สืบพยาน (สำนวนสีส้ม)
                   </span>
                 </div>
               </button>
 
-              {/* Option 3: สำนวนเบิกฟ้อง (ยังไม่ทราบว่ารับสารภาพหรือปฏิเสธ) */}
+              {/* Option 3: สำนวนเบิกฟ้อง (รอเบิกตัว - สีเขียว) */}
               <button
                 type="button"
                 onClick={() => {
+                  setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setHasJudgment(false);
                   setDefendantPlea('pending');
@@ -436,34 +563,35 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
-                    ? 'border-orange-500 bg-orange-50/90 ring-2 ring-orange-500/20 text-orange-950 font-medium'
+                  !isUnspecifiedStage && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
+                    ? 'border-emerald-500 bg-emerald-100 ring-2 ring-emerald-400/40 text-emerald-950 font-medium border-l-4 border-l-emerald-600 shadow-2xs'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
-                    ? 'border-orange-600 bg-orange-600 text-white'
+                  !isUnspecifiedStage && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
+                    ? 'border-emerald-600 bg-emerald-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!isSeveredCase && (isRequisitionCase || appointmentType === 'requisition') && (
-                    <Check className="w-3 h-3" />
+                  {!isUnspecifiedStage && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition') && (
+                    <Check className="w-3 h-3 stroke-[3]" />
                   )}
                 </div>
                 <div>
-                  <span className="text-xs font-bold block leading-tight text-orange-950">
-                    🚚 สำนวนเบิกฟ้อง (รอเบิกตัว)
+                  <span className="text-xs font-bold block leading-tight text-emerald-950">
+                    🟢 สำนวนเบิกฟ้อง (รอเบิกตัว)
                   </span>
-                  <span className="text-[11px] text-orange-800/80 block mt-0.5 leading-tight">
-                    ยังไม่ทราบคำให้การ • แจ้งเตือนวันเบิกฟ้อง
+                  <span className="text-[11px] text-emerald-900/80 block mt-0.5 leading-tight">
+                    ยังไม่ทราบคำให้การ • แจ้งเตือนวันเบิกฟ้อง (สำนวนสีเขียว)
                   </span>
                 </div>
               </button>
 
-              {/* Option 4: อื่นๆ / ยังไม่ทราบผล */}
+              {/* Option 4: อื่นๆ / มีนัดอื่นๆ (สีฟ้า) */}
               <button
                 type="button"
                 onClick={() => {
+                  setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setHasJudgment(false);
                   setDefendantPlea('pending');
@@ -473,26 +601,26 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
-                    ? 'border-sky-500 bg-sky-50/90 ring-2 ring-sky-500/20 text-sky-950 font-medium'
+                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                    ? 'border-sky-500 bg-sky-100 ring-2 ring-sky-400/40 text-sky-950 font-medium border-l-4 border-l-sky-500 shadow-2xs'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
                     ? 'border-sky-600 bg-sky-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection' && (
-                    <Check className="w-3 h-3" />
+                  {!isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection' && (
+                    <Check className="w-3 h-3 stroke-[3]" />
                   )}
                 </div>
                 <div>
-                  <span className="text-xs font-bold block leading-tight">
-                    📋 อื่นๆ / ยังไม่ทราบผล
+                  <span className="text-xs font-bold block leading-tight text-sky-950">
+                    🔵 อื่นๆ / มีนัดอื่นๆ (ยังไม่ทราบคำให้การ)
                   </span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5 leading-tight">
-                    ยังไม่ทราบคำให้การ • รอผลการพิจารณา
+                  <span className="text-[11px] text-sky-900/80 block mt-0.5 leading-tight">
+                    ยังไม่ทราบคำให้การ • นัดพร้อม / นัดไกล่เกลี่ย / รอผล (สำนวนสีฟ้า)
                   </span>
                 </div>
               </button>
@@ -501,6 +629,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsUnspecifiedStage(false);
                   setIsSeveredCase(true);
                   setHasJudgment(false);
                   setDefendantPlea('denied');
@@ -510,17 +639,17 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                  isSeveredCase
+                  !isUnspecifiedStage && isSeveredCase
                     ? 'border-purple-500 bg-purple-50/90 ring-2 ring-purple-500/20 text-purple-950 font-medium'
                     : 'border-slate-200 bg-white hover:bg-slate-100/60 text-slate-700'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center border mt-0.5 shrink-0 ${
-                  isSeveredCase
+                  !isUnspecifiedStage && isSeveredCase
                     ? 'border-purple-600 bg-purple-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {isSeveredCase && <Check className="w-3 h-3" />}
+                  {!isUnspecifiedStage && isSeveredCase && <Check className="w-3 h-3" />}
                 </div>
                 <div>
                   <span className="text-xs font-bold block leading-tight text-purple-950">
@@ -1035,6 +1164,201 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   onChange={(e) => setJudgmentOutcome(e.target.value)}
                   className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                 />
+              </div>
+
+              {/* สาระสำคัญ / ข้อความคำพิพากษาฉบับเต็ม */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-blue-600" />
+                    <span>สาระสำคัญ / ข้อความคำพิพากษาฉบับเต็ม</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400">คัดลอกข้อความมาวางเพื่อตรวจทาน</span>
+                </div>
+                <textarea
+                  rows={4}
+                  placeholder="คัดลอกข้อความคำพิพากษา คำวินิจฉัยของศาล หรือรายละเอียดการลงโทษมาวางที่นี่..."
+                  value={fullJudgmentText}
+                  onChange={(e) => setFullJudgmentText(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans leading-relaxed bg-white"
+                />
+
+                {/* Spot-Check Keywords */}
+                <div className="mt-1.5 flex flex-wrap gap-1 items-center">
+                  <span className="text-[10px] text-slate-500 flex items-center gap-0.5 mr-1">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    <span>คำสำคัญ:</span>
+                  </span>
+                  {['จำคุก', 'รอการลงโทษ', 'ปรับ', 'ยกฟ้อง', 'ริบ', 'คดีแดง'].map((kw) => {
+                    const combined = `${judgmentOutcome} ${fullJudgmentText}`;
+                    const isFound = combined.includes(kw);
+                    return (
+                      <span
+                        key={kw}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition flex items-center gap-0.5 ${
+                          isFound
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
+                            : 'bg-white text-slate-400 border-slate-200'
+                        }`}
+                      >
+                        {isFound && <Check className="w-2.5 h-2.5 text-emerald-600" />}
+                        <span>{kw}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ช่องสำหรับวางรูปภาพ ที่แคปหน้าจอคำพิพากษา */}
+              <div className="pt-2 border-t border-amber-200/70">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-amber-600" />
+                    <span>ช่องสำหรับวางรูปภาพ ที่แคปหน้าจอคำพิพากษา</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500">สำหรับตรวจทานว่าข้อความตรงกันไหม</span>
+                </div>
+
+                <input
+                  type="file"
+                  ref={judgmentFileInputRef}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setJudgmentPhotoName(file.name);
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        if (ev.target?.result) setJudgmentPhotoUrl(ev.target.result as string);
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  accept="image/*,.pdf"
+                  className="hidden"
+                />
+
+                {judgmentPhotoUrl ? (
+                  <div className="bg-slate-900 text-white rounded-xl p-3 space-y-2 border border-slate-800">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 truncate max-w-[220px]">
+                        <ImageIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="font-semibold text-slate-200 truncate text-[11px]">
+                          {judgmentPhotoName || 'ภาพแคปคำพิพากษา'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setPhotoZoom((z) => Math.min(z + 0.25, 3))}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
+                          title="ซูมเข้า"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPhotoZoom((z) => Math.max(z - 0.25, 0.5))}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
+                          title="ซูมออก"
+                        >
+                          <ZoomOut className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPhotoRotation((r) => (r + 90) % 360)}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
+                          title="หมุน 90 องศา"
+                        >
+                          <RotateCw className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPhotoHighContrast(!photoHighContrast)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer flex items-center gap-0.5 ${
+                            photoHighContrast ? 'bg-amber-500 text-slate-950 font-bold' : 'hover:bg-slate-800 text-slate-300'
+                          }`}
+                          title="เร่งความคมชัด"
+                        >
+                          <Sliders className="w-3 h-3" />
+                          <span>คมชัด</span>
+                        </button>
+                        <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                        <button
+                          type="button"
+                          onClick={() => judgmentFileInputRef.current?.click()}
+                          className="text-[10px] text-amber-400 hover:text-amber-300 underline cursor-pointer px-1"
+                        >
+                          เปลี่ยนภาพ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setJudgmentPhotoUrl(null);
+                            setJudgmentPhotoName('');
+                            setJudgmentVerified(false);
+                          }}
+                          className="text-[10px] text-rose-400 hover:text-rose-300 underline cursor-pointer px-1"
+                        >
+                          ลบภาพ
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Image Viewer */}
+                    <div className="max-h-64 overflow-auto rounded-lg bg-slate-950/80 p-2 flex items-center justify-center border border-slate-800">
+                      <img
+                        src={judgmentPhotoUrl}
+                        alt="ภาพแคปคำพิพากษา"
+                        className="max-h-56 object-contain rounded transition-transform"
+                        style={{
+                          transform: `scale(${photoZoom}) rotate(${photoRotation}deg)`,
+                          filter: photoHighContrast ? 'contrast(175%) brightness(95%)' : 'none',
+                        }}
+                      />
+                    </div>
+
+                    <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                      <span>💡 เทียบข้อความในกล่องด้านบนกับภาพแคปหน้าจอ</span>
+                      <span className="text-amber-400">กด Ctrl + V เพื่อวางภาพใหม่แทนได้</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => judgmentFileInputRef.current?.click()}
+                    className="border-2 border-dashed border-amber-300 hover:border-amber-500 rounded-xl p-3.5 text-center cursor-pointer transition bg-amber-50/40 hover:bg-amber-50/80 flex flex-col items-center group"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 group-hover:bg-amber-500 group-hover:text-white flex items-center justify-center mb-1.5 transition shadow-2xs">
+                      <Upload className="w-4 h-4" />
+                    </div>
+                    <div className="text-xs font-bold text-slate-800 font-['Prompt']">
+                      วางภาพแคปหน้าจอคำพิพากษาที่นี่ (กด Ctrl + V)
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      แคปหน้าจอคำพิพากษาแล้วกด <strong className="text-amber-700 font-bold">Ctrl + V</strong> หรือคลิกเพื่อเลือกไฟล์รูปภาพ
+                    </div>
+                  </div>
+                )}
+
+                {/* Verified Checkbox */}
+                <div className="mt-2.5 p-2.5 bg-emerald-50/60 border border-emerald-200 rounded-xl flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={judgmentVerified}
+                      onChange={(e) => setJudgmentVerified(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="text-xs font-bold text-emerald-950">
+                      ตรวจทานแล้ว: ข้อความคำพิพากษาที่คัดลอกมาตรงกับภาพแคปหน้าจอ
+                    </span>
+                  </label>
+                  {judgmentVerified && (
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-700" />
+                      <span>ผ่านการตรวจทาน</span>
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* การขยายระยะเวลาอุทธรณ์ */}

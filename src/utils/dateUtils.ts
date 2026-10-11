@@ -147,3 +147,37 @@ export function getTodayString(): string {
   const now = new Date();
   return format(now, 'yyyy-MM-dd');
 }
+
+/**
+ * คืนค่า YYYY-MM ของเดือนปัจจุบัน เช่น "2026-10"
+ */
+export function getCurrentMonthString(): string {
+  const now = new Date();
+  return format(now, 'yyyy-MM');
+}
+
+/**
+ * แปลงปี-เดือน (YYYY-MM) เป็นชื่อเดือนภาษาไทยและปี พ.ศ.
+ * เช่น "2026-10" -> "ตุลาคม 2569" หรือ "ต.ค. 2569"
+ */
+export function formatThaiMonth(
+  yearMonthStr?: string,
+  options: { short?: boolean } = { short: false }
+): string {
+  if (!yearMonthStr) return '-';
+  try {
+    const parts = yearMonthStr.split('-');
+    if (parts.length < 2) return yearMonthStr;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+
+    if (isNaN(year) || isNaN(month) || month < 0 || month > 11) return yearMonthStr;
+
+    const buddhistYear = year + 543;
+    const monthName = options.short ? THAI_MONTHS_SHORT[month] : THAI_MONTHS_FULL[month];
+    return `${monthName} ${buddhistYear}`;
+  } catch {
+    return yearMonthStr;
+  }
+}
+

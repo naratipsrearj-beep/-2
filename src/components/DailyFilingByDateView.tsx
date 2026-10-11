@@ -36,7 +36,9 @@ import {
   Trash2,
   RotateCcw,
   Truck,
-  Palette
+  Palette,
+  BarChart3,
+  Image as ImageIcon
 } from 'lucide-react';
 import { AppealCase, MonthlyDutyRoster, SheetConfig } from '../types/appeal';
 import {
@@ -54,7 +56,10 @@ import {
   hasContinuousAppointment,
   isJudgmentRecorded,
   shouldAlertMissingJudgment,
-  isCaseRequisition
+  isCaseRequisition,
+  isPendingRequisitionCase,
+  getRequisitionAlertInfo,
+  isCaseUnspecifiedStage
 } from '../utils/appointmentUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
@@ -64,35 +69,36 @@ import { formatCasesBatchForOfficeTsv, copyTextToClipboard } from '../utils/copy
 import { createDailyDutySummaryDoc } from '../services/docsService';
 import { getAccessToken } from '../services/auth';
 
-export type DailyProcedureFilter = 'all' | 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending';
+export type DailyProcedureFilter = 
+  | 'all' 
+  | 'unspecified' 
+  | 'confessed' 
+  | 'denied_scheduled' 
+  | 'other_scheduled' 
+  | 'unknown_pending';
 
-export function getCaseProcedureCategory(c: AppealCase): 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending' {
-  // 1. สำนวนเบิกฟ้อง: ยังไม่ทราบว่ารับสารภาพหรือปฏิเสธ
+export function getCaseProcedureCategory(c: AppealCase): 'unspecified' | 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending' {
+  // 0. ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน มีแถบสีแดงเตือน)
+  if (isCaseUnspecifiedStage(c)) {
+    return 'unspecified';
+  }
+
+  // 1. รับสารภาพ: ให้ความสำคัญสูงสุดกับคำให้การจำเลยที่ระบุโดยตรง หรือมีคำพิพากษาแล้ว
+  if (c.defendantPlea === 'confessed' || isCaseConfessed(c)) {
+    return 'confessed';
+  }
+
+  // 2. ปฏิเสธมีนัดต่อ: จำเลยระบุปฏิเสธ หรือมีนัดคุ้มครองสิทธิ/สืบพยาน
+  if (c.defendantPlea === 'denied' || isCaseDenied(c) || c.appointmentType === 'rights_protection' || c.appointmentType === 'witness_examination' || c.appointmentType === 'pre_trial') {
+    return 'denied_scheduled';
+  }
+
+  // 3. สำนวนเบิกฟ้อง: ยังไม่ทราบว่ารับสารภาพหรือปฏิเสธ
   if (c.isRequisitionCase || c.appointmentType === 'requisition') {
     return 'other_scheduled';
   }
 
-  // 2. รับสารภาพ: มีคำพิพากษา หรือระบุคำให้การรับสารภาพ
-  const isConfessed = isCaseConfessed(c);
-
-  if (isConfessed) {
-    return 'confessed';
-  }
-
-  // 3. ปฏิเสธมีนัดต่อ: จำเลยปฏิเสธ หรือมีนัดสืบพยาน/นัดพร้อมตรวจพยาน
-  const isDenied =
-    c.defendantPlea === 'denied' ||
-    c.appointmentType === 'witness_examination' ||
-    c.appointmentType === 'pre_trial';
-
-  if (isDenied && c.appointmentType && c.appointmentType !== 'none') {
-    return 'denied_scheduled';
-  }
-  if (c.defendantPlea === 'denied') {
-    return 'denied_scheduled';
-  }
-
-  // 4. มีนัดอื่นๆ: เช่น นัดพร้อม, นัดไกล่เกลี่ย, นัดฟังคำสั่ง
+  // 4. มีนัดอื่นๆ: เช่น นัดพร้อม, นัดไกล่เกลี่ย, นัดฟังคำสั่ง (ที่ยังไม่ทราบคำให้การ)
   if (c.appointmentType && c.appointmentType !== 'none') {
     return 'other_scheduled';
   }
@@ -103,68 +109,94 @@ export function getCaseProcedureCategory(c: AppealCase): 'confessed' | 'denied_s
 
 export function getProcedureFilterLabel(filter: DailyProcedureFilter): string {
   switch (filter) {
-    case 'confessed': return 'จำเลยรับสารภาพ';
-    case 'denied_scheduled': return 'จำเลยปฏิเสธ - มีนัดต่อ';
-    case 'other_scheduled': return 'สำนวนมีนัดอื่นๆ';
+    case 'unspecified': return '🚨 ยังไม่เลือกสถานะสำนวน (เตือนแถบสีแดง)';
+    case 'confessed': return '🟡 จำเลยรับสารภาพ (สีเหลือง)';
+    case 'denied_scheduled': return '🟠 จำเลยปฏิเสธ - มีนัดต่อ (สีส้ม)';
+    case 'other_scheduled': return 'สำนวนมีนัดอื่นๆ / เบิกฟ้อง';
     case 'unknown_pending': return 'ยังไม่ทราบผล / รอความคืบหน้า';
     default: return 'ทั้งหมด';
   }
 }
 
 /**
- * กำหนดสไตล์และสีพื้นหลังของการ์ดสำนวนตามคำขอที่ 6:
- * - กรณีรับสารภาพ: สีเขียวอ่อน สบายตา เด่นชัด (emerald)
- * - กรณีปฏิเสธ: สีส้ม/อำพัน ชัดเจน มีนัดสืบพยาน/ตรวจพยาน (amber)
- * - กรณีมีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / สำนวนเบิกฟ้อง: สีฟ้าอ่อน นุ่มนวล ชัดเจน (sky)
- * - กรณีเสร็จสิ้นแล้ว: สีเทา/slate พร้อมสัญลักษณ์เสร็จสิ้น
+ * กำหนดสไตล์และสีพื้นหลังของการ์ดสำนวนตามคำขอ:
+ * - สำนวนยังไม่เลือกสถานะ -> แถบสีแดงเตือน (Rose / Red) ชัดเจนมาก
+ * - สำนวนรับสารภาพ -> สีเหลือง (Yellow / Amber) ชัดเจน โดดเด่น
+ * - สำนวนปฏิเสธ -> สีส้ม (Orange) ชัดเจน โดดเด่น
+ * - สำนวนมีเบิกฟ้อง -> สีเขียว (Emerald / Green) ชัดเจน โดดเด่น
+ * - สำนวนมีนัดอื่นๆ -> สีฟ้า (Sky / Blue) ชัดเจน
  */
 export function getCaseCardStyle(caseItem: AppealCase): {
   cardClass: string;
   badgeText: string;
   badgeClass: string;
   categoryLabel: string;
-  colorName: 'emerald' | 'amber' | 'sky' | 'slate';
+  colorName: 'rose' | 'yellow' | 'orange' | 'emerald' | 'sky' | 'slate' | 'amber';
 } {
   const isCompleted = caseItem.isCompleted;
   const procCat = getCaseProcedureCategory(caseItem);
 
   if (isCompleted) {
     return {
-      cardClass: 'bg-slate-50/80 border-slate-300/80 border-l-4 border-l-slate-400 opacity-85',
+      cardClass: 'bg-slate-100/90 border-slate-300 border-l-4 border-l-slate-400 opacity-80',
       badgeText: 'เสร็จสิ้นแล้ว',
-      badgeClass: 'bg-slate-100 text-slate-700 border-slate-300',
+      badgeClass: 'bg-slate-200 text-slate-800 border-slate-300',
       categoryLabel: 'เสร็จสิ้นสำนวน',
       colorName: 'slate',
     };
   }
 
-  if (procCat === 'confessed') {
+  // 0. ยังไม่เลือกสถานะสำนวน -> แถบสีแดงเตือน (Red / Rose) เด่นชัดมากตามคำขอ
+  if (procCat === 'unspecified' || isCaseUnspecifiedStage(caseItem)) {
     return {
-      cardClass: 'bg-emerald-50/70 border-emerald-300 border-l-4 border-l-emerald-500 hover:bg-emerald-50/95 hover:border-emerald-400',
-      badgeText: '🟢 จำเลยรับสารภาพ',
-      badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      cardClass: 'bg-rose-100/90 border-rose-400 border-l-4 border-l-rose-600 ring-2 ring-rose-400/30 shadow-xs hover:bg-rose-100 text-slate-900',
+      badgeText: '🚨 ยังไม่เลือกสถานะสำนวน',
+      badgeClass: 'bg-rose-200 text-rose-950 border-rose-400 font-bold',
+      categoryLabel: 'ยังไม่เลือกสถานะสำนวน',
+      colorName: 'rose',
+    };
+  }
+
+  // 1. สำนวนรับสารภาพ -> สีเหลือง (Yellow / Amber) เด่นชัด ชัดเจน
+  if (procCat === 'confessed' || caseItem.defendantPlea === 'confessed' || isCaseConfessed(caseItem)) {
+    return {
+      cardClass: 'bg-yellow-100/90 border-yellow-400 border-l-4 border-l-yellow-500 shadow-xs hover:bg-yellow-100 text-slate-900',
+      badgeText: '🟡 จำเลยรับสารภาพ',
+      badgeClass: 'bg-yellow-200 text-yellow-950 border-yellow-400 font-bold',
       categoryLabel: 'จำเลยรับสารภาพ',
+      colorName: 'yellow',
+    };
+  }
+
+  // 2. สำนวนปฏิเสธ -> สีส้ม (Orange) เด่นชัด ชัดเจน
+  if (procCat === 'denied_scheduled' || caseItem.defendantPlea === 'denied' || isCaseDenied(caseItem)) {
+    return {
+      cardClass: 'bg-orange-100/90 border-orange-400 border-l-4 border-l-orange-500 shadow-xs hover:bg-orange-100 text-slate-900',
+      badgeText: '🟠 จำเลยปฏิเสธ (มีนัดต่อ)',
+      badgeClass: 'bg-orange-200 text-orange-950 border-orange-400 font-bold',
+      categoryLabel: 'จำเลยปฏิเสธ',
+      colorName: 'orange',
+    };
+  }
+
+  // 3. สำนวนมีเบิกฟ้อง -> สีเขียว (Green / Emerald) เด่นชัด ชัดเจน
+  const isReq = Boolean(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition');
+  if (isReq) {
+    return {
+      cardClass: 'bg-emerald-100/90 border-emerald-400 border-l-4 border-l-emerald-600 shadow-xs hover:bg-emerald-100 text-slate-900',
+      badgeText: '🟢 สำนวนมีเบิกฟ้อง',
+      badgeClass: 'bg-emerald-200 text-emerald-950 border-emerald-400 font-bold',
+      categoryLabel: 'สำนวนมีเบิกฟ้อง',
       colorName: 'emerald',
     };
   }
 
-  if (procCat === 'denied_scheduled') {
-    return {
-      cardClass: 'bg-amber-50/70 border-amber-300 border-l-4 border-l-amber-500 hover:bg-amber-50/95 hover:border-amber-400',
-      badgeText: '🟠 จำเลยปฏิเสธ (มีนัดต่อ)',
-      badgeClass: 'bg-amber-100 text-amber-950 border-amber-300',
-      categoryLabel: 'จำเลยปฏิเสธ',
-      colorName: 'amber',
-    };
-  }
-
-  // other_scheduled หรือ unknown_pending (รวมสำนวนเบิกฟ้อง, นัดคุ้มครองสิทธิ, นัดพร้อม, รอนัด)
-  const isReq = caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition';
+  // other_scheduled หรือ unknown_pending (นัดอื่นๆ ที่ยังไม่ทราบคำให้การ) -> สีฟ้า (Sky / Blue)
   return {
-    cardClass: 'bg-sky-50/70 border-sky-300 border-l-4 border-l-sky-500 hover:bg-sky-50/95 hover:border-sky-400',
-    badgeText: isReq ? '🚚 สำนวนเบิกฟ้อง (ยังไม่ทราบคำให้การ)' : '🔵 มีนัดอื่นๆ (ยังไม่ทราบคำให้การ)',
-    badgeClass: 'bg-sky-100 text-sky-950 border-sky-300',
-    categoryLabel: isReq ? 'สำนวนเบิกฟ้อง' : 'มีนัดอื่นๆ',
+    cardClass: 'bg-sky-100/85 border-sky-400 border-l-4 border-l-sky-500 shadow-xs hover:bg-sky-100 text-slate-900',
+    badgeText: '🔵 มีนัดอื่นๆ (ยังไม่ทราบคำให้การ)',
+    badgeClass: 'bg-sky-200 text-sky-950 border-sky-400 font-bold',
+    categoryLabel: 'มีนัดอื่นๆ',
     colorName: 'sky',
   };
 }
@@ -252,6 +284,7 @@ interface DailyFilingByDateViewProps {
   onExtendDeadline: (caseItem: AppealCase) => void;
   onEditCase?: (caseItem: AppealCase) => void;
   onRecordJudgment?: (caseItem: AppealCase) => void;
+  onOpenJudgmentRecheck?: (caseItem: AppealCase) => void;
   onOpenJudgmentDoc?: (caseItem: AppealCase) => void;
   onExportDailyDoc?: (filingDate: string, cases: AppealCase[]) => void;
   onOpenAppointmentModal?: (caseItem: AppealCase) => void;
@@ -261,6 +294,9 @@ interface DailyFilingByDateViewProps {
   onOpenFileLabel?: (caseItem: AppealCase) => void;
   onOpenCourtPetition?: (caseItem: AppealCase) => void;
   onDeleteCase?: (caseId: string) => void;
+  onQuickChangeRequisitionStatus?: (caseItem: AppealCase, newStatus: 'confessed' | 'denied') => void;
+  onQuickChangePleaStatus?: (caseItem: AppealCase, newPlea: 'confessed' | 'denied' | 'pending' | 'requisition' | 'unspecified') => void;
+  onOpenMonthlyProsecutorSummary?: (yearMonth?: string) => void;
   onToast?: (message: string) => void;
 }
 
@@ -277,6 +313,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onExtendDeadline,
   onEditCase,
   onRecordJudgment,
+  onOpenJudgmentRecheck,
   onOpenJudgmentDoc,
   onExportDailyDoc,
   onOpenAppointmentModal,
@@ -286,6 +323,9 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onOpenFileLabel,
   onOpenCourtPetition,
   onDeleteCase,
+  onQuickChangeRequisitionStatus,
+  onQuickChangePleaStatus,
+  onOpenMonthlyProsecutorSummary,
   onToast,
 }) => {
   // วันที่เลือกเริ่มต้น
@@ -465,10 +505,11 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return groups;
   }, [casesMatchingOtherDates]);
 
-  // Statistics for selected date (สถิติฟ้องรายวัน: รับสารภาพ / ปฏิเสธมีนัด / มีนัดอื่นๆ / ยังไม่ทราบผล)
+  // Statistics for selected date (สถิติฟ้องรายวัน: ยังไม่เลือกสถานะ / รับสารภาพ / ปฏิเสธมีนัด / มีนัดอื่นๆ / ยังไม่ทราบผล)
   const statsForSelectedDate = useMemo(() => {
     const list = groupedByFilingDate[selectedDate] || [];
     const total = list.length;
+    const unspecified = list.filter((c) => getCaseProcedureCategory(c) === 'unspecified').length;
     const confessed = list.filter((c) => getCaseProcedureCategory(c) === 'confessed').length;
     const deniedScheduled = list.filter((c) => getCaseProcedureCategory(c) === 'denied_scheduled').length;
     const otherScheduled = list.filter((c) => getCaseProcedureCategory(c) === 'other_scheduled').length;
@@ -487,6 +528,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
     return {
       total,
+      unspecified,
       confessed,
       deniedScheduled,
       otherScheduled,
@@ -1242,8 +1284,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 )}
               </div>
 
-              {/* 5 Selectable Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+              {/* 6 Selectable Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
                 {/* 1. ทั้งหมด */}
                 <button
                   type="button"
@@ -1267,7 +1309,35 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                 </button>
 
-                {/* 2. จำเลยรับสารภาพ */}
+                {/* 2. ยังไม่เลือกสถานะ (เตือนแถบสีแดง) */}
+                <button
+                  type="button"
+                  onClick={() => setProcedureFilter(procedureFilter === 'unspecified' ? 'all' : 'unspecified')}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                    procedureFilter === 'unspecified'
+                      ? 'bg-rose-600/50 border-rose-400 text-white ring-2 ring-rose-400/50 shadow-md'
+                      : statsForSelectedDate.unspecified > 0
+                        ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-900/40'
+                        : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                  }`}
+                  title="คลิกเพื่อกรองสำนวนที่ยังไม่ได้เลือกสถานะการพิจารณา (คุมสำนวนฟ้องไว้ก่อน)"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-rose-300 flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full bg-rose-500 ${statsForSelectedDate.unspecified > 0 ? 'animate-ping' : ''}`} />
+                      <span>ยังไม่เลือกสถานะ</span>
+                    </span>
+                    <AlertTriangle className={`w-3.5 h-3.5 ${statsForSelectedDate.unspecified > 0 ? 'text-amber-300 animate-bounce' : 'text-rose-400'}`} />
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className={`text-2xl font-bold font-['Prompt'] ${statsForSelectedDate.unspecified > 0 ? 'text-rose-300' : 'text-slate-300'}`}>
+                      {statsForSelectedDate.unspecified}
+                    </span>
+                    <span className="text-xs text-rose-300/80">สำนวน</span>
+                  </div>
+                </button>
+
+                {/* 3. จำเลยรับสารภาพ */}
                 <button
                   type="button"
                   onClick={() => setProcedureFilter(procedureFilter === 'confessed' ? 'all' : 'confessed')}
@@ -1293,7 +1363,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                 </button>
 
-                {/* 3. ปฏิเสธมีนัดต่อ */}
+                {/* 4. ปฏิเสธมีนัดต่อ */}
                 <button
                   type="button"
                   onClick={() => setProcedureFilter(procedureFilter === 'denied_scheduled' ? 'all' : 'denied_scheduled')}
@@ -1319,7 +1389,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                 </button>
 
-                {/* 4. มีนัดอื่นๆ */}
+                {/* 5. มีนัดอื่นๆ */}
                 <button
                   type="button"
                   onClick={() => setProcedureFilter(procedureFilter === 'other_scheduled' ? 'all' : 'other_scheduled')}
@@ -1345,7 +1415,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                 </button>
 
-                {/* 5. ยังไม่ทราบผล */}
+                {/* 6. ยังไม่ทราบผล */}
                 <button
                   type="button"
                   onClick={() => setProcedureFilter(procedureFilter === 'unknown_pending' ? 'all' : 'unknown_pending')}
@@ -1485,6 +1555,19 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 </button>
               )}
 
+              {/* Monthly Prosecutor Summary Button (สรุปสิ้นเดือนแยกรายอัยการ) */}
+              {onOpenMonthlyProsecutorSummary && (
+                <button
+                  type="button"
+                  onClick={() => onOpenMonthlyProsecutorSummary(selectedDate ? selectedDate.slice(0, 7) : undefined)}
+                  className="bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-indigo-600 flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                  title="ดูรายงานสรุปปริมาณคดีสิ้นเดือน แยกตามอัยการเจ้าของสำนวนแต่ละคน (รับสารภาพ/ปฏิเสธ)"
+                >
+                  <BarChart3 className="w-4 h-4 text-amber-300" />
+                  <span>สรุปสิ้นเดือนแยกรายอัยการ</span>
+                </button>
+              )}
+
               {/* Office / Excel TSV One-Click Copy */}
               {casesOnSelectedDate.length > 0 && (
                 <button
@@ -1579,24 +1662,32 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 </div>
               )}
 
-              {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอที่ 6 */}
+              {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอ */}
               <div className="bg-white border border-slate-200 rounded-xl p-2.5 sm:px-3.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
                 <div className="flex items-center gap-1.5 text-slate-800 font-bold">
                   <Palette className="w-4 h-4 text-indigo-600" />
                   <span>สีพื้นหลังจำแนกตามคำให้การ / นัด:</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-500 shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span>สีเขียว = จำเลยรับสารภาพ</span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 border border-rose-300 text-rose-950 border-l-4 border-l-rose-600 shadow-2xs font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
+                    <span>สีแดง = ยังไม่เลือกสถานะสำนวน (เตือน)</span>
                   </span>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 border-l-4 border-l-amber-500 shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                    <span>สีส้ม/อำพัน = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-950 border-l-4 border-l-yellow-500 shadow-2xs font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                    <span>สีเหลือง = จำเลยรับสารภาพ</span>
                   </span>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-100 border border-orange-300 text-orange-950 border-l-4 border-l-orange-500 shadow-2xs font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                    <span>สีส้ม = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-600 shadow-2xs font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                    <span>สีเขียว = สำนวนมีเบิกฟ้อง</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-100 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                    <span>สีฟ้า = มีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / เบิกฟ้อง</span>
+                    <span>สีฟ้า = มีนัดอื่นๆ</span>
                   </span>
                 </div>
               </div>
@@ -1609,12 +1700,86 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 const cardStyle = getCaseCardStyle(caseItem);
                 const hasNextAppt = hasContinuousAppointment(caseItem);
                 const hasJudgmentRecorded = isJudgmentRecorded(caseItem);
+                const isUnspecified = procCat === 'unspecified' || isCaseUnspecifiedStage(caseItem);
 
                 return (
                   <div
                     key={caseItem.id}
                     className={`rounded-xl p-3 sm:p-3.5 shadow-2xs hover:shadow-xs transition border ${cardStyle.cardClass}`}
                   >
+                    {/* แถบสีแดงเตือน: ยังไม่เลือกสถานะสำนวนในการพิจารณาของศาล (คุมสำนวนที่จะฟ้องในวันไว้ก่อน) */}
+                    {isUnspecified && (
+                      <div className="mb-2.5 bg-gradient-to-r from-rose-600 via-rose-600 to-red-600 text-white rounded-lg p-2.5 shadow-xs border border-rose-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-200 animate-bounce" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold font-['Prompt'] tracking-wide">
+                                ⚠️ ยังไม่เลือกสถานะสำนวนในการพิจารณาของศาล
+                              </span>
+                              <span className="text-[10px] bg-rose-950/60 text-rose-100 px-1.5 py-0.2 rounded border border-rose-400 font-normal">
+                                คุมสำนวนที่จะฟ้องในวันไว้ก่อน
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-rose-100 leading-tight mt-0.5">
+                              เมื่อทราบผลการพิจารณาของศาลแล้ว กรุณาเลือกสถานะสำนวนด้านล่างนี้
+                            </p>
+                          </div>
+                        </div>
+
+                        {canEdit && (
+                          <div className="flex items-center gap-1 flex-wrap shrink-0">
+                            <span className="text-[11px] text-rose-100 font-medium mr-0.5">เลือกผล:</span>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus && onQuickChangePleaStatus(caseItem, 'confessed')}
+                              className="text-[11px] font-bold text-yellow-950 bg-yellow-300 hover:bg-yellow-200 px-2.5 py-1 rounded shadow-xs cursor-pointer transition flex items-center gap-1 active:scale-95"
+                              title="ระบุว่าจำเลยรับสารภาพ"
+                            >
+                              <span>🟡 รับสารภาพ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus && onQuickChangePleaStatus(caseItem, 'denied')}
+                              className="text-[11px] font-bold text-orange-950 bg-orange-200 hover:bg-orange-100 px-2.5 py-1 rounded shadow-xs cursor-pointer transition flex items-center gap-1 active:scale-95"
+                              title="ระบุว่าจำเลยปฏิเสธ (มีนัดคุ้มครองสิทธิ)"
+                            >
+                              <span>🟠 ปฏิเสธ (คุ้มครองสิทธิ)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus && onQuickChangePleaStatus(caseItem, 'requisition')}
+                              className="text-[11px] font-bold text-emerald-950 bg-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded shadow-xs cursor-pointer transition flex items-center gap-1 active:scale-95"
+                              title="ระบุว่าเป็นสำนวนเบิกฟ้อง"
+                            >
+                              <span>🟢 เบิกฟ้อง</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus && onQuickChangePleaStatus(caseItem, 'pending')}
+                              className="text-[11px] font-bold text-sky-950 bg-sky-200 hover:bg-sky-100 px-2 py-1 rounded shadow-xs cursor-pointer transition flex items-center gap-1 active:scale-95"
+                              title="ระบุว่ามีนัดอื่นๆ"
+                            >
+                              <span>🔵 นัดอื่นๆ</span>
+                            </button>
+                            {onEditCase && (
+                              <button
+                                type="button"
+                                onClick={() => onEditCase(caseItem)}
+                                className="text-[11px] font-semibold text-white bg-black/30 hover:bg-black/40 px-2 py-1 rounded cursor-pointer transition flex items-center gap-1"
+                                title="เปิดฟอร์มแก้ไขเพื่อระบุรายละเอียดเพิ่มเติม"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>แก้ไข</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
                       {/* Case Info */}
                       <div className="space-y-1.5 flex-1 min-w-0">
@@ -1661,23 +1826,29 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           ) : null}
 
                           {/* สถิติผลการดำเนินคดี Badge */}
+                          {procCat === 'unspecified' && (
+                            <span className="text-xs font-bold text-rose-950 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-400 flex items-center gap-1 shadow-2xs animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+                              <span>🚨 ยังไม่เลือกสถานะสำนวน</span>
+                            </span>
+                          )}
                           {procCat === 'confessed' && (
-                            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                              <span>🟢 จำเลยรับสารภาพ</span>
+                            <span className="text-xs font-bold text-yellow-950 bg-yellow-100 px-2 py-0.5 rounded-md border border-yellow-300 flex items-center gap-1 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                              <span>🟡 จำเลยรับสารภาพ</span>
                             </span>
                           )}
                           {procCat === 'denied_scheduled' && (
-                            <span className="text-xs font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300 flex items-center gap-1 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            <span className="text-xs font-bold text-orange-950 bg-orange-100 px-2 py-0.5 rounded-md border border-orange-300 flex items-center gap-1 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
                               <span>🟠 ปฏิเสธ - มีนัดสืบต่อ</span>
                             </span>
                           )}
                           {procCat === 'other_scheduled' && (
                             (caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') ? (
-                              <span className="text-xs font-bold text-orange-950 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-300 flex items-center gap-1 shadow-2xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
-                                <span>🚚 สำนวนเบิกฟ้อง</span>
+                              <span className="text-xs font-bold text-emerald-950 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>🟢 สำนวนมีเบิกฟ้อง</span>
                               </span>
                             ) : (
                               <span className="text-xs font-bold text-sky-900 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-300 flex items-center gap-1 shadow-2xs">
@@ -1788,15 +1959,90 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </div>
                           )}
 
-                          {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (
-                            <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-800 bg-orange-50 border border-orange-300 px-2 py-0.5 rounded-md shadow-2xs">
-                              <span>🚚 สำนวนเบิกฟ้อง</span>
-                              {(caseItem.requisitionDate || caseItem.appointmentDate) && (
-                                <span className="font-bold">: {formatThaiDate(caseItem.requisitionDate || caseItem.appointmentDate)}</span>
-                              )}
-                            </div>
-                          )}
+                          {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (() => {
+                            const reqAlert = getRequisitionAlertInfo(caseItem);
+                            return (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                <div className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-950 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md shadow-2xs">
+                                  <span>🚚 สำนวนเบิกฟ้อง</span>
+                                  {(caseItem.requisitionDate || caseItem.appointmentDate) && (
+                                    <span>: {formatThaiDate(caseItem.requisitionDate || caseItem.appointmentDate)}</span>
+                                  )}
+                                </div>
+
+                                {reqAlert.isPending && (
+                                  reqAlert.isAlertDue ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-950 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md shadow-2xs animate-pulse">
+                                      🔔 เตือนรอบที่ {reqAlert.cycle} (รอ {reqAlert.daysElapsed} วัน • เตือนทุก 5 วัน)
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                      รอ {reqAlert.daysElapsed} วัน • เตือนในอีก {reqAlert.daysUntilNextAlert} วัน
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
+
+                        {/* Interactive Plea Switcher (ปรับคำให้การจำเลย พร้อมปรับสีพื้นหลังให้ตรงกับประเภทสำนวนทันที) */}
+                        {canEdit && onQuickChangePleaStatus && !isCompleted && (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-1.5 mt-1 border-t border-slate-300/60">
+                            <span className="text-[10px] text-slate-700 font-bold flex items-center gap-1">
+                              <Palette className="w-3 h-3 text-indigo-600" />
+                              <span>✏️ ปรับคำให้การ:</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus(caseItem, 'confessed')}
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-pointer transition shadow-2xs active:scale-95 flex items-center gap-1 ${
+                                (procCat === 'confessed' || caseItem.defendantPlea === 'confessed')
+                                  ? 'bg-yellow-400 text-yellow-950 border border-yellow-500 ring-2 ring-yellow-400/40 shadow-xs'
+                                  : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-900 border border-yellow-300'
+                              }`}
+                              title="ปรับคำให้การเป็น จำเลยรับสารภาพ (พื้นหลังสีเหลือง)"
+                            >
+                              <span>🟡 รับสารภาพ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus(caseItem, 'denied')}
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-pointer transition shadow-2xs active:scale-95 flex items-center gap-1 ${
+                                (procCat === 'denied_scheduled' || caseItem.defendantPlea === 'denied')
+                                  ? 'bg-orange-400 text-orange-950 border border-orange-500 ring-2 ring-orange-400/40 shadow-xs'
+                                  : 'bg-orange-100 hover:bg-orange-200 text-orange-900 border border-orange-300'
+                              }`}
+                              title="ปรับคำให้การเป็น จำเลยปฏิเสธ/คุ้มครองสิทธิ (พื้นหลังสีส้ม)"
+                            >
+                              <span>🟠 ปฏิเสธ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus(caseItem, 'requisition')}
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-pointer transition shadow-2xs active:scale-95 flex items-center gap-1 ${
+                                (caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && caseItem.defendantPlea !== 'confessed' && caseItem.defendantPlea !== 'denied'
+                                  ? 'bg-emerald-400 text-emerald-950 border border-emerald-500 ring-2 ring-emerald-400/40 shadow-xs'
+                                  : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300'
+                              }`}
+                              title="ปรับสถานะเป็น สำนวนเบิกฟ้อง (พื้นหลังสีเขียว)"
+                            >
+                              <span>🟢 เบิกฟ้อง</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onQuickChangePleaStatus(caseItem, 'pending')}
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-pointer transition shadow-2xs active:scale-95 flex items-center gap-1 ${
+                                procCat === 'other_scheduled' && !caseItem.isRequisitionCase && caseItem.appointmentType !== 'requisition'
+                                  ? 'bg-sky-400 text-sky-950 border border-sky-500 ring-2 ring-sky-400/40 shadow-xs'
+                                  : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300'
+                              }`}
+                              title="ปรับสถานะเป็น มีนัดอื่นๆ / ยังไม่ทราบคำให้การ (พื้นหลังสีฟ้า)"
+                            >
+                              <span>🔵 นัดอื่นๆ</span>
+                            </button>
+                          </div>
+                        )}
 
                         {/* Court Appointment Badge (คดีที่จำเลยรับสารภาพจะไม่แสดงนัดคุ้มครองสิทธิ) */}
                         {(() => {
@@ -1972,6 +2218,19 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                       <span>กรอกคำพิพากษา</span>
                                     </>
                                   )}
+                                </button>
+                              )}
+
+                              {/* 2.5 Screenshot Recheck button */}
+                              {caseItem.judgmentPhotoUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenJudgmentRecheck ? onOpenJudgmentRecheck(caseItem) : (onRecordJudgment && onRecordJudgment(caseItem))}
+                                  className="px-2 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-md transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                                  title="เปิดตรวจทานข้อความคำพิพากษาเทียบภาพแคปหน้าจอ"
+                                >
+                                  <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>{caseItem.judgmentVerified ? '✓ ตรวจทานเทียบภาพแล้ว' : '📸 ตรวจทานภาพ'}</span>
                                 </button>
                               )}
 
@@ -2189,17 +2448,25 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
               <span>สีพื้นหลังจำแนกตามคำให้การ / นัด:</span>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-500 shadow-2xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>สีเขียว = จำเลยรับสารภาพ</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 border border-rose-300 text-rose-950 border-l-4 border-l-rose-600 shadow-2xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
+                <span>สีแดง = ยังไม่เลือกสถานะสำนวน (เตือน)</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 border-l-4 border-l-amber-500 shadow-2xs">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span>สีส้ม/อำพัน = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-950 border-l-4 border-l-yellow-500 shadow-2xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span>สีเหลือง = จำเลยรับสารภาพ</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-100 border border-orange-300 text-orange-950 border-l-4 border-l-orange-500 shadow-2xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                <span>สีส้ม = จำเลยปฏิเสธ (มีนัดต่อ)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-600 shadow-2xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                <span>สีเขียว = สำนวนมีเบิกฟ้อง</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-100 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                <span>สีฟ้า = มีนัดอื่นๆ ที่จำเลยยังไม่ให้การ / เบิกฟ้อง</span>
+                <span>สีฟ้า = มีนัดอื่นๆ</span>
               </span>
             </div>
           </div>
@@ -2323,7 +2590,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 </span>
                               )}
                               {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (
-                                <span className="text-orange-950 bg-orange-50 px-2 py-0.5 rounded border border-orange-300 font-semibold flex items-center gap-1 shadow-2xs">
+                                <span className="text-emerald-950 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 font-semibold flex items-center gap-1 shadow-2xs">
                                   <span>🚚 สำนวนเบิกฟ้อง</span>
                                   {(caseItem.requisitionDate || caseItem.appointmentDate) && (
                                     <span>: {formatThaiDate(caseItem.requisitionDate || caseItem.appointmentDate)}</span>
