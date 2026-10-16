@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, UserCheck, Calendar, Search, FileText, Check, Sparkles, Building2, UploadCloud, ChevronRight } from 'lucide-react';
+import { X, UserCheck, Calendar, Search, FileText, Check, Sparkles, Building2, Plus, ChevronRight } from 'lucide-react';
 import { MonthlyDutyRoster } from '../types/appeal';
 import { formatThaiDate } from '../utils/dateUtils';
 import { getDutyOfficersForDate, getAllOfficersGroupedByMonth } from '../services/dutyService';
@@ -22,7 +22,7 @@ export const DutyOfficerPickerModal: React.FC<DutyOfficerPickerModalProps> = ({
   targetDate,
   onSelectOfficer,
   onOpenUploadModal,
-  title = 'เลือกเวรชี้จากตารางประจำเดือน (PDF)',
+  title = 'เลือกเวรชี้จากตารางประจำเดือน',
   subtitle,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -80,7 +80,7 @@ export const DutyOfficerPickerModal: React.FC<DutyOfficerPickerModalProps> = ({
                 {title}
               </h3>
               <p className="text-xs text-slate-300">
-                {subtitle || (targetDate ? `เลือกเวรชี้สำหรับวันที่ฟ้อง: ${formatThaiDate(targetDate)}` : 'เลือกตามตารางเวรชี้แต่ละเดือนที่อัปโหลดไฟล์ PDF')}
+                {subtitle || (targetDate ? `เลือกเวรชี้สำหรับวันที่ฟ้อง: ${formatThaiDate(targetDate)}` : 'เลือกตามตารางเวรชี้แต่ละเดือน')}
               </p>
             </div>
           </div>
@@ -135,17 +135,17 @@ export const DutyOfficerPickerModal: React.FC<DutyOfficerPickerModalProps> = ({
             </div>
           )}
 
-          {/* Month Selector Tabs (เลือกตามเวรชี้แต่ละเดือนที่อัปโหลดไฟล์ PDF) */}
+          {/* Month Selector Tabs */}
           {monthsData.length > 0 ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-slate-600">
                 <span className="font-semibold flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>เลือกรอบเดือนตารางเวรชี้ (จาก PDF):</span>
+                  <span>เลือกรอบเดือนตารางเวรชี้:</span>
                 </span>
                 {monthsData.length > 1 && (
                   <span className="text-[11px] text-slate-400">
-                    อัปโหลดแล้ว {monthsData.length} รอบเดือน
+                    มี {monthsData.length} รอบเดือน
                   </span>
                 )}
               </div>
@@ -185,7 +185,7 @@ export const DutyOfficerPickerModal: React.FC<DutyOfficerPickerModalProps> = ({
                   <div className="flex items-center gap-1.5 truncate">
                     <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span className="truncate">
-                      ไฟล์ PDF: <strong className="text-slate-800">{activeMonthData.fileName || `ตารางเวรชี้_${activeMonthData.monthYear}.pdf`}</strong>
+                      ตารางรอบเดือน: <strong className="text-slate-800">{activeMonthData.monthNameThai}</strong>
                     </span>
                   </div>
                   <span className="text-[11px] text-slate-500 shrink-0 ml-2">
@@ -199,7 +199,7 @@ export const DutyOfficerPickerModal: React.FC<DutyOfficerPickerModalProps> = ({
               <UserCheck className="w-8 h-8 text-amber-600 mx-auto" />
               <p className="font-semibold text-slate-800">ยังไม่มีข้อมูลตารางเวรชี้ประจำเดือน</p>
               <p className="text-[11px] text-slate-500">
-                โปรดอัปโหลดไฟล์ PDF ตารางเวรชี้ในแท็บ &quot;ตารางเวรชี้ประจำเดือน (AI)&quot; เพื่อให้ระบบอ่านรายชื่อเวรชี้แต่ละเดือนมาให้เลือกโดยอัตโนมัติ
+                โปรดพิมพ์กรอกตารางเวรชี้ในแท็บ &quot;ตารางเวรชี้ประจำเดือน&quot; เพื่อให้ระบบดึงรายชื่อเวรชี้แต่ละเดือนมาให้เลือกโดยอัตโนมัติ
               </p>
               {onOpenUploadModal && (
                 <button
@@ -208,10 +208,10 @@ export const DutyOfficerPickerModal: React.FC<DutyOfficerPickerModalProps> = ({
                     onClose();
                     onOpenUploadModal();
                   }}
-                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition"
+                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition cursor-pointer"
                 >
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  <span>อัปโหลดไฟล์ PDF ตารางเวรชี้</span>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ พิมพ์กรอกตารางเวรชี้</span>
                 </button>
               )}
             </div>
@@ -294,7 +294,7 @@ export const DutyOfficerPickerModal: React.FC<DutyOfficerPickerModalProps> = ({
         <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between flex-shrink-0">
           <span className="text-[11px] text-slate-500 flex items-center gap-1">
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            <span>ข้อมูลจากไฟล์ PDF ตารางเวรชี้ที่อัปโหลด</span>
+            <span>ข้อมูลจากตารางเวรชี้ประจำเดือน</span>
           </span>
           <button
             type="button"

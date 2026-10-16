@@ -194,12 +194,12 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                เลือกวันที่เพื่อดูรายชื่ออัยการ/เจ้าหน้าที่เวรชี้ ห้องพิจารณาคดี และรอบเวลา หรืออัพโหลดภาพให้ AI วิเคราะห์
+                เลือกวันที่เพื่อดูรายชื่ออัยการ/เจ้าหน้าที่เวรชี้ ห้องพิจารณาคดี และรอบเวลา หรือพิมพ์กรอกตารางเวรชี้ประจำเดือน
               </p>
             </div>
           </div>
 
-          {/* Quick Date Selectors & Upload Button */}
+          {/* Quick Date Selectors & Entry Button */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onSelectDate(todayStr)}
@@ -234,16 +234,16 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
               />
             </div>
 
-            {/* Upload image / PDF button in inspector top bar */}
+            {/* Manual entry button in inspector top bar */}
             {canEdit && onOpenUploadModal && (
               <button
                 type="button"
                 onClick={onOpenUploadModal}
                 className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-                title="อัพโหลดภาพถ่ายหรือเอกสาร PDF ตารางเวรชี้ เพื่อให้ AI สกัดรายชื่อเวรชี้"
+                title="เปิดแบบฟอร์มพิมพ์กรอกตารางเวรชี้ประจำเดือน"
               >
-                <UploadCloud className="w-3.5 h-3.5" />
-                <span>อัพโหลดภาพ/PDF ให้ AI วิเคราะห์</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ พิมพ์กรอกตารางเวรชี้</span>
               </button>
             )}
           </div>
@@ -477,7 +477,7 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                 ยังไม่มีข้อมูลเวรชี้สำหรับวันที่ {formatThaiDateLong(selectedDate)}
               </h4>
               <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                ท่านสามารถอัปโหลดไฟล์ภาพหรือ PDF ของตารางเวรชี้ประจำเดือนนี้ เพื่อให้ AI สกัดรายชื่อเวรชี้โดยอัตโนมัติ หรือเพิ่มรายชื่อเวรชี้ด้วยตนเอง
+                ท่านสามารถพิมพ์กรอกข้อมูลตารางเวรชี้ประจำเดือนนี้ หรือกดเพิ่มรายชื่อเวรชี้ของวันนี้ได้ทันที
               </p>
             </div>
 
@@ -488,8 +488,8 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                   onClick={onOpenUploadModal}
                   className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition cursor-pointer"
                 >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>อัพโหลดภาพหรือ PDF ตารางเวรให้ AI วิเคราะห์</span>
+                  <Plus className="w-4 h-4" />
+                  <span>+ พิมพ์กรอกตารางเวรชี้ประจำเดือน</span>
                 </button>
               )}
 
@@ -499,8 +499,8 @@ export const DailyDutyInspector: React.FC<DailyDutyInspectorProps> = ({
                   onClick={() => setIsAddOfficerOpen(true)}
                   className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-4 py-2 rounded-xl border border-slate-300 transition cursor-pointer"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>เพิ่มรายชื่อเวรชี้ด้วยตนเอง</span>
+                  <Plus className="w-4 h-4 text-amber-600" />
+                  <span>เพิ่มรายชื่อเวรชี้ของวันนี้</span>
                 </button>
               )}
             </div>

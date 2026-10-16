@@ -88,7 +88,42 @@ export function getSavedCases(): AppealCase[] {
 }
 
 export function saveCases(cases: AppealCase[]) {
-  localStorage.setItem(STORAGE_KEY_CASES, JSON.stringify(cases));
+  try {
+    localStorage.setItem(STORAGE_KEY_CASES, JSON.stringify(cases));
+  } catch (err: any) {
+    console.warn('localStorage saveCases quota warning, applying safe fallback:', err);
+    try {
+      // Fallback 1: Keep only the 3 most recent photos in localStorage to free up space
+      let photosRetained = 0;
+      const sanitized = cases.map((c) => {
+        if (c.judgmentPhotoUrl && c.judgmentPhotoUrl.startsWith('data:')) {
+          if (photosRetained < 3) {
+            photosRetained++;
+            return c;
+          }
+          // Strip heavy image string from local storage copy (it remains in React state & Firestore)
+          return {
+            ...c,
+            judgmentPhotoUrl: null,
+          };
+        }
+        return c;
+      });
+      localStorage.setItem(STORAGE_KEY_CASES, JSON.stringify(sanitized));
+    } catch (e2) {
+      console.warn('Fallback 1 failed, stripping all images from localStorage cache:', e2);
+      try {
+        // Fallback 2: Strip all base64 images from localStorage so case records are never lost
+        const noImages = cases.map((c) => ({
+          ...c,
+          judgmentPhotoUrl: null,
+        }));
+        localStorage.setItem(STORAGE_KEY_CASES, JSON.stringify(noImages));
+      } catch (e3) {
+        console.error('Critical localStorage failure:', e3);
+      }
+    }
+  }
 }
 
 export function getSavedFollowUps(): DailyJudgmentFollowUp[] {
@@ -104,7 +139,20 @@ export function getSavedFollowUps(): DailyJudgmentFollowUp[] {
 }
 
 export function saveFollowUps(items: DailyJudgmentFollowUp[]) {
-  localStorage.setItem(STORAGE_KEY_FOLLOWUPS, JSON.stringify(items));
+  try {
+    localStorage.setItem(STORAGE_KEY_FOLLOWUPS, JSON.stringify(items));
+  } catch (err: any) {
+    console.warn('localStorage saveFollowUps quota warning, stripping images:', err);
+    try {
+      const sanitized = items.map((f) => ({
+        ...f,
+        judgmentPhotoUrl: undefined,
+      }));
+      localStorage.setItem(STORAGE_KEY_FOLLOWUPS, JSON.stringify(sanitized));
+    } catch (e2) {
+      console.error('Critical localStorage saveFollowUps error:', e2);
+    }
+  }
 }
 
 export function getSavedDutyRosters(): MonthlyDutyRoster[] {

@@ -38,6 +38,7 @@ import {
   Truck,
   Palette,
   BarChart3,
+  Eye,
   Image as ImageIcon
 } from 'lucide-react';
 import { AppealCase, MonthlyDutyRoster, SheetConfig } from '../types/appeal';
@@ -76,6 +77,8 @@ export type DailyProcedureFilter =
   | 'denied_scheduled' 
   | 'other_scheduled' 
   | 'unknown_pending';
+
+export type DailyCompletionFilter = 'all' | 'incomplete' | 'completed';
 
 export function getCaseProcedureCategory(c: AppealCase): 'unspecified' | 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending' {
   // 0. ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน มีแถบสีแดงเตือน)
@@ -332,10 +335,13 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   const todayStr = getTodayString();
   const [selectedDate, setSelectedDate] = useState<string>(initialSelectedDate || todayStr);
   const [viewMode, setViewMode] = useState<'single_date' | 'all_dates'>('single_date');
-  const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(false);
+  const [completionFilter, setCompletionFilter] = useState<DailyCompletionFilter>('all');
   const [procedureFilter, setProcedureFilter] = useState<DailyProcedureFilter>('all');
   const [dateSearch, setDateSearch] = useState<string>(externalDateSearch);
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+
+  // Convenience boolean for backward-compatible active/incomplete checks
+  const filterOnlyActive = completionFilter === 'incomplete';
 
   // Sync external search query (เช่น จากแถบค้นหาด้วยเสียงด้านบน หรือปุ่มคลิกจากแท็บอื่น)
   useEffect(() => {
@@ -446,11 +452,14 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return Object.keys(groupedByFilingDate).sort((a, b) => b.localeCompare(a));
   }, [groupedByFilingDate]);
 
-  // Distinct filing dates filtered by search and active status
+  // Distinct filing dates filtered by search and completion status
   const filteredDistinctFilingDates = useMemo(() => {
     return distinctFilingDates.filter((dateKey) => {
       const casesInGroup = groupedByFilingDate[dateKey] || [];
-      if (filterOnlyActive && !casesInGroup.some((c) => !c.isCompleted)) {
+      if (completionFilter === 'incomplete' && !casesInGroup.some((c) => !c.isCompleted)) {
+        return false;
+      }
+      if (completionFilter === 'completed' && !casesInGroup.some((c) => c.isCompleted)) {
         return false;
       }
       if (!dateSearch.trim()) return true;
@@ -460,7 +469,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       if (rawDate.includes(q) || thaiDate.includes(q)) return true;
       return casesInGroup.some((c) => caseMatchesDailySearch(c, dateSearch));
     });
-  }, [distinctFilingDates, groupedByFilingDate, dateSearch, filterOnlyActive]);
+  }, [distinctFilingDates, groupedByFilingDate, dateSearch, completionFilter]);
 
   // Count unassigned cases on selected date
   const unassignedCasesOnSelectedDate = useMemo(() => {
@@ -468,10 +477,11 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return list.filter((c) => !c.prosecutorName && !c.responsiblePerson);
   }, [groupedByFilingDate, selectedDate]);
 
-  // Cases filed on the currently selected date (filtered by search, active, and procedureFilter)
+  // Cases filed on the currently selected date (filtered by search, completion, and procedureFilter)
   const casesOnSelectedDate = useMemo(() => {
     return (groupedByFilingDate[selectedDate] || []).filter((c) => {
-      if (filterOnlyActive && c.isCompleted) return false;
+      if (completionFilter === 'incomplete' && c.isCompleted) return false;
+      if (completionFilter === 'completed' && !c.isCompleted) return false;
       if (procedureFilter !== 'all') {
         const cat = getCaseProcedureCategory(c);
         if (cat !== procedureFilter) return false;
@@ -481,7 +491,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       }
       return true;
     });
-  }, [groupedByFilingDate, selectedDate, filterOnlyActive, procedureFilter, dateSearch]);
+  }, [groupedByFilingDate, selectedDate, completionFilter, procedureFilter, dateSearch]);
 
   // Cases matching search on OTHER filing dates (ช่วยแสดงผลกรณีค้นหาเลขคดีหรือวันที่ที่ไม่ได้อยู่ใน selectedDate ปัจจุบัน)
   const casesMatchingOtherDates = useMemo(() => {
@@ -489,10 +499,11 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return cases.filter((c) => {
       const dateKey = c.filingDate || 'ไม่ระบุวันที่ฟ้อง';
       if (dateKey === selectedDate) return false;
-      if (filterOnlyActive && c.isCompleted) return false;
+      if (completionFilter === 'incomplete' && c.isCompleted) return false;
+      if (completionFilter === 'completed' && !c.isCompleted) return false;
       return caseMatchesDailySearch(c, dateSearch);
     });
-  }, [cases, selectedDate, dateSearch, filterOnlyActive]);
+  }, [cases, selectedDate, dateSearch, completionFilter]);
 
   // Group matching cases in other dates by filing date
   const otherDatesWithMatches = useMemo(() => {
@@ -505,21 +516,29 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     return groups;
   }, [casesMatchingOtherDates]);
 
-  // Statistics for selected date (สถิติฟ้องรายวัน: ยังไม่เลือกสถานะ / รับสารภาพ / ปฏิเสธมีนัด / มีนัดอื่นๆ / ยังไม่ทราบผล)
+  // Statistics for selected date (สถิติฟ้องรายวัน: ยังไม่เลือกสถานะ / รับสารภาพ / ปฏิเสธมีนัด / มีนัดอื่นๆ / ยังไม่ทราบผล / ยังไม่เสร็จสิ้น)
   const statsForSelectedDate = useMemo(() => {
     const list = groupedByFilingDate[selectedDate] || [];
     const total = list.length;
+    const completed = list.filter((c) => c.isCompleted).length;
+    const incomplete = list.filter((c) => !c.isCompleted).length;
+
     const unspecified = list.filter((c) => getCaseProcedureCategory(c) === 'unspecified').length;
     const confessed = list.filter((c) => getCaseProcedureCategory(c) === 'confessed').length;
     const deniedScheduled = list.filter((c) => getCaseProcedureCategory(c) === 'denied_scheduled').length;
     const otherScheduled = list.filter((c) => getCaseProcedureCategory(c) === 'other_scheduled').length;
     const unknownPending = list.filter((c) => getCaseProcedureCategory(c) === 'unknown_pending').length;
 
+    const unspecifiedIncomplete = list.filter((c) => getCaseProcedureCategory(c) === 'unspecified' && !c.isCompleted).length;
+    const confessedIncomplete = list.filter((c) => getCaseProcedureCategory(c) === 'confessed' && !c.isCompleted).length;
+    const deniedScheduledIncomplete = list.filter((c) => getCaseProcedureCategory(c) === 'denied_scheduled' && !c.isCompleted).length;
+    const otherScheduledIncomplete = list.filter((c) => getCaseProcedureCategory(c) === 'other_scheduled' && !c.isCompleted).length;
+    const unknownPendingIncomplete = list.filter((c) => getCaseProcedureCategory(c) === 'unknown_pending' && !c.isCompleted).length;
+
     const criminal = list.filter((c) => c.caseType.includes('อาญา')).length;
     const civil = list.filter((c) => !c.caseType.includes('อาญา')).length;
     const withJudgment = list.filter((c) => isJudgmentRecorded(c)).length;
     const pendingTrial = list.filter((c) => !isJudgmentRecorded(c)).length;
-    const completed = list.filter((c) => c.isCompleted).length;
     const urgent = list.filter((c) => {
       if (c.isCompleted) return false;
       const u = getAppealUrgency(c);
@@ -528,16 +547,22 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
     return {
       total,
+      completed,
+      incomplete,
       unspecified,
       confessed,
       deniedScheduled,
       otherScheduled,
       unknownPending,
+      unspecifiedIncomplete,
+      confessedIncomplete,
+      deniedScheduledIncomplete,
+      otherScheduledIncomplete,
+      unknownPendingIncomplete,
       criminal,
       civil,
       withJudgment,
       pendingTrial,
-      completed,
       urgent,
     };
   }, [groupedByFilingDate, selectedDate]);
@@ -1159,15 +1184,16 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setFilterOnlyActive(!filterOnlyActive)}
-              className={`px-2.5 py-1.5 text-xs font-medium rounded-xl border transition flex items-center gap-1 ${
-                filterOnlyActive
-                  ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              onClick={() => setCompletionFilter(completionFilter === 'incomplete' ? 'all' : 'incomplete')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition flex items-center gap-1.5 cursor-pointer ${
+                completionFilter === 'incomplete'
+                  ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-sm ring-2 ring-amber-300'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-300'
               }`}
+              title="คัดกรองเฉพาะสำนวนที่ยังไม่กดเสร็จสิ้นในแต่ละวัน"
             >
-              <Filter className="w-3.5 h-3.5" />
-              <span>ยังไม่เสร็จ</span>
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+              <span>⏳ ยังไม่กดเสร็จสิ้น ({statsForSelectedDate.incomplete})</span>
             </button>
           </div>
         </div>
@@ -1177,7 +1203,9 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] text-slate-400 font-medium">วันที่มีสำนวนในระบบ:</span>
             {distinctFilingDates.slice(0, 8).map((d) => {
-              const count = groupedByFilingDate[d]?.length || 0;
+              const casesInDate = groupedByFilingDate[d] || [];
+              const count = casesInDate.length;
+              const incompleteCount = casesInDate.filter((c) => !c.isCompleted).length;
               const isSelected = selectedDate === d;
               return (
                 <button
@@ -1187,7 +1215,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                     setSelectedDate(d);
                     if (viewMode === 'all_dates') setViewMode('single_date');
                   }}
-                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition flex items-center gap-1.5 ${
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition flex items-center gap-1.5 cursor-pointer ${
                     isSelected
                       ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-2xs'
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-200'
@@ -1201,6 +1229,19 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   >
                     {count} คดี
                   </span>
+                  {incompleteCount > 0 && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold flex items-center gap-0.5 ${
+                        isSelected
+                          ? 'bg-amber-400 text-slate-950 font-extrabold'
+                          : 'bg-amber-100 text-amber-900 border border-amber-300'
+                      }`}
+                      title={`วันที่ ${formatThaiDate(d, { short: true })} มีสำนวนที่ยังไม่กดเสร็จสิ้น ${incompleteCount} สำนวน`}
+                    >
+                      <Clock className="w-2.5 h-2.5" />
+                      <span>{incompleteCount}</span>
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1248,40 +1289,130 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
               </div>
 
               {/* Big Count Badge */}
-              <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-4 sm:px-6 flex items-center gap-4 self-start md:self-auto">
-                <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-bold shadow-lg shadow-amber-500/30">
-                  <Scale className="w-6 h-6" />
-                </div>
-                <div>
-                  <span className="text-xs text-indigo-200 block">จำนวนคดีที่ฟ้องในวันที่นี้</span>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl sm:text-4xl font-extrabold font-['Prompt'] text-amber-300 tracking-tight">
-                      {statsForSelectedDate.total}
-                    </span>
-                    <span className="text-sm font-semibold text-slate-200">สำนวนคดี</span>
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 self-start md:self-auto">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-bold shadow-lg shadow-amber-500/30">
+                    <Scale className="w-6 h-6" />
                   </div>
+                  <div>
+                    <span className="text-xs text-indigo-200 block">จำนวนคดีที่ฟ้องในวันที่นี้</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl sm:text-4xl font-extrabold font-['Prompt'] text-amber-300 tracking-tight">
+                        {statsForSelectedDate.total}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-200">สำนวนคดี</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub-counts: ยังไม่กดเสร็จสิ้น vs เสร็จสิ้นแล้ว (คลิกเพื่อกรองได้ทันที) */}
+                <div className="flex sm:flex-col gap-1.5 pt-2 sm:pt-0 border-t sm:border-t-0 sm:border-l border-white/15 sm:pl-4 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setCompletionFilter(completionFilter === 'incomplete' ? 'all' : 'incomplete')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center justify-between gap-2 cursor-pointer ${
+                      completionFilter === 'incomplete'
+                        ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-sm'
+                        : 'bg-white/10 hover:bg-white/20 text-amber-300'
+                    }`}
+                    title="คลิกเพื่อคัดกรองเฉพาะสำนวนที่ยังไม่กดเสร็จสิ้นในวันนี้"
+                  >
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-amber-400 shrink-0" />
+                      <span>ยังไม่เสร็จ:</span>
+                    </span>
+                    <span className="font-extrabold font-mono text-sm">{statsForSelectedDate.incomplete}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCompletionFilter(completionFilter === 'completed' ? 'all' : 'completed')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center justify-between gap-2 cursor-pointer ${
+                      completionFilter === 'completed'
+                        ? 'bg-emerald-400 text-slate-950 ring-2 ring-emerald-300 shadow-sm'
+                        : 'bg-white/10 hover:bg-white/20 text-emerald-300'
+                    }`}
+                    title="คลิกเพื่อคัดกรองเฉพาะสำนวนที่กดเสร็จสิ้นแล้ว"
+                  >
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <span>เสร็จสิ้น:</span>
+                    </span>
+                    <span className="font-extrabold font-mono text-sm">{statsForSelectedDate.completed}</span>
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* หัวข้อให้เลือก สรุปสถิติที่ฟ้องรายวัน (ตามคำขอที่ 6) */}
+            {/* หัวข้อให้เลือก สรุปสถิติที่ฟ้องรายวัน พร้อมตัวกรองยังไม่กดเสร็จสิ้น */}
             <div className="mt-5 pt-4 border-t border-white/10">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Sparkles className="w-4 h-4 text-amber-400" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider">
                     สรุปสถิติผลการดำเนินคดีที่ฟ้องในวันนี้ (คลิกเลือกหัวข้อเพื่อกรองสำนวน)
                   </span>
                 </div>
-                {procedureFilter !== 'all' && (
+
+                {/* แถบคัดกรองสถานะการเสร็จสิ้นสำนวนในแต่ละวัน (สำนวนที่ยังไม่กดเสร็จสิ้นในแต่ละวัน) */}
+                <div className="flex items-center gap-1 bg-white/10 p-1 rounded-xl border border-white/15 backdrop-blur-md self-start lg:self-auto flex-wrap">
+                  <span className="text-[11px] text-indigo-200 px-2 font-medium flex items-center gap-1">
+                    <Filter className="w-3 h-3 text-amber-400" />
+                    <span>คัดกรอง:</span>
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setProcedureFilter('all')}
-                    className="text-xs text-amber-300 hover:text-white underline underline-offset-2 flex items-center gap-1 self-start sm:self-auto cursor-pointer"
+                    onClick={() => setCompletionFilter('all')}
+                    className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition cursor-pointer flex items-center gap-1 ${
+                      completionFilter === 'all'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
+                    }`}
                   >
-                    <span>✕ ล้างตัวกรอง (แสดงทั้งหมด {statsForSelectedDate.total} สำนวน)</span>
+                    <span>ทั้งหมด ({statsForSelectedDate.total})</span>
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => setCompletionFilter('incomplete')}
+                    className={`px-3 py-1 text-xs rounded-lg font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                      completionFilter === 'incomplete'
+                        ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-300 font-extrabold'
+                        : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-400/30'
+                    }`}
+                    title="คัดกรองเฉพาะสำนวนที่ยังไม่กดเสร็จสิ้นในวันนี้"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>⏳ ยังไม่กดเสร็จสิ้น ({statsForSelectedDate.incomplete})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompletionFilter('completed')}
+                    className={`px-3 py-1 text-xs rounded-lg font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                      completionFilter === 'completed'
+                        ? 'bg-emerald-500 text-slate-950 shadow-md ring-2 ring-emerald-300 font-extrabold'
+                        : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-400/30'
+                    }`}
+                    title="คัดกรองเฉพาะสำนวนที่กดเสร็จสิ้นแล้วในวันนี้"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>✅ เสร็จสิ้นแล้ว ({statsForSelectedDate.completed})</span>
+                  </button>
+
+                  {(procedureFilter !== 'all' || completionFilter !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProcedureFilter('all');
+                        setCompletionFilter('all');
+                      }}
+                      className="ml-1 px-2 py-1 text-xs text-amber-300 hover:text-white underline underline-offset-2 flex items-center gap-0.5 cursor-pointer font-medium"
+                      title="ล้างตัวกรองทั้งหมด"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>ล้างตัวกรอง</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* 6 Selectable Cards */}
@@ -1298,15 +1429,22 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   title="คลิกเพื่อดูคดีที่ฟ้องในวันนี้ทั้งหมด"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-slate-300">คดีทั้งหมด</span>
+                    <span className="text-[11px] font-medium text-slate-300">
+                      {completionFilter === 'incomplete' ? 'คดีทั้งหมด (ยังไม่เสร็จ)' : completionFilter === 'completed' ? 'คดีทั้งหมด (เสร็จแล้ว)' : 'คดีทั้งหมด'}
+                    </span>
                     <Scale className="w-3.5 h-3.5 text-indigo-300" />
                   </div>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-2xl font-bold font-['Prompt'] text-white">
-                      {statsForSelectedDate.total}
+                      {completionFilter === 'incomplete' ? statsForSelectedDate.incomplete : completionFilter === 'completed' ? statsForSelectedDate.completed : statsForSelectedDate.total}
                     </span>
                     <span className="text-xs text-slate-300">สำนวน</span>
                   </div>
+                  {completionFilter === 'all' && statsForSelectedDate.total > 0 && (
+                    <span className="text-[10px] text-amber-300/90 font-medium block mt-1">
+                      (ยังไม่เสร็จ {statsForSelectedDate.incomplete} • เสร็จ {statsForSelectedDate.completed})
+                    </span>
+                  )}
                 </button>
 
                 {/* 2. ยังไม่เลือกสถานะ (เตือนแถบสีแดง) */}
@@ -1331,10 +1469,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className={`text-2xl font-bold font-['Prompt'] ${statsForSelectedDate.unspecified > 0 ? 'text-rose-300' : 'text-slate-300'}`}>
-                      {statsForSelectedDate.unspecified}
+                      {completionFilter === 'incomplete' ? statsForSelectedDate.unspecifiedIncomplete : statsForSelectedDate.unspecified}
                     </span>
                     <span className="text-xs text-rose-300/80">สำนวน</span>
                   </div>
+                  {completionFilter === 'all' && statsForSelectedDate.unspecified > 0 && statsForSelectedDate.unspecifiedIncomplete < statsForSelectedDate.unspecified && (
+                    <span className="text-[10px] text-rose-200/80 font-medium block mt-1">
+                      (ยังไม่เสร็จ {statsForSelectedDate.unspecifiedIncomplete})
+                    </span>
+                  )}
                 </button>
 
                 {/* 3. จำเลยรับสารภาพ */}
@@ -1357,10 +1500,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-2xl font-bold font-['Prompt'] text-emerald-300">
-                      {statsForSelectedDate.confessed}
+                      {completionFilter === 'incomplete' ? statsForSelectedDate.confessedIncomplete : statsForSelectedDate.confessed}
                     </span>
                     <span className="text-xs text-emerald-200/80">ราย</span>
                   </div>
+                  {completionFilter === 'all' && statsForSelectedDate.confessed > 0 && statsForSelectedDate.confessedIncomplete < statsForSelectedDate.confessed && (
+                    <span className="text-[10px] text-emerald-200/80 font-medium block mt-1">
+                      (ยังไม่เสร็จ {statsForSelectedDate.confessedIncomplete})
+                    </span>
+                  )}
                 </button>
 
                 {/* 4. ปฏิเสธมีนัดต่อ */}
@@ -1383,10 +1531,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-2xl font-bold font-['Prompt'] text-amber-300">
-                      {statsForSelectedDate.deniedScheduled}
+                      {completionFilter === 'incomplete' ? statsForSelectedDate.deniedScheduledIncomplete : statsForSelectedDate.deniedScheduled}
                     </span>
                     <span className="text-xs text-amber-200/80">ราย</span>
                   </div>
+                  {completionFilter === 'all' && statsForSelectedDate.deniedScheduled > 0 && statsForSelectedDate.deniedScheduledIncomplete < statsForSelectedDate.deniedScheduled && (
+                    <span className="text-[10px] text-amber-200/80 font-medium block mt-1">
+                      (ยังไม่เสร็จ {statsForSelectedDate.deniedScheduledIncomplete})
+                    </span>
+                  )}
                 </button>
 
                 {/* 5. มีนัดอื่นๆ */}
@@ -1409,10 +1562,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-2xl font-bold font-['Prompt'] text-sky-300">
-                      {statsForSelectedDate.otherScheduled}
+                      {completionFilter === 'incomplete' ? statsForSelectedDate.otherScheduledIncomplete : statsForSelectedDate.otherScheduled}
                     </span>
                     <span className="text-xs text-sky-200/80">ราย</span>
                   </div>
+                  {completionFilter === 'all' && statsForSelectedDate.otherScheduled > 0 && statsForSelectedDate.otherScheduledIncomplete < statsForSelectedDate.otherScheduled && (
+                    <span className="text-[10px] text-sky-200/80 font-medium block mt-1">
+                      (ยังไม่เสร็จ {statsForSelectedDate.otherScheduledIncomplete})
+                    </span>
+                  )}
                 </button>
 
                 {/* 6. ยังไม่ทราบผล */}
@@ -1435,10 +1593,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   </div>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-2xl font-bold font-['Prompt'] text-slate-200">
-                      {statsForSelectedDate.unknownPending}
+                      {completionFilter === 'incomplete' ? statsForSelectedDate.unknownPendingIncomplete : statsForSelectedDate.unknownPending}
                     </span>
                     <span className="text-xs text-slate-400">ราย</span>
                   </div>
+                  {completionFilter === 'all' && statsForSelectedDate.unknownPending > 0 && statsForSelectedDate.unknownPendingIncomplete < statsForSelectedDate.unknownPending && (
+                    <span className="text-[10px] text-slate-400 font-medium block mt-1">
+                      (ยังไม่เสร็จ {statsForSelectedDate.unknownPendingIncomplete})
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
@@ -1468,7 +1631,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                     </div>
                   ) : (
                     <p className="text-xs text-slate-300 pt-0.5">
-                      ยังไม่มีข้อมูลเวรชี้ตรงตามวันที่นี้ในตาราง PDF (คุณสามารถคลิกเพื่อเลือกจากรายชื่อเวรชี้ประจำเดือนได้)
+                      ยังไม่มีข้อมูลเวรชี้ตรงตามวันที่นี้ในตารางเวรชี้ (คุณสามารถคลิกเพื่อเลือกจากรายชื่อเวรชี้ประจำเดือนได้)
                     </p>
                   )}
                 </div>
@@ -1505,7 +1668,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                       className="text-xs font-semibold text-amber-200 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5"
                     >
                       <UserCheck className="w-3.5 h-3.5" />
-                      <span>ดูตารางเวรชี้ประจำเดือน (PDF)</span>
+                      <span>ดูตารางเวรชี้ประจำเดือน</span>
                     </button>
                   )}
                 </div>
@@ -1601,7 +1764,53 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
           {casesOnSelectedDate.length > 0 ? (
             <div className="space-y-3">
               {/* Active Filter Bar if filtered */}
-              {procedureFilter !== 'all' && (
+              {completionFilter === 'incomplete' && (
+                <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-amber-950 shadow-xs gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                    <span>
+                      กำลังคัดกรองแสดงเฉพาะ: <strong className="text-amber-950 font-bold font-['Prompt'] text-sm">สำนวนที่ยังไม่กดเสร็จสิ้นในวันนี้</strong> ({casesOnSelectedDate.length} สำนวน จากทั้งหมด {statsForSelectedDate.total} สำนวน)
+                      {procedureFilter !== 'all' && (
+                        <span className="ml-1.5 text-indigo-900 font-semibold bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200">
+                          หมวด: {getProcedureFilterLabel(procedureFilter)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompletionFilter('all');
+                      setProcedureFilter('all');
+                    }}
+                    className="font-bold text-amber-950 hover:bg-amber-200 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-300 transition cursor-pointer flex items-center gap-1 shadow-2xs self-start sm:self-auto shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>แสดงสำนวนทั้งหมดในวันนี้</span>
+                  </button>
+                </div>
+              )}
+
+              {completionFilter === 'completed' && (
+                <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-emerald-950 shadow-xs gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      กำลังคัดกรองแสดงเฉพาะ: <strong className="text-emerald-900 font-bold">สำนวนที่กดเสร็จสิ้นแล้ว</strong> ({casesOnSelectedDate.length} สำนวน)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCompletionFilter('all')}
+                    className="font-bold text-emerald-800 hover:text-emerald-950 underline underline-offset-2 cursor-pointer flex items-center gap-1 self-start sm:self-auto shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>แสดงสำนวนทั้งหมดในวันนี้</span>
+                  </button>
+                </div>
+              )}
+
+              {procedureFilter !== 'all' && completionFilter === 'all' && (
                 <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center justify-between text-xs text-indigo-950">
                   <div className="flex items-center gap-2">
                     <Filter className="w-4 h-4 text-indigo-600" />
@@ -1803,6 +2012,25 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </span>
                           )}
 
+                          {/* ป้ายแสดงสถานะการกดเสร็จสิ้นสำนวน */}
+                          {isCompleted ? (
+                            <span
+                              className="text-[11px] font-bold text-emerald-950 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-2xs"
+                              title={caseItem.completedDate ? `กดเสร็จสิ้นสำนวนแล้ว (${formatThaiDate(caseItem.completedDate)})` : 'กดเสร็จสิ้นสำนวนแล้ว'}
+                            >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <span>เสร็จสิ้นแล้ว</span>
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[11px] font-bold text-amber-950 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 inline-flex items-center gap-1 shadow-2xs"
+                              title="สำนวนนี้ยังไม่ได้กดเสร็จสิ้น"
+                            >
+                              <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>⏳ ยังไม่กดเสร็จสิ้น</span>
+                            </span>
+                          )}
+
                           {/* สัญลักษณ์แสดงว่าสำนวนนี้มีการกรอกคำพิพากษาแล้วตามคำขอ */}
                           {hasJudgmentRecorded ? (
                             <span
@@ -1926,7 +2154,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 setIsDutyPickerOpen(true);
                               }}
                               className="text-[11px] font-medium text-slate-700 bg-white/90 hover:bg-slate-100 px-2 py-0.5 rounded-md border border-slate-300 flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                              title="คลิกเพื่อเลือกหรือเปลี่ยนอัยการเวรชี้จากตาราง PDF"
+                              title="คลิกเพื่อเลือกหรือเปลี่ยนอัยการเวรชี้จากตารางเวรชี้"
                             >
                               <span className="text-slate-500">⚖️ เวรชี้:</span>
                               <span className="text-slate-900 font-bold">{caseItem.prosecutorName}</span>
@@ -1941,10 +2169,10 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                   setIsDutyPickerOpen(true);
                                 }}
                                 className="text-[10px] text-slate-500 bg-white/80 hover:bg-slate-100 border border-dashed border-slate-300 px-2 py-0.5 rounded-md flex items-center gap-1 transition cursor-pointer"
-                                title="เลือกอัยการเวรชี้จากตาราง PDF"
+                                title="เลือกอัยการเวรชี้จากตารางเวรชี้"
                               >
                                 <UserCheck className="w-3 h-3 text-slate-400" />
-                                <span>ระบุเวรชี้ (PDF)</span>
+                                <span>ระบุเวรชี้</span>
                               </button>
                               {officersOnSelectedDate.length > 0 && onQuickAssignOfficer && (
                                 <button
@@ -2399,17 +2627,34 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             /* Empty State for Selected Date */
             <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
               <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
-                <Calendar className="w-7 h-7" />
+                {completionFilter === 'incomplete' && statsForSelectedDate.total > 0 ? (
+                  <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+                ) : (
+                  <Calendar className="w-7 h-7" />
+                )}
               </div>
               <h4 className="font-bold text-base text-slate-800 font-['Prompt']">
-                ไม่พบคดีที่ยื่นฟ้องในวันที่ {formatThaiDate(selectedDate)}
+                {completionFilter === 'incomplete' && statsForSelectedDate.total > 0
+                  ? `ไม่มีสำนวนค้างในวันที่ ${formatThaiDate(selectedDate)} (กดเสร็จสิ้นครบทั้ง ${statsForSelectedDate.total} สำนวนแล้ว)`
+                  : `ไม่พบคดีที่ยื่นฟ้องในวันที่ ${formatThaiDate(selectedDate)}`}
               </h4>
               <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-5">
-                {dateSearch.trim()
+                {completionFilter === 'incomplete' && statsForSelectedDate.total > 0
+                  ? 'สำนวนคดีที่ยื่นฟ้องในวันที่เลือกนี้ได้รับการกดเสร็จสิ้นครบถ้วนเรียบร้อยแล้ว ไม่มีสำนวนค้าง'
+                  : dateSearch.trim()
                   ? `ไม่พบสำนวนคดีที่ตรงกับคำค้นหา "${dateSearch}" ในวันที่เลือกนี้`
                   : 'ในวันที่เลือกนี้ยังไม่มีรายการสำนวนคดีที่บันทึกไว้ในระบบ คุณสามารถเริ่มเพิ่มสำนวนที่ยื่นฟ้องในวันนี้ได้ทันที'}
               </p>
-              {onAddNewCaseForDate && (
+              {completionFilter === 'incomplete' && statsForSelectedDate.total > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setCompletionFilter('all')}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl inline-flex items-center gap-2 shadow-xs transition cursor-pointer"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>ดูสำนวนทั้งหมดในวันนี้ ({statsForSelectedDate.total} สำนวน)</span>
+                </button>
+              ) : onAddNewCaseForDate ? (
                 <button
                   type="button"
                   onClick={() => onAddNewCaseForDate(selectedDate)}
@@ -2418,7 +2663,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   <Plus className="w-4 h-4" />
                   <span>+ กรอกข้อมูลคดีที่ยื่นฟ้องในวันที่ {formatThaiDate(selectedDate, { short: true })}</span>
                 </button>
-              )}
+              ) : null}
             </div>
           )}
         </div>
@@ -2429,13 +2674,59 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       {/* ========================================================================= */}
       {viewMode === 'all_dates' && (
         <div className="space-y-4">
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs text-slate-600">
-            <span>
-              แสดงภาพรวม {filteredDistinctFilingDates.length} วันที่ยื่นฟ้อง {dateSearch ? `(กรองตาม "${dateSearch}")` : `(ทั้งหมด ${distinctFilingDates.length} วัน)`} รวม {cases.length} สำนวน
-            </span>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between text-xs text-slate-600 gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span>
+                แสดงภาพรวม {filteredDistinctFilingDates.length} วันที่ยื่นฟ้อง {dateSearch ? `(กรองตาม "${dateSearch}")` : `(ทั้งหมด ${distinctFilingDates.length} วัน)`} รวม {cases.length} สำนวน
+              </span>
+              {/* แถบคัดกรองสถานะการกดเสร็จสิ้นในโหมดทุกวัน */}
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-[11px] text-slate-500 px-1 font-medium flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-amber-500" />
+                  <span>คัดกรอง:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCompletionFilter('all')}
+                  className={`px-2.5 py-0.5 text-xs rounded-lg font-semibold transition cursor-pointer ${
+                    completionFilter === 'all'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  ทั้งหมด ({cases.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompletionFilter(completionFilter === 'incomplete' ? 'all' : 'incomplete')}
+                  className={`px-2.5 py-0.5 text-xs rounded-lg font-bold transition cursor-pointer flex items-center gap-1 ${
+                    completionFilter === 'incomplete'
+                      ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-2xs'
+                      : 'text-amber-800 hover:bg-amber-50'
+                  }`}
+                  title="คัดกรองเฉพาะสำนวนที่ยังไม่กดเสร็จสิ้นในแต่ละวัน"
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>⏳ ยังไม่เสร็จ ({cases.filter((c) => !c.isCompleted).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompletionFilter(completionFilter === 'completed' ? 'all' : 'completed')}
+                  className={`px-2.5 py-0.5 text-xs rounded-lg font-bold transition cursor-pointer flex items-center gap-1 ${
+                    completionFilter === 'completed'
+                      ? 'bg-emerald-600 text-white ring-2 ring-emerald-300 shadow-2xs'
+                      : 'text-emerald-800 hover:bg-emerald-50'
+                  }`}
+                  title="คัดกรองเฉพาะสำนวนที่กดเสร็จสิ้นแล้ว"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>✅ เสร็จสิ้น ({cases.filter((c) => c.isCompleted).length})</span>
+                </button>
+              </div>
+            </div>
             <button
               onClick={() => setViewMode('single_date')}
-              className="text-indigo-600 hover:text-indigo-800 font-semibold"
+              className="text-indigo-600 hover:text-indigo-800 font-semibold shrink-0 cursor-pointer self-start md:self-auto"
             >
               ← กลับไปเลือกดูเฉพาะวันที่
             </button>
@@ -2481,9 +2772,14 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             ) : (
               filteredDistinctFilingDates.map((dateKey) => {
                 const allCasesInGroup = groupedByFilingDate[dateKey] || [];
-                const casesInGroup = dateSearch.trim()
-                  ? allCasesInGroup.filter((c) => caseMatchesDailySearch(c, dateSearch))
-                  : allCasesInGroup;
+                const incompleteInGroup = allCasesInGroup.filter((c) => !c.isCompleted).length;
+                const completedInGroup = allCasesInGroup.filter((c) => c.isCompleted).length;
+                const casesInGroup = allCasesInGroup.filter((c) => {
+                  if (completionFilter === 'incomplete' && c.isCompleted) return false;
+                  if (completionFilter === 'completed' && !c.isCompleted) return false;
+                  if (dateSearch.trim()) return caseMatchesDailySearch(c, dateSearch);
+                  return true;
+                });
                 const isOpen = dateSearch.trim() ? true : (expandedDates[dateKey] !== false);
 
               return (
@@ -2491,25 +2787,52 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   {/* Group Header */}
                   <div
                     onClick={() => handleToggleExpand(dateKey)}
-                    className="p-3.5 sm:p-4 bg-slate-50/80 hover:bg-slate-100/70 transition cursor-pointer flex items-center justify-between gap-3 border-b border-slate-100"
+                    className="p-3.5 sm:p-4 bg-slate-50/80 hover:bg-slate-100/70 transition cursor-pointer flex items-center justify-between gap-3 border-b border-slate-100 flex-wrap"
                   >
                     <div className="flex items-center gap-3">
                       <div className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-600">
                         {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-slate-900 font-['Prompt'] text-sm">
                             วันที่ฟ้อง: {formatThaiDate(dateKey)}
                           </span>
                           <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.2 rounded-full">
                             {casesInGroup.length} คดี
                           </span>
+                          {incompleteInGroup > 0 ? (
+                            <span className="text-[11px] font-bold text-amber-950 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>ยังไม่กดเสร็จสิ้น {incompleteInGroup} สำนวน</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>เสร็จสิ้นครบแล้ว ({completedInGroup})</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                      {incompleteInGroup > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDate(dateKey);
+                            setCompletionFilter('incomplete');
+                            setViewMode('single_date');
+                          }}
+                          className="text-xs font-bold text-amber-950 bg-amber-200 hover:bg-amber-300 border border-amber-300 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title={`คลิกเพื่อดูเฉพาะสำนวนที่ยังไม่กดเสร็จสิ้นในวันที่ ${formatThaiDate(dateKey)}`}
+                        >
+                          <Clock className="w-3 h-3 text-amber-700" />
+                          <span>กรองยังไม่เสร็จ ({incompleteInGroup})</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => {
@@ -2558,6 +2881,24 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-slate-900 font-['Prompt']">ดำ {caseItem.blackCaseNo}</span>
                               {caseItem.redCaseNo && <span className="text-rose-700 font-semibold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">แดง {caseItem.redCaseNo}</span>}
+                              {/* ป้ายแสดงสถานะการกดเสร็จสิ้นสำนวน */}
+                              {caseItem.isCompleted ? (
+                                <span
+                                  className="text-[11px] font-bold text-emerald-950 bg-emerald-100/90 px-1.5 py-0.5 rounded border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                                  title={caseItem.completedDate ? `กดเสร็จสิ้นสำนวนแล้ว (${formatThaiDate(caseItem.completedDate)})` : 'กดเสร็จสิ้นสำนวนแล้ว'}
+                                >
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  <span>เสร็จสิ้นแล้ว</span>
+                                </span>
+                              ) : (
+                                <span
+                                  className="text-[11px] font-bold text-amber-950 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 flex items-center gap-1 shadow-2xs"
+                                  title="สำนวนนี้ยังไม่ได้กดเสร็จสิ้น"
+                                >
+                                  <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                  <span>⏳ ยังไม่กดเสร็จสิ้น</span>
+                                </span>
+                              )}
                               {hasJudgmentRecorded ? (
                                 <span
                                   className="text-[11px] font-bold text-emerald-900 bg-emerald-100/90 px-1.5 py-0.5 rounded border border-emerald-300 flex items-center gap-1 shadow-2xs"
@@ -2670,10 +3011,10 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                     setIsDutyPickerOpen(true);
                                   }}
                                   className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                                  title="เลือกหรือเปลี่ยนเวรชี้จากตารางเวรชี้ประจำเดือนที่อัปโหลดไฟล์ PDF"
+                                  title="เลือกหรือเปลี่ยนเวรชี้จากตารางเวรชี้ประจำเดือน"
                                 >
                                   <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-                                  <span>{caseItem.prosecutorName ? 'เปลี่ยนเวรชี้' : 'เลือกเวรชี้ (PDF)'}</span>
+                                  <span>{caseItem.prosecutorName ? 'เปลี่ยนเวรชี้' : 'เลือกเวรชี้'}</span>
                                 </button>
                                 {onEditCase && (
                                   <button
@@ -2736,7 +3077,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       </div>
     )}
 
-      {/* Duty Officer Picker Modal (เลือกเวรชี้จากตารางเวรชี้แต่ละเดือนที่อัปโหลดไฟล์ PDF) */}
+      {/* Duty Officer Picker Modal (เลือกเวรชี้จากตารางเวรชี้ประจำเดือน) */}
       <DutyOfficerPickerModal
         isOpen={isDutyPickerOpen}
         onClose={() => {

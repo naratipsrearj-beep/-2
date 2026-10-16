@@ -19,11 +19,13 @@ import {
   Columns,
   Eye,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
 import { isJudgmentRecorded } from '../utils/appointmentUtils';
+import { compressImageFile } from '../utils/imageUtils';
 
 interface RecordJudgmentModalProps {
   isOpen: boolean;
@@ -100,6 +102,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   const [rotation, setRotation] = useState<number>(0);
   const [highContrast, setHighContrast] = useState<boolean>(false);
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -112,11 +115,11 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   useEffect(() => {
     if (caseItem) {
       setJudgmentDate(caseItem.judgmentDate || getTodayString());
-      setRedCaseNo(caseItem.redCaseNo || '');
-      setJudgmentOutcome(caseItem.judgmentOutcome || '');
-      setFullJudgmentText(caseItem.fullJudgmentText || '');
+      const initialJudgment = caseItem.fullJudgmentText || caseItem.judgmentOutcome || '';
+      setJudgmentOutcome(caseItem.judgmentOutcome || initialJudgment);
+      setFullJudgmentText(caseItem.fullJudgmentText || initialJudgment);
       setPhotoUrl(caseItem.judgmentPhotoUrl || null);
-      setPhotoName(caseItem.judgmentPhotoName || (caseItem.judgmentPhotoUrl ? 'ภาพแคปคำพิพากษา.png' : ''));
+      setPhotoName(caseItem.judgmentPhotoName || (caseItem.judgmentPhotoUrl ? 'ภาพแคปคำพิพากษา.jpg' : ''));
       setIsVerified(!!caseItem.judgmentVerified);
       setVerifiedBy(caseItem.judgmentVerifiedBy || caseItem.responsiblePerson || '');
       setRecheckNotes(caseItem.judgmentRecheckNotes || '');
@@ -143,11 +146,11 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
     }
   }, [judgmentDate]);
 
-  // Handle global clipboard paste of screenshot images
+  // Handle global clipboard paste of screenshot images with auto-compression
   useEffect(() => {
     if (!isOpen) return;
 
-    const handlePaste = (e: ClipboardEvent) => {
+    const handlePaste = async (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -155,20 +158,24 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
         if (items[i].type.indexOf('image') !== -1) {
           const file = items[i].getAsFile();
           if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              if (event.target?.result) {
-                const dataUrl = event.target.result as string;
-                setPhotoUrl(dataUrl);
-                const generatedName = `ภาพแคปคำพิพากษา_${caseItem?.blackCaseNo || 'ศาล'}_${new Date().toISOString().slice(0, 10)}.png`;
-                setPhotoName(generatedName);
-                setIsSplitView(true);
-                setPasteNotice('📸 วางภาพแคปหน้าจอคำพิพากษาเรียบร้อยแล้ว ตรวจทานข้อความได้ทันที');
-                setTimeout(() => setPasteNotice(null), 4000);
-              }
-            };
-            reader.readAsDataURL(file);
             e.preventDefault();
+            setIsProcessingImage(true);
+            setErrorMsg(null);
+            try {
+              const compressed = await compressImageFile(file, { maxWidth: 1600, maxHeight: 2200, quality: 0.82 });
+              setPhotoUrl(compressed.dataUrl);
+              const generatedName = `ภาพแคปคำพิพากษา_${caseItem?.blackCaseNo || 'ศาล'}_${new Date().toISOString().slice(0, 10)}.jpg`;
+              setPhotoName(generatedName);
+              setIsSplitView(true);
+              const sizeKb = Math.round(compressed.compressedSize / 1024);
+              setPasteNotice(`📸 วางภาพแคปหน้าจอเรียบร้อย (${sizeKb} KB) คมชัดและพร้อมตรวจทาน`);
+              setTimeout(() => setPasteNotice(null), 4000);
+            } catch (err: any) {
+              console.error('Paste image error:', err);
+              setErrorMsg(err.message || 'เกิดข้อผิดพลาดในการโหลดภาพจากคลิปบอร์ด');
+            } finally {
+              setIsProcessingImage(false);
+            }
             break;
           }
         }
@@ -181,39 +188,61 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
 
   if (!isOpen || !caseItem) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setPhotoName(file.name);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setPhotoUrl(event.target.result as string);
-        setIsSplitView(true);
-        setPasteNotice('📸 โหลดภาพคำพิพากษาเรียบร้อยแล้ว');
-        setTimeout(() => setPasteNotice(null), 3500);
-      }
-    };
-    reader.readAsDataURL(file);
+    // Reset input value so same file can be reselected
+    e.target.value = '';
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('กรุณาเลือกไฟล์ภาพเท่านั้น (JPG, PNG, WebP) ไม่รองรับไฟล์เอกสารในช่องนี้');
+      return;
+    }
+
+    setIsProcessingImage(true);
+    setErrorMsg(null);
+    try {
+      const compressed = await compressImageFile(file, { maxWidth: 1600, maxHeight: 2200, quality: 0.82 });
+      setPhotoName(file.name || 'ภาพแคปคำพิพากษา.jpg');
+      setPhotoUrl(compressed.dataUrl);
+      setIsSplitView(true);
+      const sizeKb = Math.round(compressed.compressedSize / 1024);
+      setPasteNotice(`📸 โหลดภาพคำพิพากษาเรียบร้อย (${sizeKb} KB) พร้อมตรวจทาน`);
+      setTimeout(() => setPasteNotice(null), 3500);
+    } catch (err: any) {
+      console.error('File upload error:', err);
+      setErrorMsg(err.message || 'ไม่สามารถประมวลผลไฟล์ภาพได้');
+    } finally {
+      setIsProcessingImage(false);
+    }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      setPhotoName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setPhotoUrl(event.target.result as string);
-          setIsSplitView(true);
-          setPasteNotice('📸 วางภาพแคปหน้าจอคำพิพากษาเรียบร้อยแล้ว');
-          setTimeout(() => setPasteNotice(null), 3500);
-        }
-      };
-      reader.readAsDataURL(file);
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setErrorMsg('กรุณาลากเฉพาะไฟล์รูปภาพ (JPG, PNG, WebP)');
+        return;
+      }
+      setIsProcessingImage(true);
+      setErrorMsg(null);
+      try {
+        const compressed = await compressImageFile(file, { maxWidth: 1600, maxHeight: 2200, quality: 0.82 });
+        setPhotoName(file.name || 'ภาพแคปคำพิพากษา.jpg');
+        setPhotoUrl(compressed.dataUrl);
+        setIsSplitView(true);
+        const sizeKb = Math.round(compressed.compressedSize / 1024);
+        setPasteNotice(`📸 วางภาพแคปหน้าจอเรียบร้อย (${sizeKb} KB)`);
+        setTimeout(() => setPasteNotice(null), 3500);
+      } catch (err: any) {
+        console.error('Drop error:', err);
+        setErrorMsg(err.message || 'ไม่สามารถวางไฟล์ภาพได้');
+      } finally {
+        setIsProcessingImage(false);
+      }
     }
   };
 
@@ -239,14 +268,16 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
       return;
     }
 
+    const finalJudgment = fullJudgmentText.trim() || judgmentOutcome.trim();
+
     onSaveJudgmentDate(
       caseItem.id,
       {
         judgmentDate,
         redCaseNo: redCaseNo.trim() || undefined,
-        judgmentOutcome: judgmentOutcome.trim(),
+        judgmentOutcome: finalJudgment,
         appealDeadline: deadlineInfo.deadlineDate,
-        fullJudgmentText: fullJudgmentText.trim() || undefined,
+        fullJudgmentText: finalJudgment,
         judgmentPhotoUrl: photoUrl || null,
         judgmentPhotoName: photoName || undefined,
         judgmentVerified: isVerified,
@@ -366,7 +397,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
           type="file"
           ref={fileInputRef}
           onChange={handleFileUpload}
-          accept="image/*,.pdf"
+          accept="image/png,image/jpeg,image/webp,image/jpg"
           className="hidden"
         />
 
@@ -525,7 +556,13 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                   <span className="text-[10px] text-slate-500">สำหรับตรวจทานข้อความ</span>
                 </div>
 
-                {photoUrl ? (
+                {isProcessingImage ? (
+                  <div className="border-2 border-dashed border-amber-400 bg-amber-50/80 rounded-xl p-5 text-center flex flex-col items-center justify-center space-y-2 animate-pulse">
+                    <Loader2 className="w-7 h-7 text-amber-600 animate-spin" />
+                    <div className="text-xs font-bold text-amber-950">กำลังปรับขนาดและบีบอัดภาพแคปหน้าจอ...</div>
+                    <div className="text-[11px] text-amber-800">ระบบรักษาความคมชัดของตัวอักษรเพื่อให้อ่านง่ายและไม่ทำให้เบราว์เซอร์ค้าง</div>
+                  </div>
+                ) : photoUrl ? (
                   <div className="bg-amber-50/70 border border-amber-300 rounded-xl p-3 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <img
@@ -648,25 +685,29 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
               />
             </div>
 
-            {/* Judgment Outcome */}
+            {/* ช่องกรอกคำพิพากษาเป็นช่องเดียว (ตามที่ผู้ใช้ร้องขอ) */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-slate-800">
-                  ผลคำพิพากษาโดยย่อ
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 font-['Prompt']">
+                  <FileText className="w-3.5 h-3.5 text-amber-600" />
+                  <span>คำพิพากษา / ผลการตัดสินของศาล *</span>
                 </label>
-                <span className="text-[10px] text-slate-400">เลือกผลด่วนได้</span>
+                <span className="text-[10px] text-slate-400">เลือกผลด่วน หรือพิมพ์/วางข้อความคำพิพากษา</span>
               </div>
 
               {/* Quick Chips */}
-              <div className="flex flex-wrap gap-1.5 mb-2">
+              <div className="flex flex-wrap gap-1 mb-2">
                 {QUICK_OUTCOME_SUGGESTIONS.map((suggestion) => (
                   <button
                     key={suggestion}
                     type="button"
-                    onClick={() => setJudgmentOutcome(suggestion)}
-                    className={`text-[10px] px-2 py-0.5 rounded-full border transition cursor-pointer ${
-                      judgmentOutcome === suggestion
-                        ? 'bg-amber-600 text-white border-amber-600 font-semibold'
+                    onClick={() => {
+                      setJudgmentOutcome(suggestion);
+                      setFullJudgmentText(suggestion);
+                    }}
+                    className={`text-[10px] px-2.5 py-0.5 rounded-full border transition cursor-pointer ${
+                      (judgmentOutcome === suggestion || fullJudgmentText === suggestion)
+                        ? 'bg-amber-600 text-white border-amber-600 font-semibold shadow-2xs'
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300'
                     }`}
                   >
@@ -675,31 +716,18 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                 ))}
               </div>
 
-              <input
-                type="text"
-                placeholder="เช่น ลงโทษจำคุก 2 ปี ปรับ 50,000 บาท รอการลงโทษ 2 ปี, ยกฟ้อง"
-                value={judgmentOutcome}
-                onChange={(e) => setJudgmentOutcome(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-
-            {/* Full Judgment Text / Verdict Details */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5 text-blue-600" />
-                  <span>สาระสำคัญ / ข้อความคำพิพากษาฉบับเต็ม</span>
-                </label>
-                <span className="text-[10px] text-slate-400">คัดลอกข้อความมาวางที่นี่</span>
-              </div>
-
+              {/* Single Judgment Input */}
               <textarea
                 rows={isSplitView ? 6 : 4}
-                placeholder="คัดลอกข้อความคำพิพากษา คำวินิจฉัยของศาล หรือรายละเอียดการลงโทษมาวางที่นี่..."
-                value={fullJudgmentText}
-                onChange={(e) => setFullJudgmentText(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans leading-relaxed"
+                required
+                placeholder="ระบุหรือวางข้อความคำพิพากษา เช่น ลงโทษตามฟ้อง จำคุก 2 ปี ปรับ 50,000 บาท รอการลงโทษ 2 ปี หรือคัดลอกคำพิพากษาฉบับเต็มมาวางที่นี่..."
+                value={fullJudgmentText || judgmentOutcome}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setJudgmentOutcome(val);
+                  setFullJudgmentText(val);
+                }}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans leading-relaxed bg-white"
               />
 
               {/* Spot-Check Keyword Indicators */}
@@ -707,10 +735,10 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium mb-1.5">
                   <span className="flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span>ตัวช่วยตรวจทานคำสำคัญในข้อความ (Spot-Check):</span>
+                    <span>ตัวช่วยตรวจทานคำสำคัญในคำพิพากษา (Spot-Check):</span>
                   </span>
                   <span className="text-[10px] text-slate-400">
-                    {fullJudgmentText.length} ตัวอักษร
+                    {(fullJudgmentText || judgmentOutcome).length} ตัวอักษร
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1">

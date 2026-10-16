@@ -50,7 +50,7 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
     followUpDate: getTodayString(),
     caseNumber: '',
     court: 'ศาลจังหวัดเพชรบุรี',
-    plaintiff: '',
+    plaintiff: 'พนักงานอัยการ',
     defendant: '',
     hearingTime: '09:00',
     responsiblePerson: '',
@@ -80,7 +80,7 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
       followUpDate: formData.followUpDate,
       caseNumber: formData.caseNumber,
       court: formData.court,
-      plaintiff: formData.plaintiff,
+      plaintiff: formData.plaintiff || 'พนักงานอัยการ',
       defendant: formData.defendant,
       hearingTime: formData.hearingTime,
       responsiblePerson: formData.responsiblePerson || 'นิติกรประจำวัน',
@@ -100,7 +100,7 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
       followUpDate: selectedDate,
       caseNumber: '',
       court: 'ศาลจังหวัดเพชรบุรี',
-      plaintiff: '',
+      plaintiff: 'พนักงานอัยการ',
       defendant: '',
       hearingTime: '09:00',
       responsiblePerson: '',
@@ -303,22 +303,12 @@ export const DailyJudgmentFollowUpView: React.FC<DailyJudgmentFollowUpViewProps>
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">โจทก์</label>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-700 mb-1">จำเลย *</label>
                 <input
                   type="text"
-                  placeholder="เช่น พนักงานอัยการ"
-                  value={formData.plaintiff}
-                  onChange={(e) => setFormData({ ...formData, plaintiff: e.target.value })}
-                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">จำเลย</label>
-                <input
-                  type="text"
-                  placeholder="เช่น นายเอกชัย สมบูรณ์"
+                  required
+                  placeholder="ชื่อจำเลย เช่น นายเอกชัย สมบูรณ์"
                   value={formData.defendant}
                   onChange={(e) => setFormData({ ...formData, defendant: e.target.value })}
                   className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"

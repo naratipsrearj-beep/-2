@@ -18,11 +18,13 @@ import {
   Sliders,
   Check,
   FileCheck2,
-  ExternalLink
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 import { AppealCase, DailyJudgmentFollowUp } from '../types/appeal';
 import { formatThaiDate } from '../utils/dateUtils';
 import { createCaseJudgmentDoc } from '../services/docsService';
+import { compressImageFile } from '../utils/imageUtils';
 
 interface JudgmentRecheckModalProps {
   isOpen: boolean;
@@ -66,6 +68,7 @@ export const JudgmentRecheckModal: React.FC<JudgmentRecheckModalProps> = ({
   const [judgmentText, setJudgmentText] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoName, setPhotoName] = useState<string>('');
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState<boolean>(false);
   const [isVerified, setIsVerified] = useState<boolean>(false);
   const [verifiedBy, setVerifiedBy] = useState<string>('');
   const [recheckNotes, setRecheckNotes] = useState<string>('');
@@ -113,11 +116,11 @@ export const JudgmentRecheckModal: React.FC<JudgmentRecheckModalProps> = ({
     setExportNotice(null);
   }, [target]);
 
-  // Handle paste from clipboard (e.g. screenshot of judgment)
+  // Handle paste from clipboard (e.g. screenshot of judgment) with compression
   useEffect(() => {
     if (!isOpen) return;
 
-    const handlePaste = (e: ClipboardEvent) => {
+    const handlePaste = async (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -125,14 +128,18 @@ export const JudgmentRecheckModal: React.FC<JudgmentRecheckModalProps> = ({
         if (items[i].type.indexOf('image') !== -1) {
           const file = items[i].getAsFile();
           if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              if (event.target?.result) {
-                setPhotoUrl(event.target.result as string);
-                setPhotoName(`ภาพถ่ายคำพิพากษา_${new Date().toISOString().slice(0, 10)}.png`);
-              }
-            };
-            reader.readAsDataURL(file);
+            e.preventDefault();
+            setIsProcessingPhoto(true);
+            try {
+              const compressed = await compressImageFile(file, { maxWidth: 1600, maxHeight: 2200, quality: 0.82 });
+              setPhotoUrl(compressed.dataUrl);
+              setPhotoName(`ภาพถ่ายคำพิพากษา_${new Date().toISOString().slice(0, 10)}.jpg`);
+            } catch (err) {
+              console.error('Paste error in JudgmentRecheckModal:', err);
+            } finally {
+              setIsProcessingPhoto(false);
+            }
+            break;
           }
         }
       }
@@ -154,18 +161,23 @@ export const JudgmentRecheckModal: React.FC<JudgmentRecheckModalProps> = ({
     : `คดี ${followUpItem?.caseNumber} • ${followUpItem?.court} (นัด ${formatThaiDate(followUpItem?.followUpDate || '')})`;
 
   // File Upload Handlers
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setPhotoName(file.name);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setPhotoUrl(event.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file.type.startsWith('image/')) return;
+
+    setIsProcessingPhoto(true);
+    try {
+      const compressed = await compressImageFile(file, { maxWidth: 1600, maxHeight: 2200, quality: 0.82 });
+      setPhotoName(file.name || 'ภาพถ่ายคำพิพากษา.jpg');
+      setPhotoUrl(compressed.dataUrl);
+    } catch (err) {
+      console.error('Recheck file upload error:', err);
+    } finally {
+      setIsProcessingPhoto(false);
+    }
   };
 
   const handleRemovePhoto = () => {
@@ -402,13 +414,19 @@ export const JudgmentRecheckModal: React.FC<JudgmentRecheckModalProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileUpload}
-              accept="image/*,.pdf"
+              accept="image/png,image/jpeg,image/webp,image/jpg"
               className="hidden"
             />
 
             {/* Image Canvas / Viewport */}
             <div className="flex-1 overflow-auto p-4 flex items-center justify-center relative select-none bg-slate-950/60">
-              {photoUrl ? (
+              {isProcessingPhoto ? (
+                <div className="border border-amber-500/50 bg-slate-900/90 rounded-2xl p-8 text-center max-w-sm flex flex-col items-center justify-center space-y-2 animate-pulse">
+                  <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+                  <span className="text-sm font-bold text-white">กำลังปรับขนาดและบีบอัดภาพถ่าย...</span>
+                  <span className="text-xs text-slate-400">ระบบรักษาความคมชัดเพื่อให้อ่านง่ายและไม่ทำให้เบราว์เซอร์ค้าง</span>
+                </div>
+              ) : photoUrl ? (
                 <div
                   className="transition-transform duration-100 ease-out origin-center"
                   style={{

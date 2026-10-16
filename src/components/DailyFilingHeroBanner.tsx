@@ -454,7 +454,7 @@ export const DailyFilingHeroBanner: React.FC<DailyFilingHeroBannerProps> = ({
               </div>
             ) : (
               <p className="text-xs text-slate-300 pt-0.5">
-                ยังไม่มีข้อมูลเวรชี้ตรงตามวันที่นี้ในตาราง PDF (คุณสามารถคลิกเพื่อเลือกจากรายชื่อเวรชี้ประจำเดือนได้)
+                ยังไม่มีข้อมูลเวรชี้ตรงตามวันที่นี้ในตารางเวรชี้ (คุณสามารถคลิกเพื่อเลือกจากรายชื่อเวรชี้ประจำเดือนได้)
               </p>
             )}
           </div>
@@ -468,7 +468,7 @@ export const DailyFilingHeroBanner: React.FC<DailyFilingHeroBannerProps> = ({
                 className="text-xs font-semibold text-amber-200 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5"
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                <span>ดูตารางเวรชี้ประจำเดือน (PDF)</span>
+                <span>ดูตารางเวรชี้ประจำเดือน</span>
               </button>
             )}
           </div>

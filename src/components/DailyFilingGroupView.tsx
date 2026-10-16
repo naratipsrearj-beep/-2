@@ -285,35 +285,6 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
         </div>
       )}
 
-      {/* แถบสีอธิบายสถานะพื้นหลังสำนวนตามคำขอ */}
-      <div className="bg-white border border-slate-200 rounded-xl p-2.5 sm:px-3.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
-        <div className="flex items-center gap-1.5 text-slate-800 font-bold">
-          <Palette className="w-4 h-4 text-indigo-600" />
-          <span>สีพื้นหลังจำแนกตามคำให้การ / นัด:</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 border border-rose-300 text-rose-950 border-l-4 border-l-rose-600 shadow-2xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
-            <span>สีแดง = ยังไม่เลือกสถานะสำนวน (เตือน)</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-100 border border-yellow-300 text-yellow-950 border-l-4 border-l-yellow-500 shadow-2xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-            <span>สีเหลือง = จำเลยรับสารภาพ</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-100 border border-orange-300 text-orange-950 border-l-4 border-l-orange-500 shadow-2xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-            <span>สีส้ม = จำเลยปฏิเสธ (มีนัดต่อ)</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-950 border-l-4 border-l-emerald-600 shadow-2xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-            <span>สีเขียว = สำนวนมีเบิกฟ้อง</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-100 border border-sky-300 text-sky-950 border-l-4 border-l-sky-500 shadow-2xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-            <span>สีฟ้า = มีนัดอื่นๆ</span>
-          </span>
-        </div>
-      </div>
 
       {/* Date Groups */}
       {filteredDates.length === 0 ? (
@@ -410,7 +381,7 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
               {/* Group Body: List of cases */}
               {open && (
                 <div className="divide-y divide-slate-100 border-t border-slate-200/70">
-                  {casesInGroup.map((caseItem) => {
+                  {(filterOnlyActive ? casesInGroup.filter((c) => !c.isCompleted) : casesInGroup).map((caseItem) => {
                     const daysLeft = getDaysRemaining(caseItem);
                     const urgency = getAppealUrgency(caseItem);
                     const isCompleted = caseItem.isCompleted;
@@ -436,6 +407,25 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                             ) : (
                               <span className="text-[11px] text-slate-400 bg-slate-100/80 px-1.5 py-0.5 rounded border border-slate-200">
                                 ยังไม่มีเลขแดง
+                              </span>
+                            )}
+
+                            {/* ป้ายแสดงสถานะการกดเสร็จสิ้นสำนวน */}
+                            {isCompleted ? (
+                              <span
+                                className="text-[11px] font-bold text-emerald-950 bg-emerald-100/90 px-1.5 py-0.5 rounded border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                                title={caseItem.completedDate ? `กดเสร็จสิ้นสำนวนแล้ว (${formatThaiDate(caseItem.completedDate)})` : 'กดเสร็จสิ้นสำนวนแล้ว'}
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>เสร็จสิ้นแล้ว</span>
+                              </span>
+                            ) : (
+                              <span
+                                className="text-[11px] font-bold text-amber-950 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 flex items-center gap-1 shadow-2xs"
+                                title="สำนวนนี้ยังไม่ได้กดเสร็จสิ้น"
+                              >
+                                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>⏳ ยังไม่กดเสร็จสิ้น</span>
                               </span>
                             )}
                             {isCaseUnspecifiedStage(caseItem) && !caseItem.isCompleted && (

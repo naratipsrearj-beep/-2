@@ -248,6 +248,11 @@ export async function saveCaseToFirestore(caseItem: AppealCase): Promise<void> {
   if (!caseItem.extensionCount) {
     cleanData.extensionCount = deleteField();
   }
+  // Firestore per-document limit is 1 MiB (1,048,576 bytes). Ensure base64 string does not exceed safe margin
+  if (cleanData.judgmentPhotoUrl && typeof cleanData.judgmentPhotoUrl === 'string' && cleanData.judgmentPhotoUrl.length > 850000) {
+    console.warn('judgmentPhotoUrl is larger than 850KB, omitting from Firestore doc to avoid rejection');
+    cleanData.judgmentPhotoUrl = deleteField();
+  }
   await setDoc(docRef, cleanData, { merge: true });
 }
 
@@ -264,6 +269,9 @@ export async function saveCasesBatchToFirestore(cases: AppealCase[]): Promise<vo
     }
     if (!c.extensionCount) {
       cleanData.extensionCount = deleteField();
+    }
+    if (cleanData.judgmentPhotoUrl && typeof cleanData.judgmentPhotoUrl === 'string' && cleanData.judgmentPhotoUrl.length > 850000) {
+      cleanData.judgmentPhotoUrl = deleteField();
     }
     batch.set(docRef, cleanData, { merge: true });
   });

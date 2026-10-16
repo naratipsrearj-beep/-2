@@ -30,6 +30,7 @@ interface DutyRosterViewProps {
   canEdit?: boolean;
   onSelectRoster: (rosterId: string) => void;
   onOpenUploadModal: () => void;
+  onOpenEditRosterModal?: (rosterId: string) => void;
   onDeleteRoster: (rosterId: string) => void;
   onUpdateDutyRecord: (rosterId: string, updatedRecord: DailyDutyRecord) => void;
   onUseOfficerForNewCase: (officerName: string, date: string) => void;
@@ -43,6 +44,7 @@ export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
   canEdit = true,
   onSelectRoster,
   onOpenUploadModal,
+  onOpenEditRosterModal,
   onDeleteRoster,
   onUpdateDutyRecord,
   onUseOfficerForNewCase,
@@ -130,11 +132,11 @@ export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
               ตารางเวรชี้ประจำเดือน (Duty Roster)
             </h2>
             <span className="bg-amber-100 text-amber-900 text-xs px-2.5 py-0.5 rounded-full font-medium border border-amber-200">
-              ระบบวิเคราะห์ AI
+              ระบบพิมพ์กรอกตารางเวร
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            อัปโหลดไฟล์ภาพหรือ PDF เพื่อวิเคราะห์ว่าใครเป็นเวรชี้ในแต่ละวัน พร้อมเช็คเวรชี้ประจำวันได้ทันที
+            พิมพ์กรอกและจัดการตารางเวรชี้ประจำเดือน กำหนดรายชื่ออัยการเวรชี้ในแต่ละวัน พร้อมเช็คเวรชี้ประจำวันได้ทันที
           </p>
         </div>
 
@@ -157,20 +159,37 @@ export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
             </div>
           )}
 
+          {canEdit && currentRoster && (
+            <button
+              onClick={() => {
+                if (onOpenEditRosterModal) {
+                  onOpenEditRosterModal(currentRoster.id);
+                } else {
+                  onOpenUploadModal();
+                }
+              }}
+              className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-300 transition cursor-pointer"
+              title="เปิดฟอร์มพิมพ์แก้ไขตารางเวรชี้ของเดือนนี้"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-slate-600" />
+              <span>พิมพ์แก้ไขทั้งเดือน</span>
+            </button>
+          )}
+
           {canEdit && (
             <button
               onClick={onOpenUploadModal}
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition"
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition cursor-pointer"
             >
-              <UploadCloud className="w-4 h-4" />
-              <span>อัพโหลดภาพ/PDF ตารางเวรใหม่</span>
+              <Plus className="w-4 h-4" />
+              <span>+ พิมพ์กรอกตารางเวรชี้ประจำเดือน</span>
             </button>
           )}
 
           {canEdit && currentRoster && (
             <button
               onClick={() => onDeleteRoster(currentRoster.id)}
-              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-slate-200 transition"
+              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-slate-200 transition cursor-pointer"
               title="ลบตารางเวรของรอบเดือนนี้"
             >
               <Trash2 className="w-4 h-4" />
@@ -185,8 +204,8 @@ export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
           <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-xs">
             <span className="text-[11px] text-slate-500 font-medium">รอบเดือนปัจจุบัน</span>
             <p className="text-base font-bold text-slate-800 mt-0.5">{currentRoster.monthNameThai}</p>
-            <span className="text-[10px] text-slate-400 truncate block mt-0.5" title={currentRoster.uploadedFileName}>
-              {currentRoster.uploadedFileName || 'ไฟล์ตารางเวร'}
+            <span className="text-[10px] text-slate-400 truncate block mt-0.5" title={currentRoster.title}>
+              {currentRoster.notes || 'บันทึกข้อมูลตารางเวรชี้แล้ว'}
             </span>
           </div>
 
@@ -268,6 +287,31 @@ export const DutyRosterView: React.FC<DutyRosterViewProps> = ({
             />
           </div>
         </div>
+
+        {/* Empty state when no rosters exist */}
+        {!currentRoster && (
+          <div className="py-12 text-center space-y-3">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
+              <CalendarCheck className="w-7 h-7" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-700 font-['Prompt']">ยังไม่มีข้อมูลตารางเวรชี้ประจำเดือน</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                ท่านสามารถพิมพ์กรอกข้อมูลตารางเวรชี้ประจำเดือน กำหนดรายชื่ออัยการเวรชี้ในแต่ละวันได้อย่างสะดวก รวดเร็ว โดยไม่ต้องใช้ไฟล์ PDF
+              </p>
+            </div>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={onOpenUploadModal}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ พิมพ์กรอกตารางเวรชี้ประจำเดือน</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Calendar View Mode */}
         {viewMode === 'calendar' && currentRoster && (

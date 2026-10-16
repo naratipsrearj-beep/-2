@@ -84,7 +84,7 @@ import { CaseTable } from './components/CaseTable';
 import { DailyFilingByDateView } from './components/DailyFilingByDateView';
 import { DutyRosterView } from './components/DutyRosterView';
 import { MonthlyProsecutorSummaryView } from './components/MonthlyProsecutorSummaryView';
-import { UploadDutyRosterModal } from './components/UploadDutyRosterModal';
+import { DutyRosterEntryModal } from './components/DutyRosterEntryModal';
 import { AddCaseModal } from './components/AddCaseModal';
 import { CompleteModal } from './components/CompleteModal';
 import { ExtendDeadlineModal } from './components/ExtendDeadlineModal';
@@ -164,6 +164,7 @@ export default function App() {
   const [dutyRosters, setDutyRosters] = useState<MonthlyDutyRoster[]>([]);
   const [activeDutyRosterId, setActiveDutyRosterId] = useState<string | undefined>();
   const [isUploadDutyModalOpen, setIsUploadDutyModalOpen] = useState(false);
+  const [dutyRosterEditTargetId, setDutyRosterEditTargetId] = useState<string | undefined>();
   const [addCaseInitialResponsiblePerson, setAddCaseInitialResponsiblePerson] = useState<string | undefined>();
 
   // Navigation tabs: 'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor'
@@ -1721,7 +1722,7 @@ export default function App() {
               </span>
             </button>
 
-            {/* Tab 3: ตารางเวรชี้ประจำเดือน (AI) */}
+            {/* Tab 3: ตารางเวรชี้ประจำเดือน */}
             <button
               onClick={() => setActiveTab('duty_roster')}
               className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
@@ -1731,7 +1732,7 @@ export default function App() {
               }`}
             >
               <UserCheck className="w-4 h-4" />
-              <span>ตารางเวรชี้ประจำเดือน (AI)</span>
+              <span>ตารางเวรชี้ประจำเดือน</span>
               <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === 'duty_roster' ? 'bg-amber-700 text-white' : 'bg-amber-50 text-amber-700'}`}>
                 {dutyRosters.length} รอบเดือน
               </span>
@@ -1845,14 +1846,21 @@ export default function App() {
           />
         )}
 
-        {/* Tab 3: Monthly Duty Roster (AI Analysis & Inspection) */}
+        {/* Tab 3: Monthly Duty Roster (พิมพ์กรอกตารางเวรชี้ประจำเดือน) */}
         {activeTab === 'duty_roster' && (
           <DutyRosterView
             rosters={dutyRosters}
             activeRosterId={activeDutyRosterId}
             canEdit={canEdit}
             onSelectRoster={(id) => setActiveDutyRosterId(id)}
-            onOpenUploadModal={() => setIsUploadDutyModalOpen(true)}
+            onOpenUploadModal={() => {
+              setDutyRosterEditTargetId(undefined);
+              setIsUploadDutyModalOpen(true);
+            }}
+            onOpenEditRosterModal={(id) => {
+              setDutyRosterEditTargetId(id);
+              setIsUploadDutyModalOpen(true);
+            }}
             onDeleteRoster={handleDeleteDutyRoster}
             onUpdateDutyRecord={handleUpdateDutyRecord}
             onUseOfficerForNewCase={handleUseOfficerForNewCase}
@@ -1886,7 +1894,7 @@ export default function App() {
             <span>(นับแต่วันมีคำพิพากษา ตาม ป.วิ.พ. ม.229 / ป.วิ.อ. ม.198)</span>
           </div>
           <div className="text-slate-400 text-[11px]">
-            เชื่อมต่อ Google Sheets และวิเคราะห์ตารางเวรชี้ประจำเดือน (PDF/ภาพ) ด้วย AI • ซิงค์แบบเรียลไทม์
+            เชื่อมต่อ Google Sheets และระบบตารางเวรชี้อัยการประจำเดือน • ซิงค์แบบเรียลไทม์
           </div>
         </div>
       </footer>
@@ -1909,10 +1917,16 @@ export default function App() {
         />
       )}
 
-      <UploadDutyRosterModal
+      <DutyRosterEntryModal
         isOpen={isUploadDutyModalOpen}
-        onClose={() => setIsUploadDutyModalOpen(false)}
+        onClose={() => {
+          setIsUploadDutyModalOpen(false);
+          setDutyRosterEditTargetId(undefined);
+        }}
         onSuccess={handleRosterUploaded}
+        existingRosters={dutyRosters}
+        existingCases={cases}
+        initialRosterId={dutyRosterEditTargetId}
         showToast={showToast}
       />
 
