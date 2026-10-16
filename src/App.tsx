@@ -673,17 +673,20 @@ export default function App() {
     caseId: string,
     reason: CaseCompletionReason,
     completedDate: string,
-    notes?: string
+    notes?: string,
+    isNoAppealConfirmed?: boolean
   ) => {
     const targetCase = cases.find((c) => c.id === caseId);
     if (!targetCase) return;
 
     const updatedCase: AppealCase = {
       ...targetCase,
-      isCompleted: true, // ปิดการแจ้งเตือนถาวร!
+      isCompleted: true, // ปิดการแจ้งเตือนถาวร (ยกเว้น อ.กุลชาติ หากยังไม่ยืนยันไม่อุทธรณ์ จะเตือนก่อนครบ 5 วัน)
       completedDate,
       completionReason: reason,
       notes: notes || targetCase.notes,
+      isNoAppealConfirmed: isNoAppealConfirmed !== undefined ? isNoAppealConfirmed : targetCase.isNoAppealConfirmed,
+      noAppealConfirmedAt: isNoAppealConfirmed ? new Date().toISOString() : targetCase.noAppealConfirmedAt,
       updatedAt: new Date().toISOString(),
     };
 
@@ -692,9 +695,38 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore update case error:', e));
 
-    showToast(`สำนวน ${targetCase.blackCaseNo} บันทึกเสร็จสิ้นแล้ว (หยุดการแจ้งเตือน)`);
+    showToast(`สำนวน ${targetCase.blackCaseNo} บันทึกเสร็จสิ้นแล้ว${isNoAppealConfirmed ? ' (ยืนยันไม่อุทธรณ์แล้ว)' : ''}`);
 
     // Update in Google Sheet if connected
+    const currentToken = token || (await getAccessToken());
+    if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
+      try {
+        await updateAppealCaseInSheet(currentToken, sheetConfig.spreadsheetId, updatedCase);
+      } catch (err) {
+        console.error('Failed to update Google Sheet', err);
+      }
+    }
+  };
+
+  // Confirm No Appeal (เฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ: หยุดการเตือนตอนก่อนครบอุทธรณ์ 5 วัน)
+  const handleConfirmNoAppeal = async (caseId: string) => {
+    const targetCase = cases.find((c) => c.id === caseId);
+    if (!targetCase) return;
+
+    const updatedCase: AppealCase = {
+      ...targetCase,
+      isNoAppealConfirmed: true,
+      noAppealConfirmedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
+    setCases(newCases);
+    saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore no appeal confirm error:', e));
+
+    showToast(`ยืนยันสำนวน ${targetCase.blackCaseNo} ไม่อุทธรณ์แล้ว (หยุดการแจ้งเตือนเรียบร้อย)`);
+
     const currentToken = token || (await getAccessToken());
     if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
       try {
@@ -1659,6 +1691,7 @@ export default function App() {
           cases={cases}
           onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
           onExtendDeadline={(caseItem) => setSelectedCaseForExtend(caseItem)}
+          onConfirmNoAppeal={handleConfirmNoAppeal}
           onSyncCalendar={handleSyncCalendarSingle}
           onSendEmailAlert={(caseItem) => setSelectedCaseForEmailAlert(caseItem)}
           onSendAllUrgentEmails={handleSendAllUrgentEmails}
@@ -1782,6 +1815,7 @@ export default function App() {
             externalSearchTerm={globalVoiceQuery}
             onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
             onExtendDeadline={(caseItem) => setSelectedCaseForExtend(caseItem)}
+            onConfirmNoAppeal={handleConfirmNoAppeal}
             onRecordJudgment={(caseItem) => {
               setSelectedCaseForRecordJudgment(caseItem);
               setIsRecordJudgmentOpen(true);
@@ -1815,6 +1849,7 @@ export default function App() {
             initialSelectedDate={addCaseInitialFilingDate}
             externalDateSearch={globalVoiceQuery}
             onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
+            onConfirmNoAppeal={handleConfirmNoAppeal}
             onExtendDeadline={(caseItem) => setSelectedCaseForExtend(caseItem)}
             onEditCase={(caseItem) => {
               setSelectedCaseForEdit(caseItem);

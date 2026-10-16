@@ -21,14 +21,45 @@ export function calculateAppealDeadline(judgmentDateStr: string): {
   originalDeadline: string;
   isAdjustedForWeekend: boolean;
 } {
-  if (!judgmentDateStr) {
+  if (!judgmentDateStr || !judgmentDateStr.trim()) {
     return { deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false };
   }
 
-  const [year, month, day] = judgmentDateStr.split('-').map(Number);
-  const judgmentDate = new Date(year, month - 1, day);
+  const cleanStr = judgmentDateStr.trim();
+  let judgmentDate: Date | null = null;
 
-  if (!isValid(judgmentDate)) {
+  if (cleanStr.includes('-')) {
+    const parts = cleanStr.split('-').map(Number);
+    if (parts.length === 3) {
+      let [year, month, day] = parts;
+      if (year > 2400) year -= 543; // handle Buddhist Era year
+      judgmentDate = new Date(year, month - 1, day);
+    }
+  } else if (cleanStr.includes('/')) {
+    const parts = cleanStr.split('/').map(Number);
+    if (parts.length === 3) {
+      if (parts[0] > 1000) {
+        let [year, month, day] = parts;
+        if (year > 2400) year -= 543;
+        judgmentDate = new Date(year, month - 1, day);
+      } else {
+        let [day, month, year] = parts;
+        if (year > 2400) year -= 543;
+        judgmentDate = new Date(year, month - 1, day);
+      }
+    }
+  }
+
+  if (!judgmentDate || !isValid(judgmentDate)) {
+    try {
+      const parsed = parseISO(cleanStr);
+      if (isValid(parsed)) {
+        judgmentDate = parsed;
+      }
+    } catch {}
+  }
+
+  if (!judgmentDate || !isValid(judgmentDate)) {
     return { deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false };
   }
 
@@ -63,7 +94,10 @@ export function calculateAppealDeadline(judgmentDateStr: string): {
  * คำนวณจำนวนวันที่เหลือจนถึงวันครบกำหนดอุทธรณ์
  */
 export function getDaysRemaining(caseItem: AppealCase, refDate: Date = new Date()): number {
-  const targetDateStr = caseItem.extendedDeadline || caseItem.appealDeadline;
+  let targetDateStr = caseItem.extendedDeadline || caseItem.appealDeadline;
+  if (!targetDateStr && caseItem.judgmentDate) {
+    targetDateStr = calculateAppealDeadline(caseItem.judgmentDate).deadlineDate;
+  }
   if (!targetDateStr) return 999;
 
   const [tYear, tMonth, tDay] = targetDateStr.split('-').map(Number);
@@ -74,10 +108,48 @@ export function getDaysRemaining(caseItem: AppealCase, refDate: Date = new Date(
 }
 
 /**
+ * ตรวจสอบว่าเป็นสำนวนของ อัยการเจ้าของสำนวน "อ.กุลชาติ" หรือไม่
+ */
+export function isKunchartCase(caseItem: AppealCase): boolean {
+  if (!caseItem) return false;
+  const person = (caseItem.responsiblePerson || '').trim();
+  const prosecutor = (caseItem.prosecutorName || '').trim();
+  return person.includes('กุลชาติ') || prosecutor.includes('กุลชาติ');
+}
+
+/**
+ * ตรวจสอบเงื่อนไขพิเศษเฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ:
+ * หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่
+ * โดยต้องให้กดยืนยันอีกครั้งว่าสำนวนไม่อุทธรณ์แล้ว (isNoAppealConfirmed) จึงจะไม่เตือน
+ */
+export function isKunchartCompletedPendingNoAppealAlert(
+  caseItem: AppealCase,
+  refDate: Date = new Date()
+): boolean {
+  if (!isKunchartCase(caseItem)) return false;
+  if (!caseItem.isCompleted) return false;
+  if (caseItem.isNoAppealConfirmed) return false; // กดยืนยันแล้วว่าไม่อุทธรณ์ จึงไม่เตือน
+  if (!caseItem.appealDeadline && !caseItem.extendedDeadline && !caseItem.judgmentDate) return false;
+
+  const daysLeft = getDaysRemaining(caseItem, refDate);
+  // เตือนตอนก่อนครบอุทธรณ์ 5 วัน (daysLeft <= 5)
+  return daysLeft <= 5;
+}
+
+/**
  * ประเมินระดับความเร่งด่วนในการคุมอุทธรณ์
  */
 export function getAppealUrgency(caseItem: AppealCase, refDate: Date = new Date()): AppealUrgency {
   if (caseItem.isCompleted) {
+    // เงื่อนไขพิเศษเฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ:
+    // หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่
+    // โดยต้องให้กดยืนยันอีกครั้งว่าสำนวนไม่อุทธรณ์แล้ว จึงจะไม่เตือน
+    if (isKunchartCompletedPendingNoAppealAlert(caseItem, refDate)) {
+      const daysLeft = getDaysRemaining(caseItem, refDate);
+      if (daysLeft < 0) return 'overdue';
+      if (daysLeft <= 3) return 'critical';
+      return 'warning';
+    }
     return 'completed';
   }
 

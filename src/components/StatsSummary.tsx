@@ -1,7 +1,7 @@
 import React from 'react';
 import { ShieldAlert, Clock, CheckCircle2, FileText, Calendar, Scale } from 'lucide-react';
 import { AppealCase, DailyJudgmentFollowUp } from '../types/appeal';
-import { getAppealUrgency, getTodayString } from '../utils/dateUtils';
+import { getAppealUrgency, getTodayString, isKunchartCompletedPendingNoAppealAlert } from '../utils/dateUtils';
 
 interface StatsSummaryProps {
   cases: AppealCase[];
@@ -18,7 +18,7 @@ export const StatsSummary: React.FC<StatsSummaryProps> = ({
 }) => {
   const totalCases = cases.length;
   const urgentCount = cases.filter((c) => {
-    if (c.isCompleted) return false;
+    if (c.isCompleted && !isKunchartCompletedPendingNoAppealAlert(c)) return false;
     const u = getAppealUrgency(c);
     return u === 'overdue' || u === 'critical' || u === 'warning';
   }).length;

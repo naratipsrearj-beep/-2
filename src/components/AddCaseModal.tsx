@@ -134,13 +134,13 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   });
 
   useEffect(() => {
-    if (judgmentDate && hasJudgment) {
+    if (judgmentDate && judgmentDate.trim()) {
       const info = calculateAppealDeadline(judgmentDate);
       setDeadlineInfo(info);
     } else {
       setDeadlineInfo({ deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false });
     }
-  }, [judgmentDate, hasJudgment]);
+  }, [judgmentDate]);
 
   // Reset form inputs whenever modal opens for a new case entry (กรอกใหม่ทุกครั้ง ยกเว้นประเภทคดีอาญา)
   useEffect(() => {
@@ -312,15 +312,17 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
         hasJudgment: isUnspecifiedStage
           ? false
           : defendantPlea === 'confessed'
-            ? Boolean(judgmentOutcome.trim() || fullJudgmentText.trim())
+            ? Boolean(judgmentDate.trim() || judgmentOutcome.trim() || fullJudgmentText.trim())
             : hasJudgment,
         defendantPlea: isUnspecifiedStage
           ? undefined
           : (defendantPlea === 'confessed' || hasJudgment)
             ? 'confessed'
             : (isRequisitionCase || appointmentType === 'requisition' ? 'pending' : defendantPlea),
-        judgmentDate: !isUnspecifiedStage && (defendantPlea === 'confessed' || hasJudgment) && judgmentDate ? judgmentDate : undefined,
-        appealDeadline: !isUnspecifiedStage && (defendantPlea === 'confessed' || hasJudgment) && deadlineInfo.deadlineDate ? deadlineInfo.deadlineDate : undefined,
+        judgmentDate: !isUnspecifiedStage && (defendantPlea === 'confessed' || hasJudgment || Boolean(judgmentDate)) && judgmentDate ? judgmentDate : undefined,
+        appealDeadline: !isUnspecifiedStage && (defendantPlea === 'confessed' || hasJudgment || Boolean(judgmentDate))
+          ? (deadlineInfo.deadlineDate || (judgmentDate ? calculateAppealDeadline(judgmentDate).deadlineDate : undefined))
+          : undefined,
         judgmentOutcome: isUnspecifiedStage
           ? ''
           : (defendantPlea === 'confessed' || hasJudgment)

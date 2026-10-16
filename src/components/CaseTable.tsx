@@ -28,7 +28,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
-import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
+import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import {
   getAppointmentLabel,
@@ -53,6 +53,7 @@ interface CaseTableProps {
   canEdit?: boolean;
   onMarkComplete: (caseItem: AppealCase) => void;
   onExtendDeadline: (caseItem: AppealCase) => void;
+  onConfirmNoAppeal?: (caseId: string) => void;
   onRecordJudgment?: (caseItem: AppealCase) => void;
   onOpenJudgmentRecheck?: (caseItem: AppealCase) => void;
   onEditCase?: (caseItem: AppealCase) => void;
@@ -77,6 +78,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   canEdit = true,
   onMarkComplete,
   onExtendDeadline,
+  onConfirmNoAppeal,
   onRecordJudgment,
   onOpenJudgmentRecheck,
   onEditCase,
@@ -129,7 +131,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
     .filter((c) => {
       // Status filter
       if (statusFilter === 'urgent') {
-        if (c.isCompleted) return false;
+        if (c.isCompleted && !isKunchartCompletedPendingNoAppealAlert(c)) return false;
         const u = getAppealUrgency(c);
         return u === 'overdue' || u === 'critical' || u === 'warning';
       }
@@ -196,7 +198,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
               🚨 ใกล้ครบเตือนด่วน (
               {
                 cases.filter((c) => {
-                  if (c.isCompleted) return false;
+                  if (c.isCompleted && !isKunchartCompletedPendingNoAppealAlert(c)) return false;
                   const u = getAppealUrgency(c);
                   return u === 'overdue' || u === 'critical' || u === 'warning';
                 }).length
@@ -878,10 +880,22 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     <td className="py-2.5 px-2 whitespace-nowrap">
                       {isCompleted ? (
                         <div className="space-y-0.5">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            เสร็จสิ้น (ไม่แจ้งเตือน)
-                          </span>
+                          {isKunchartCompletedPendingNoAppealAlert(caseItem) ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-900 bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-full animate-pulse shadow-2xs">
+                              <AlertTriangle className="w-3 h-3 text-purple-700" />
+                              <span>อ.กุลชาติ: เตือนก่อนครบ 5 วัน (รอไม่อุทธรณ์)</span>
+                            </span>
+                          ) : isKunchartCase(caseItem) && caseItem.isNoAppealConfirmed ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>อ.กุลชาติ: ยืนยันไม่อุทธรณ์แล้ว</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              เสร็จสิ้น (ไม่แจ้งเตือน)
+                            </span>
+                          )}
                           {caseItem.completedDate && (
                             <div className="text-[10px] text-slate-400">
                               เมื่อ {formatThaiDate(caseItem.completedDate)}
@@ -955,14 +969,33 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                                 <span>+ วันที่เสร็จ</span>
                               </button>
                             ) : (
-                              <button
-                                onClick={() => onMarkComplete(caseItem)}
-                                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[11px] py-1 px-2 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                                title="แก้ไขวันที่เสร็จสิ้น หรือเปลี่ยนสถานะ"
-                              >
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                <span>{caseItem.completedDate ? `แก้วันเสร็จ (${formatThaiDate(caseItem.completedDate, { short: true })})` : 'แก้วันเสร็จ'}</span>
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => onMarkComplete(caseItem)}
+                                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[11px] py-1 px-2 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="แก้ไขวันที่เสร็จสิ้น หรือเปลี่ยนสถานะ"
+                                >
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>{caseItem.completedDate ? `แก้วันเสร็จ (${formatThaiDate(caseItem.completedDate, { short: true })})` : 'แก้วันเสร็จ'}</span>
+                                </button>
+
+                                {/* ปุ่มยืนยันไม่อุทธรณ์ เฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ */}
+                                {isKunchartCase(caseItem) && !caseItem.isNoAppealConfirmed && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`ยืนยันว่าสำนวน ${caseItem.blackCaseNo} ไม่อุทธรณ์แล้วใช่หรือไม่?\n\nเมื่อยืนยันแล้ว ระบบจะหยุดการแจ้งเตือนสำหรับสำนวนนี้ (เฉพาะ อ.กุลชาติ)`)) {
+                                        onConfirmNoAppeal?.(caseItem.id);
+                                      }
+                                    }}
+                                    className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-[11px] py-1 px-2.5 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 animate-pulse"
+                                    title="กดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว เพื่อหยุดการเตือน (เฉพาะ อ.กุลชาติ)"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3 text-purple-200" />
+                                    <span>✓ ยืนยันไม่อุทธรณ์</span>
+                                  </button>
+                                )}
+                              </>
                             )}
 
                             {!isCompleted && (

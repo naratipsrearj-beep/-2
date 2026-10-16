@@ -104,6 +104,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [completedDate, setCompletedDate] = useState<string>('');
   const [completionReason, setCompletionReason] = useState<CaseCompletionReason>('appealed');
+  const [isNoAppealConfirmed, setIsNoAppealConfirmed] = useState<boolean>(false);
 
   // สำนวนเบิกฟ้อง
   const [isRequisitionCase, setIsRequisitionCase] = useState(false);
@@ -194,6 +195,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setIsCompleted(Boolean(caseItem.isCompleted));
       setCompletedDate(caseItem.completedDate || (caseItem.isCompleted ? getTodayString() : ''));
       setCompletionReason(caseItem.completionReason || 'appealed');
+      setIsNoAppealConfirmed(Boolean(caseItem.isNoAppealConfirmed));
 
       setAppointmentType(caseItem.appointmentType || (caseHasJudgment ? 'none' : (isReq ? 'requisition' : 'rights_protection')));
       setAppointmentTypeName(caseItem.appointmentTypeName || '');
@@ -207,13 +209,13 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   }, [caseItem, isOpen]);
 
   useEffect(() => {
-    if (judgmentDate && hasJudgment) {
+    if (judgmentDate && judgmentDate.trim()) {
       const info = calculateAppealDeadline(judgmentDate);
       setDeadlineInfo(info);
     } else {
       setDeadlineInfo({ deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false });
     }
-  }, [judgmentDate, hasJudgment]);
+  }, [judgmentDate]);
 
   // Paste listener for screenshot of judgment with compression
   useEffect(() => {
@@ -344,15 +346,17 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       hasJudgment: (isUnspecifiedStage || defendantPlea === 'denied' || isRequisitionCase || appointmentType === 'requisition')
         ? false
         : defendantPlea === 'confessed'
-          ? Boolean(judgmentOutcome.trim() || fullJudgmentText.trim())
+          ? Boolean(judgmentDate.trim() || judgmentOutcome.trim() || fullJudgmentText.trim())
           : hasJudgment,
       defendantPlea: isUnspecifiedStage
         ? undefined
         : (isRequisitionCase || appointmentType === 'requisition')
           ? 'pending'
           : (defendantPlea === 'confessed' || hasJudgment ? 'confessed' : defendantPlea),
-      judgmentDate: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed') && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && judgmentDate) ? judgmentDate : undefined,
-      appealDeadline: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed') && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && deadlineInfo.deadlineDate) ? deadlineInfo.deadlineDate : (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed') && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' ? caseItem.appealDeadline : undefined),
+      judgmentDate: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && judgmentDate) ? judgmentDate : undefined,
+      appealDeadline: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition')
+        ? (deadlineInfo.deadlineDate || (judgmentDate ? calculateAppealDeadline(judgmentDate).deadlineDate : caseItem.appealDeadline))
+        : undefined,
       extendedDeadline: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && hasExtension && extendedDeadline) ? extendedDeadline : undefined,
       extensionCount: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && hasExtension && extendedDeadline) ? extensionCount : undefined,
       judgmentOutcome: isUnspecifiedStage
@@ -361,12 +365,12 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
           ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)')
           : (isRequisitionCase || appointmentType === 'requisition')
             ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
-            : (hasJudgment || defendantPlea === 'confessed')
+            : (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate))
               ? (judgmentOutcome.trim() || fullJudgmentText.trim() || '')
               : (appointmentType !== 'none'
                 ? 'อยู่ระหว่างนัดพิจารณา (รอคำให้การ)'
                 : judgmentOutcome),
-      fullJudgmentText: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed') && defendantPlea !== 'denied') ? (fullJudgmentText.trim() || judgmentOutcome.trim() || undefined) : undefined,
+      fullJudgmentText: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) && defendantPlea !== 'denied') ? (fullJudgmentText.trim() || judgmentOutcome.trim() || undefined) : undefined,
       judgmentPhotoUrl: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? (judgmentPhotoUrl || null) : null,
       judgmentPhotoName: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? (judgmentPhotoName || undefined) : undefined,
       judgmentVerified: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? judgmentVerified : undefined,
@@ -376,6 +380,8 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       isCompleted,
       completedDate: isCompleted ? (completedDate || getTodayString()) : undefined,
       completionReason: isCompleted ? completionReason : undefined,
+      isNoAppealConfirmed: isCompleted ? isNoAppealConfirmed : undefined,
+      noAppealConfirmedAt: (isCompleted && isNoAppealConfirmed) ? (caseItem.noAppealConfirmedAt || new Date().toISOString()) : undefined,
       isRequisitionCase: (!isUnspecifiedStage && defendantPlea !== 'confessed' && defendantPlea !== 'denied') ? (isRequisitionCase || appointmentType === 'requisition') : false,
       requisitionDate: isRequisitionCase ? (requisitionDate || appointmentDate || undefined) : (appointmentType === 'requisition' ? appointmentDate : undefined),
       requisitionNotes: requisitionNotes.trim() || undefined,

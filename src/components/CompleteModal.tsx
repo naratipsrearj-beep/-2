@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, AlertTriangle, X, ShieldCheck, Undo2, Edit3, Save } from 'lucide-react';
 import { AppealCase, CaseCompletionReason } from '../types/appeal';
-import { formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { formatThaiDate, getTodayString, isKunchartCase } from '../utils/dateUtils';
 
 interface CompleteModalProps {
   isOpen: boolean;
@@ -11,7 +11,8 @@ interface CompleteModalProps {
     caseId: string,
     reason: CaseCompletionReason,
     completedDate: string,
-    notes?: string
+    notes?: string,
+    isNoAppealConfirmed?: boolean
   ) => void;
   onReopenCase?: (caseId: string) => void;
   onEditCase?: (caseItem: AppealCase) => void;
@@ -28,6 +29,7 @@ export const CompleteModal: React.FC<CompleteModalProps> = ({
   const [reason, setReason] = useState<CaseCompletionReason>('appealed');
   const [completedDate, setCompletedDate] = useState<string>(getTodayString());
   const [notes, setNotes] = useState('');
+  const [isNoAppealConfirmed, setIsNoAppealConfirmed] = useState<boolean>(false);
 
   // Pre-populate with case details when opening
   useEffect(() => {
@@ -35,15 +37,23 @@ export const CompleteModal: React.FC<CompleteModalProps> = ({
       setReason(caseItem.completionReason || 'appealed');
       setCompletedDate(caseItem.completedDate || getTodayString());
       setNotes(caseItem.notes || '');
+      setIsNoAppealConfirmed(Boolean(caseItem.isNoAppealConfirmed));
     }
   }, [caseItem, isOpen]);
 
   if (!isOpen || !caseItem) return null;
 
   const isAlreadyCompleted = caseItem.isCompleted;
+  const isKunchart = isKunchartCase(caseItem);
 
   const handleConfirm = () => {
-    onConfirmComplete(caseItem.id, reason, completedDate, notes);
+    onConfirmComplete(
+      caseItem.id,
+      reason,
+      completedDate,
+      notes,
+      isKunchart ? isNoAppealConfirmed : undefined
+    );
     onClose();
   };
 
@@ -199,16 +209,47 @@ export const CompleteModal: React.FC<CompleteModalProps> = ({
               />
             </div>
 
-            {!isAlreadyCompleted && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 flex items-start gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <strong className="font-semibold">ผลกระทบของการกดเสร็จสิ้น:</strong>
-                  <p className="text-[11px] mt-0.5 text-emerald-700">
-                    สำนวนนี้จะถูกทำเครื่องหมายว่า "เสร็จสิ้นแล้ว" และ<strong>ระบบจะไม่นำมาแจ้งเตือนเตือนภัยอีกต่อไป</strong> โดยท่านสามารถกดยกเลิกเสร็จสิ้นหรือแก้ไขรายละเอียดได้ทุกเมื่อ
-                  </p>
+            {/* ข้อความและตัวเลือกพิเศษเฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ */}
+            {isKunchart ? (
+              <div className="bg-purple-50 border-2 border-purple-300 rounded-xl p-3.5 text-xs text-purple-950 space-y-2">
+                <div className="flex items-center gap-1.5 font-bold text-purple-900">
+                  <AlertTriangle className="w-4 h-4 text-purple-700 shrink-0" />
+                  <span>เงื่อนไขพิเศษเฉพาะเจ้าของสำนวน: อ.กุลชาติ</span>
                 </div>
+                <p className="text-[11px] text-purple-800 leading-relaxed">
+                  สำหรับสำนวนของ <strong>อ.กุลชาติ</strong> หากกดเสร็จสิ้นแล้ว ระบบจะยังคงแจ้งเตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่ โดยต้องให้กดยืนยันอีกครั้งว่า <strong>"สำนวนไม่อุทธรณ์แล้ว"</strong> จึงจะไม่เตือน
+                </p>
+                <label className="flex items-start gap-2 pt-1 font-semibold text-purple-950 cursor-pointer bg-white/80 p-2 rounded-lg border border-purple-200">
+                  <input
+                    type="checkbox"
+                    checked={isNoAppealConfirmed}
+                    onChange={(e) => setIsNoAppealConfirmed(e.target.checked)}
+                    className="w-4 h-4 text-purple-600 rounded border-purple-300 focus:ring-purple-500 cursor-pointer mt-0.5 shrink-0"
+                  />
+                  <div>
+                    <span className="block text-xs font-bold text-purple-950">
+                      ยืนยันว่าสำนวนไม่อุทธรณ์แล้ว (ปิดการเตือนตอนก่อนครบ 5 วัน)
+                    </span>
+                    <span className="text-[10px] text-purple-700 font-normal block">
+                      {isNoAppealConfirmed
+                        ? '✅ ยืนยันแล้ว: ระบบจะไม่แจ้งเตือนตอนก่อนครบอุทธรณ์ 5 วันสำหรับสำนวนนี้'
+                        : '⚠️ หากยังไม่ติ๊ก: แม้จะกดเสร็จสิ้นแล้ว ระบบจะยังคงเตือนตอนก่อนครบกำหนดอุทธรณ์ 5 วัน'}
+                    </span>
+                  </div>
+                </label>
               </div>
+            ) : (
+              !isAlreadyCompleted && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 flex items-start gap-2.5">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-semibold">ผลกระทบของการกดเสร็จสิ้น:</strong>
+                    <p className="text-[11px] mt-0.5 text-emerald-700">
+                      สำนวนนี้จะถูกทำเครื่องหมายว่า "เสร็จสิ้นแล้ว" และ<strong>ระบบจะไม่นำมาแจ้งเตือนเตือนภัยอีกต่อไป</strong> โดยท่านสามารถกดยกเลิกเสร็จสิ้นหรือแก้ไขรายละเอียดได้ทุกเมื่อ
+                    </p>
+                  </div>
+                </div>
+              )
             )}
           </div>
 

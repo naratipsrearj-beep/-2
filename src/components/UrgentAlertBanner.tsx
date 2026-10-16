@@ -1,13 +1,14 @@
 import React from 'react';
 import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
-import { getDaysRemaining, getAppealUrgency, formatThaiDate } from '../utils/dateUtils';
+import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert } from '../utils/dateUtils';
 import { getRequisitionStatus, isPendingRequisitionCase, getRequisitionAlertInfo } from '../utils/appointmentUtils';
 
 interface UrgentAlertBannerProps {
   cases: AppealCase[];
   onMarkComplete: (caseItem: AppealCase) => void;
   onExtendDeadline: (caseItem: AppealCase) => void;
+  onConfirmNoAppeal?: (caseId: string) => void;
   onSyncCalendar?: (caseItem: AppealCase) => void;
   onSendEmailAlert?: (caseItem: AppealCase) => void;
   onSendAllUrgentEmails?: () => void;
@@ -19,12 +20,19 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
   cases,
   onMarkComplete,
   onExtendDeadline,
+  onConfirmNoAppeal,
   onSyncCalendar,
   onSendEmailAlert,
   onSendAllUrgentEmails,
   onQuickChangeRequisitionStatus,
   onEditCase,
 }) => {
+  // สำนวนเฉพาะของ อ.กุลชาติ: หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่
+  // จนกว่าจะกดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว
+  const kunchartPendingCases = cases
+    .filter((c) => isKunchartCompletedPendingNoAppealAlert(c))
+    .sort((a, b) => getDaysRemaining(a) - getDaysRemaining(b));
+
   // กรองเฉพาะสำนวนที่ "ยังไม่เสร็จสิ้น" และ "ใกล้ครบกำหนด หรือขาดอุทธรณ์แล้ว" (urgency: overdue, critical, warning)
   const urgentCases = cases
     .filter((c) => {
@@ -53,7 +61,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
     .filter(({ alertInfo, reqStatus }) => alertInfo.isAlertDue || reqStatus.isUrgent || reqStatus.isPast)
     .sort((a, b) => b.alertInfo.daysElapsed - a.alertInfo.daysElapsed);
 
-  if (urgentCases.length === 0 && pendingRequisitionCasesWithAlert.length === 0) {
+  if (urgentCases.length === 0 && pendingRequisitionCasesWithAlert.length === 0 && kunchartPendingCases.length === 0) {
     return (
       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-emerald-800 flex items-center justify-between shadow-xs mb-6">
         <div className="flex items-center gap-3">
@@ -85,6 +93,137 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
 
   return (
     <div className="space-y-4 mb-6">
+      {/* 0. แจ้งเตือนเฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ: หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่ */}
+      {kunchartPendingCases.length > 0 && (
+        <div className="bg-gradient-to-r from-purple-50 via-fuchsia-50 to-pink-50 border-2 border-purple-300 rounded-2xl p-4 sm:p-5 shadow-sm transition-all animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-purple-200/80 gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-700 text-white flex items-center justify-center shadow-md shadow-purple-600/20 animate-pulse flex-shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-base sm:text-lg text-purple-950 font-['Prompt']">
+                    เตือนเฉพาะสำนวน อ.กุลชาติ: พบ {kunchartPendingCases.length} สำนวนเตือนก่อนครบอุทธรณ์ 5 วัน
+                  </h3>
+                  <span className="bg-purple-700 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-xs">
+                    เสร็จสิ้นแล้ว แต่รอการยืนยันไม่อุทธรณ์
+                  </span>
+                </div>
+                <p className="text-xs text-purple-900 mt-0.5">
+                  สำนวนของ <strong>อ.กุลชาติ</strong> แม้กดเสร็จสิ้นแล้ว ระบบจะยังคงแจ้งเตือนตอนก่อนครบอุทธรณ์ 5 วัน จนกว่าจะกดยืนยันว่า <strong>"สำนวนไม่อุทธรณ์แล้ว"</strong>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-3.5">
+            {kunchartPendingCases.map((caseItem) => {
+              const daysLeft = getDaysRemaining(caseItem);
+              const isOverdue = daysLeft < 0;
+              const effectiveDeadline = caseItem.extendedDeadline || caseItem.appealDeadline;
+
+              return (
+                <div
+                  key={caseItem.id}
+                  className="rounded-xl p-3.5 border border-purple-300 bg-white shadow-xs flex flex-col justify-between transition hover:shadow-md"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 text-sm font-['Prompt']">
+                          ดำ {caseItem.blackCaseNo}
+                        </span>
+                        {caseItem.redCaseNo && (
+                          <span className="text-xs text-rose-700 font-semibold bg-rose-100 px-1.5 py-0.5 rounded border border-rose-200">
+                            แดง {caseItem.redCaseNo}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-purple-950 bg-purple-100 font-bold px-2 py-0.5 rounded border border-purple-300" title="อัยการเจ้าของสำนวน">
+                          👔 {caseItem.responsiblePerson || caseItem.prosecutorName || 'อ.กุลชาติ'}
+                        </span>
+                      </div>
+
+                      <span
+                        className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                          isOverdue
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : daysLeft <= 3
+                            ? 'bg-purple-100 text-purple-900 border border-purple-300 animate-pulse'
+                            : 'bg-amber-100 text-amber-900 border border-amber-300'
+                        }`}
+                      >
+                        <Clock className="w-3 h-3" />
+                        {isOverdue ? `เลยกำหนด ${Math.abs(daysLeft)} วัน` : `เหลืออีก ${daysLeft} วัน`}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-700 space-y-1 mb-2.5">
+                      <div className="font-medium text-slate-800 truncate" title={caseItem.court}>
+                        📍 {caseItem.court}
+                      </div>
+                      <div className="text-slate-600 truncate text-[11px]">
+                        <span className="font-medium text-slate-700">จำเลย:</span> {caseItem.defendant}
+                      </div>
+                      <div className="bg-purple-50/90 border border-purple-200 rounded-lg p-2 text-[11px] text-purple-950 space-y-0.5">
+                        <div className="flex justify-between">
+                          <span className="text-purple-700 font-medium">วันครบอุทธรณ์:</span>
+                          <span className="font-bold text-rose-700">{formatThaiDate(effectiveDeadline)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-purple-700">สถานะปัจจุบัน:</span>
+                          <span className="text-emerald-700 font-semibold">กดเสร็จสิ้นแล้ว</span>
+                        </div>
+                        <div className="text-[10px] text-purple-800 pt-0.5">
+                          ⚠️ อยู่ในเกณฑ์เตือนก่อนครบอุทธรณ์ 5 วัน
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-purple-100 space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`ยืนยันว่าสำนวน ${caseItem.blackCaseNo} ไม่อุทธรณ์แล้วใช่หรือไม่?\n\nเมื่อยืนยันแล้ว ระบบจะหยุดการแจ้งเตือนสำหรับสำนวนนี้ทันที`)) {
+                          onConfirmNoAppeal?.(caseItem.id);
+                        }
+                      }}
+                      className="w-full bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95"
+                      title="กดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว เพื่อหยุดการแจ้งเตือนเตือนภัยเฉพาะ อ.กุลชาติ"
+                    >
+                      <CheckCircle className="w-4 h-4 text-purple-200" />
+                      <span>✓ ยืนยันว่าสำนวนไม่อุทธรณ์แล้ว (หยุดเตือน)</span>
+                    </button>
+
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      {onEditCase && (
+                        <button
+                          type="button"
+                          onClick={() => onEditCase(caseItem)}
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>ดู/แก้ไข</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onExtendDeadline(caseItem)}
+                        className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-amber-200 cursor-pointer"
+                      >
+                        <Calendar className="w-3 h-3 text-amber-700" />
+                        <span>ขอขยายเวลา</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 1. แจ้งเตือนสำนวนเบิกฟ้อง (เตือนทุกๆ 5 วัน หากยังไม่เปลี่ยนสถานะเป็นรับสารภาพหรือปฏิเสธ) */}
       {pendingRequisitionCasesWithAlert.length > 0 && (
         <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-orange-100/70 border-2 border-orange-300 rounded-2xl p-4 sm:p-5 shadow-sm transition-all animate-in fade-in">

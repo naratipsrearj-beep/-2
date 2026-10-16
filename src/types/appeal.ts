@@ -56,6 +56,10 @@ export interface AppealCase {
   isCompleted: boolean;        // สถานะ: เสร็จสิ้นแล้วหรือไม่ (ถ้าจริง จะหยุดเตือนทันที)
   completedDate?: string;      // วันที่กดเสร็จสิ้น
   completionReason?: CaseCompletionReason;
+  // กรณีพิเศษเฉพาะ อัยการเจ้าของสำนวน อ.กุลชาติ:
+  // หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่ จนกว่าจะกดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว
+  isNoAppealConfirmed?: boolean; // ยืนยันว่าสำนวนไม่อุทธรณ์แล้ว (เฉพาะ อ.กุลชาติ จะหยุดเตือนเมื่อเป็น true)
+  noAppealConfirmedAt?: string; // วันที่กดยืนยันไม่อุทธรณ์
   judgmentOutcome?: string;    // ผลคำพิพากษาโดยย่อ (เช่น ยกฟ้อง, ลงโทษตามฟ้อง, จำคุก 2 ปี)
   responsiblePerson: string;   // อัยการเจ้าของสำนวน
   notes?: string;              // หมายเหตุเพิ่มเติม

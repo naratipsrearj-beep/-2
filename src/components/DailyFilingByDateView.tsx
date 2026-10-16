@@ -46,7 +46,9 @@ import {
   formatThaiDate,
   getAppealUrgency,
   getDaysRemaining,
-  getTodayString
+  getTodayString,
+  isKunchartCase,
+  isKunchartCompletedPendingNoAppealAlert
 } from '../utils/dateUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import {
@@ -283,6 +285,7 @@ interface DailyFilingByDateViewProps {
   token?: string | null;
   sheetConfig?: SheetConfig | null;
   onMarkComplete: (caseItem: AppealCase) => void;
+  onConfirmNoAppeal?: (caseId: string) => void;
   onReopenCase?: (caseId: string) => void;
   onExtendDeadline: (caseItem: AppealCase) => void;
   onEditCase?: (caseItem: AppealCase) => void;
@@ -312,6 +315,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   token,
   sheetConfig,
   onMarkComplete,
+  onConfirmNoAppeal,
   onReopenCase,
   onExtendDeadline,
   onEditCase,
@@ -2014,13 +2018,31 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
                           {/* ป้ายแสดงสถานะการกดเสร็จสิ้นสำนวน */}
                           {isCompleted ? (
-                            <span
-                              className="text-[11px] font-bold text-emerald-950 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-2xs"
-                              title={caseItem.completedDate ? `กดเสร็จสิ้นสำนวนแล้ว (${formatThaiDate(caseItem.completedDate)})` : 'กดเสร็จสิ้นสำนวนแล้ว'}
-                            >
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                              <span>เสร็จสิ้นแล้ว</span>
-                            </span>
+                            isKunchartCompletedPendingNoAppealAlert(caseItem) ? (
+                              <span
+                                className="text-[11px] font-bold text-purple-950 bg-purple-100 px-2 py-0.5 rounded-md border border-purple-300 inline-flex items-center gap-1 shadow-2xs animate-pulse"
+                                title="อ.กุลชาติ: เตือนก่อนครบอุทธรณ์ 5 วัน (รอการยืนยันไม่อุทธรณ์)"
+                              >
+                                <AlertTriangle className="w-3 h-3 text-purple-700 shrink-0" />
+                                <span>อ.กุลชาติ: เตือนก่อนครบ 5 วัน (รอไม่อุทธรณ์)</span>
+                              </span>
+                            ) : isKunchartCase(caseItem) && caseItem.isNoAppealConfirmed ? (
+                              <span
+                                className="text-[11px] font-bold text-emerald-950 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-2xs"
+                                title="อ.กุลชาติ: ยืนยันไม่อุทธรณ์แล้ว (หยุดการแจ้งเตือน)"
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>อ.กุลชาติ: ยืนยันไม่อุทธรณ์แล้ว</span>
+                              </span>
+                            ) : (
+                              <span
+                                className="text-[11px] font-bold text-emerald-950 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-2xs"
+                                title={caseItem.completedDate ? `กดเสร็จสิ้นสำนวนแล้ว (${formatThaiDate(caseItem.completedDate)})` : 'กดเสร็จสิ้นสำนวนแล้ว'}
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>เสร็จสิ้นแล้ว</span>
+                              </span>
+                            )
                           ) : (
                             <span
                               className="text-[11px] font-bold text-amber-950 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 inline-flex items-center gap-1 shadow-2xs"
@@ -2475,7 +2497,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 </button>
                               )}
 
-                              {/* 4. Complete / Edit Completed Date */}
+                               {/* 4. Complete / Edit Completed Date */}
                               {onMarkComplete && (
                                 <button
                                   type="button"
@@ -2489,6 +2511,23 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                   <span>{isCompleted ? 'แก้เสร็จ' : 'เสร็จสิ้น'}</span>
+                                </button>
+                              )}
+
+                              {/* ปุ่มยืนยันไม่อุทธรณ์ เฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ */}
+                              {isKunchartCase(caseItem) && isCompleted && !caseItem.isNoAppealConfirmed && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm(`ยืนยันว่าสำนวน ${caseItem.blackCaseNo} ไม่อุทธรณ์แล้วใช่หรือไม่?\n\nเมื่อยืนยันแล้ว ระบบจะหยุดการแจ้งเตือนสำหรับสำนวนนี้ (เฉพาะ อ.กุลชาติ)`)) {
+                                      onConfirmNoAppeal?.(caseItem.id);
+                                    }
+                                  }}
+                                  className="px-2 py-1 text-xs rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 bg-purple-700 hover:bg-purple-800 text-white font-bold animate-pulse"
+                                  title="กดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว เพื่อหยุดการเตือน (เฉพาะ อ.กุลชาติ)"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-200" />
+                                  <span>✓ ยืนยันไม่อุทธรณ์</span>
                                 </button>
                               )}
 
