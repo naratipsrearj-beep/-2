@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, UserPlus, Trash2, CheckCircle2, Clock, AlertTriangle, Shield, User, Users, Mail, KeyRound, Eye, EyeOff, Edit3, Check } from 'lucide-react';
+import { X, ShieldCheck, UserPlus, Trash2, CheckCircle2, Clock, AlertTriangle, Shield, User, Users, Mail, KeyRound, Eye, EyeOff, Edit3, Check, Download } from 'lucide-react';
 import { ProjectSettings, PermissionRequest, ADMIN_EMAIL, DEFAULT_ADMIN_PIN } from '../services/firestoreService';
 
 interface UserPermissionsModalProps {
@@ -12,6 +12,9 @@ interface UserPermissionsModalProps {
   onAddEditor: (email: string) => Promise<void>;
   onRemoveEditor: (email: string) => Promise<void>;
   onUpdateAdminPin?: (newPin: string) => Promise<void>;
+  onDownloadBackup?: () => void;
+  onOpenBackupViewer?: () => void;
+  backupCounts?: { cases: number; dutyRosters: number; followUps: number };
   isProcessing?: boolean;
 }
 
@@ -25,6 +28,9 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   onAddEditor,
   onRemoveEditor,
   onUpdateAdminPin,
+  onDownloadBackup,
+  onOpenBackupViewer,
+  backupCounts,
   isProcessing = false,
 }) => {
   const [newEditorEmail, setNewEditorEmail] = useState('');
@@ -373,6 +379,70 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
               )}
             </div>
           </div>
+
+          {/* Offline JSON Backup Card */}
+          {onDownloadBackup && (
+            <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-white border border-emerald-200 rounded-xl p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm font-bold">
+                    <Download className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-emerald-950 font-['Prompt'] flex items-center gap-2">
+                      <span>สำรองข้อมูลระบบทั้งหมด (Download JSON Backup)</span>
+                      <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                        Admin Only
+                      </span>
+                    </h3>
+                    <p className="text-xs text-emerald-900 mt-1 leading-relaxed">
+                      ดาวน์โหลดข้อมูลทั้งหมดของระบบในรูปแบบไฟล์ JSON สำหรับเก็บสำรองข้อมูลแบบออฟไลน์ (Offline Archival) โดยประกอบด้วยข้อมูลสำนวนคดี, ตารางเวรชี้ และรายการติดตามคำพิพากษาครบถ้วน
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 self-start sm:self-center shrink-0">
+                  {onOpenBackupViewer && (
+                    <button
+                      type="button"
+                      onClick={onOpenBackupViewer}
+                      className="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-bold px-3.5 py-2 rounded-lg shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      title="เปิดดูและค้นหาข้อมูลสำรองโดยไม่ต้องใช้โปรแกรมอื่น"
+                    >
+                      <Eye className="w-4 h-4 text-blue-600" />
+                      <span>เปิดดู / ตรวจสอบไฟล์สำรอง</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={onDownloadBackup}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>ดาวน์โหลดไฟล์ (.json)</span>
+                  </button>
+                </div>
+              </div>
+
+              {backupCounts && (
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-emerald-200/70 text-center">
+                  <div className="bg-white/80 p-2 rounded-lg border border-emerald-100">
+                    <div className="text-[10px] text-slate-500 font-medium">สำนวนคดีทั้งหมด</div>
+                    <div className="text-base font-bold text-slate-900 font-mono">{backupCounts.cases}</div>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-lg border border-emerald-100">
+                    <div className="text-[10px] text-slate-500 font-medium">ตารางเวรชี้</div>
+                    <div className="text-base font-bold text-slate-900 font-mono">{backupCounts.dutyRosters}</div>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-lg border border-emerald-100">
+                    <div className="text-[10px] text-slate-500 font-medium">รายการติดตาม</div>
+                    <div className="text-base font-bold text-slate-900 font-mono">{backupCounts.followUps}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

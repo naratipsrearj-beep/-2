@@ -77,8 +77,20 @@ export interface AppealCase {
   originalReceivedNumberS1?: string;// เลขรับ ส.1 ของสำนวนเดิม
   originalFilingNumberS4?: string;  // เลขฟ้อง ส.4 ของสำนวนเดิม
   severedOrderDate?: string;         // วันที่ศาลมีคำสั่งให้แยกฟ้อง
-  severedDeadlineDate?: string;      // กำหนดเวลายื่นฟ้องใหม่ตามคำสั่งศาล (เช่น ภายใน 15 วัน)
+  severedDeadlineDate?: string;      // กำหนดเวลายื่นฟ้องใหม่ตามคำสั่งศาล (เช่น ภายใน 7 วัน หรือ 15 วัน)
   severedNotes?: string;             // หมายเหตุการแยกฟ้อง เช่น จำเลยที่ 2 ให้การปฏิเสธ ศาลสั่งให้แยกฟ้อง
+
+  // กรณีจำเลยหลายคน: บางคนรับสารภาพ บางคนปฏิเสธ และศาลสั่งแยกฟ้อง (ป.วิ.อ. ม.176)
+  hasMultipleDefendants?: boolean;   // มีกรณีจำเลยหลายคน
+  hasPartialDenial?: boolean;        // บางคนให้การปฏิเสธ (ในขณะที่บางคนรับสารภาพ)
+  confessedDefendants?: string;     // รายชื่อจำเลยที่รับสารภาพ (เช่น จำเลยที่ 1)
+  deniedDefendants?: string;        // รายชื่อจำเลยที่ปฏิเสธ (เช่น จำเลยที่ 2)
+  hasPendingSeveredFiling?: boolean; // ศาลมีคำสั่งให้พนักงานอัยการแยกฟ้องจำเลยที่ปฏิเสธ
+  severedFilingOrderDate?: string;  // วันที่ศาลมีคำสั่งให้แยกฟ้อง (YYYY-MM-DD)
+  severedFilingDeadline?: string;   // วันครบกำหนดยื่นแยกฟ้อง 7 วัน (YYYY-MM-DD)
+  isSeveredFilingCompleted?: boolean;// ดำเนินการแยกฟ้องแล้วหรือไม่
+  severedNewBlackCaseNo?: string;   // เลขคดีดำของสำนวนที่แยกฟ้องใหม่ (เช่น อ.125/2569)
+  severedNewCaseId?: string;        // ID ของสำนวนคดีใหม่ที่แยกฟ้องแล้ว
 
   // นัดของศาลในสำนวน (นัดแรก / นัดปัจจุบัน เช่น นัดคุ้มครองสิทธิ)
   appointmentType?: CourtAppointmentType;

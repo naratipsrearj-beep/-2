@@ -48,7 +48,8 @@ import {
   getDaysRemaining,
   getTodayString,
   isKunchartCase,
-  isKunchartCompletedPendingNoAppealAlert
+  isKunchartCompletedPendingNoAppealAlert,
+  getSeveredFilingAlertInfo
 } from '../utils/dateUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import {
@@ -304,6 +305,8 @@ interface DailyFilingByDateViewProps {
   onQuickChangePleaStatus?: (caseItem: AppealCase, newPlea: 'confessed' | 'denied' | 'pending' | 'requisition' | 'unspecified') => void;
   onOpenMonthlyProsecutorSummary?: (yearMonth?: string) => void;
   onToast?: (message: string) => void;
+  onMarkSeveredCompleted?: (caseItem: AppealCase, newBlackNo?: string) => void;
+  onCreateSeveredCase?: (parentCase: AppealCase) => void;
 }
 
 export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
@@ -334,6 +337,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onQuickChangePleaStatus,
   onOpenMonthlyProsecutorSummary,
   onToast,
+  onMarkSeveredCompleted,
+  onCreateSeveredCase,
 }) => {
   // วันที่เลือกเริ่มต้น
   const todayStr = getTodayString();
@@ -2235,6 +2240,86 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             );
                           })()}
                         </div>
+
+                        {/* สำนวนแยกฟ้องมาจากคดีเดิม */}
+                        {caseItem.isSeveredCase && caseItem.originalBlackCaseNo && (
+                          <div className="mt-1 text-[11px] text-purple-900 bg-purple-50 border border-purple-200 rounded-lg px-2 py-1 font-medium flex items-center gap-1.5 w-fit">
+                            <span className="font-bold">✂️ สำนวนแยกฟ้อง:</span>
+                            <span>ศาลสั่งแยกฟ้องมาจากคดีเดิม ดำ {caseItem.originalBlackCaseNo}</span>
+                          </div>
+                        )}
+
+                        {/* กรณีจำเลยหลายคน: บางคนรับสารภาพ & บางคนปฏิเสธ (ศาลสั่งแยกฟ้องภายใน 7 วัน ป.วิ.อ. ม.176) */}
+                        {(caseItem.hasPartialDenial || caseItem.hasPendingSeveredFiling) && (() => {
+                          const alertInfo = getSeveredFilingAlertInfo(caseItem);
+                          return (
+                            <div className="mt-2 p-2.5 rounded-xl bg-gradient-to-r from-purple-50/90 via-indigo-50/80 to-amber-50/50 border-2 border-purple-300 text-xs space-y-1.5 shadow-2xs">
+                              <div className="flex items-center justify-between flex-wrap gap-1.5">
+                                <span className="font-bold text-purple-950 flex items-center gap-1.5 font-['Prompt']">
+                                  <span className="w-5 h-5 rounded-md bg-purple-700 text-white flex items-center justify-center text-[10px]">👥</span>
+                                  <span>จำเลยหลายคน: บางคนรับสารภาพ & บางคนปฏิเสธ (ป.วิ.อ. ม.176)</span>
+                                </span>
+                                {caseItem.hasPendingSeveredFiling && (
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border shadow-2xs ${
+                                    caseItem.isSeveredFilingCompleted
+                                      ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                                      : alertInfo.status === 'overdue'
+                                      ? 'bg-rose-500 text-white border-rose-600 animate-pulse'
+                                      : alertInfo.status === 'due_today'
+                                      ? 'bg-amber-400 text-slate-950 border-amber-500 font-extrabold animate-pulse'
+                                      : 'bg-purple-200 text-purple-950 border-purple-300'
+                                  }`}>
+                                    ✂️ {caseItem.isSeveredFilingCompleted ? (caseItem.severedNewBlackCaseNo ? `แยกฟ้องแล้ว (${caseItem.severedNewBlackCaseNo})` : 'ยื่นแยกฟ้องแล้ว') : alertInfo.alertBadgeText}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px]">
+                                {caseItem.confessedDefendants && (
+                                  <div className="flex items-center gap-1 text-yellow-950 bg-white/80 px-2 py-1 rounded-lg border border-yellow-200">
+                                    <span className="font-semibold shrink-0">🟡 รับสารภาพ:</span>
+                                    <span className="truncate">{caseItem.confessedDefendants}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-1 text-orange-950 bg-white/80 px-2 py-1 rounded-lg border border-orange-200 font-medium">
+                                  <span className="font-bold shrink-0">🟠 ปฏิเสธ (ต้องแยกฟ้อง):</span>
+                                  <span className="truncate">{caseItem.deniedDefendants || caseItem.defendant}</span>
+                                </div>
+                              </div>
+
+                              {caseItem.hasPendingSeveredFiling && (
+                                <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-purple-200/80 text-purple-900 flex-wrap gap-1.5">
+                                  <div>
+                                    <span>ศาลสั่ง: <strong>{formatThaiDate(alertInfo.orderDate)}</strong> • </span>
+                                    <span className="font-bold text-rose-700">ครบ 7 วัน: {formatThaiDate(alertInfo.deadlineDate)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {!caseItem.isSeveredFilingCompleted && onMarkSeveredCompleted && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onMarkSeveredCompleted(caseItem)}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2 py-0.5 rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
+                                        title="บันทึกว่ายื่นแยกฟ้องเสร็จเรียบร้อยแล้ว"
+                                      >
+                                        <span>✓ ยื่นแยกฟ้องแล้ว</span>
+                                      </button>
+                                    )}
+                                    {onCreateSeveredCase && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onCreateSeveredCase(caseItem)}
+                                        className="bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-bold px-2 py-0.5 rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
+                                        title="เปิดฟอร์มสร้างสำนวนแยกฟ้องที่เชื่อมโยงกับคดีนี้ทันที"
+                                      >
+                                        <span>➕ สร้างสำนวนแยกฟ้อง</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Interactive Plea Switcher (ปรับคำให้การจำเลย พร้อมปรับสีพื้นหลังให้ตรงกับประเภทสำนวนทันที) */}
                         {canEdit && onQuickChangePleaStatus && !isCompleted && (

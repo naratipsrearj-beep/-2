@@ -27,8 +27,8 @@ import {
   Shield,
   Image as ImageIcon
 } from 'lucide-react';
-import { AppealCase } from '../types/appeal';
-import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert } from '../utils/dateUtils';
+import { AppealCase, CaseAppointment } from '../types/appeal';
+import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import {
   getAppointmentLabel,
@@ -41,6 +41,7 @@ import {
   isPendingRequisitionCase,
   getRequisitionAlertInfo,
   isCaseUnspecifiedStage,
+  getMissingJudgmentAlertInfo,
 } from '../utils/appointmentUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCaseUtils';
@@ -144,8 +145,18 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       if (statusFilter === 'pending_trial') {
         return !c.isCompleted && !isJudgmentRecorded(c);
       }
+      if (statusFilter === 'missing_judgment') {
+        const info = getMissingJudgmentAlertInfo(c);
+        return info.isEligible;
+      }
       if (statusFilter === 'severed') {
-        return c.isSeveredCase || Boolean(c.originalBlackCaseNo) || Boolean(c.severedFromCaseId);
+        return (
+          c.isSeveredCase ||
+          Boolean(c.originalBlackCaseNo) ||
+          Boolean(c.severedFromCaseId) ||
+          Boolean(c.hasPartialDenial) ||
+          Boolean(c.hasPendingSeveredFiling)
+        );
       }
       if (statusFilter === 'completed') {
         return c.isCompleted;
@@ -159,6 +170,11 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       return linkedRes.matches;
     })
     .sort((a, b) => {
+      if (statusFilter === 'missing_judgment') {
+        const infoA = getMissingJudgmentAlertInfo(a);
+        const infoB = getMissingJudgmentAlertInfo(b);
+        return infoB.daysElapsed - infoA.daysElapsed;
+      }
       if (sortBy === 'deadline') {
         // Active first, then by days remaining
         if (a.isCompleted !== b.isCompleted) {
@@ -245,18 +261,69 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                 </span>
               )}
             </button>
-            <button
-              onClick={() => setStatusFilter('severed')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === 'severed'
-                  ? 'bg-purple-700 text-white font-bold shadow-xs'
-                  : 'text-purple-800 hover:bg-purple-50'
-              }`}
-            >
-              ✂️ สำนวนที่ศาลแยกฟ้อง (
-              {cases.filter((c) => c.isSeveredCase || Boolean(c.originalBlackCaseNo) || Boolean(c.severedFromCaseId)).length}
-              )
-            </button>
+            {(() => {
+              const severedCount = cases.filter(
+                (c) =>
+                  c.isSeveredCase ||
+                  Boolean(c.originalBlackCaseNo) ||
+                  Boolean(c.severedFromCaseId) ||
+                  Boolean(c.hasPartialDenial) ||
+                  Boolean(c.hasPendingSeveredFiling)
+              ).length;
+              const pendingSeveredAlertCount = cases.filter((c) => {
+                const info = getSeveredFilingAlertInfo(c);
+                return info.isAlertDue && info.isPending;
+              }).length;
+
+              return (
+                <button
+                  onClick={() => setStatusFilter('severed')}
+                  className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                    statusFilter === 'severed'
+                      ? 'bg-purple-700 text-white font-bold shadow-xs'
+                      : 'text-purple-800 hover:bg-purple-50'
+                  }`}
+                >
+                  <span>✂️ สำนวนที่ศาลแยกฟ้อง</span>
+                  <span className={`text-[11px] px-1.5 py-0.2 rounded-full ${statusFilter === 'severed' ? 'bg-purple-800 text-white' : 'bg-purple-100 text-purple-900 font-bold'}`}>
+                    {severedCount}
+                  </span>
+                  {pendingSeveredAlertCount > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-pulse" title="ครบกำหนดเตือนแยกฟ้อง 7 วัน">
+                      เตือน 7 วัน ({pendingSeveredAlertCount})
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+            {(() => {
+              const missingCount = cases.filter((c) => getMissingJudgmentAlertInfo(c).isEligible).length;
+              const missingAlertDueCount = cases.filter((c) => {
+                const info = getMissingJudgmentAlertInfo(c);
+                return info.isEligible && info.isAlertDue;
+              }).length;
+
+              return (
+                <button
+                  onClick={() => setStatusFilter('missing_judgment')}
+                  className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                    statusFilter === 'missing_judgment'
+                      ? 'bg-amber-600 text-white font-bold shadow-xs'
+                      : 'text-amber-800 hover:bg-amber-50'
+                  }`}
+                >
+                  <span>⚖️ ขาดวันพิพากษา</span>
+                  <span className={`text-[11px] px-1.5 py-0.2 rounded-full ${statusFilter === 'missing_judgment' ? 'bg-amber-800 text-white' : 'bg-amber-100 text-amber-900 font-bold'}`}>
+                    {missingCount}
+                  </span>
+                  {missingAlertDueCount > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-pulse" title="ครบกำหนดเตือน 15 วัน เพื่อป้องกันการลืมลงบันทึกในระบบ">
+                      เตือน 15 วัน ({missingAlertDueCount})
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
             <button
               onClick={() => setStatusFilter('completed')}
               className={`px-3 py-1.5 rounded-lg transition ${
@@ -498,6 +565,58 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <span>ศาลสั่งแยกฟ้อง</span>
                           </span>
                         )}
+                        {caseItem.hasPartialDenial && (
+                          <span
+                            className="text-[10px] font-bold text-purple-900 bg-purple-100 border border-purple-300 px-1.5 py-0.5 rounded shadow-2xs flex items-center gap-0.5"
+                            title="คดีมีจำเลยหลายคน: บางคนรับสารภาพ / บางคนปฏิเสธ"
+                          >
+                            <span>👥</span>
+                            <span>จำเลยร่วม/บางคนปฏิเสธ</span>
+                          </span>
+                        )}
+                        {caseItem.hasPendingSeveredFiling && (() => {
+                          const alertInfo = getSeveredFilingAlertInfo(caseItem);
+                          return (
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded shadow-2xs border flex items-center gap-0.5 ${
+                                caseItem.isSeveredFilingCompleted
+                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                  : alertInfo.status === 'overdue'
+                                  ? 'bg-rose-100 text-rose-900 border-rose-400 animate-pulse'
+                                  : alertInfo.status === 'due_today'
+                                  ? 'bg-amber-100 text-amber-950 border-amber-300 font-extrabold animate-pulse'
+                                  : 'bg-purple-100 text-purple-900 border-purple-300'
+                              }`}
+                              title={`กำหนดแยกฟ้องภายใน 7 วัน: ${formatThaiDate(alertInfo.deadlineDate)}`}
+                            >
+                              <span>✂️</span>
+                              <span>{caseItem.isSeveredFilingCompleted ? 'ยื่นแยกฟ้องแล้ว' : alertInfo.alertBadgeText}</span>
+                            </span>
+                          );
+                        })()}
+                        {(() => {
+                          const mjInfo = getMissingJudgmentAlertInfo(caseItem);
+                          if (!mjInfo.isEligible) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onRecordJudgment) onRecordJudgment(caseItem);
+                                else if (onEditCase) onEditCase(caseItem);
+                              }}
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded shadow-2xs border flex items-center gap-0.5 cursor-pointer transition hover:scale-105 active:scale-95 ${
+                                mjInfo.isAlertDue
+                                  ? 'bg-amber-100 text-amber-950 border-amber-400 font-extrabold animate-pulse'
+                                  : 'bg-amber-50 text-amber-900 border-amber-300'
+                              }`}
+                              title={`${mjInfo.alertTitle}: ${mjInfo.alertDescription} (คลิกเพื่อลงบันทึกวันพิพากษา)`}
+                            >
+                              <span>⚖️</span>
+                              <span>{mjInfo.badgeLabel}</span>
+                            </button>
+                          );
+                        })()}
                       </div>
 
                       {/* ข้อมูลเลขคดีเดิม (กรณีเป็นสำนวนแยกฟ้อง) */}
@@ -560,6 +679,24 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                         </span>
                       </div>
 
+                      {/* ข้อมูลจำเลยรับสารภาพ & ปฏิเสธแยกฟ้อง (กรณีจำเลยหลายคน) */}
+                      {caseItem.hasPartialDenial && (
+                        <div className="mt-1 space-y-0.5 text-[10px] bg-purple-50/70 p-1.5 rounded-lg border border-purple-200">
+                          {caseItem.confessedDefendants && (
+                            <div className="flex items-center gap-1 text-yellow-900" title={`จำเลยที่รับสารภาพ: ${caseItem.confessedDefendants}`}>
+                              <span className="font-semibold shrink-0">🟡 รับ:</span>
+                              <span className="truncate">{caseItem.confessedDefendants}</span>
+                            </div>
+                          )}
+                          {caseItem.deniedDefendants && (
+                            <div className="flex items-center gap-1 text-orange-950 font-bold" title={`จำเลยที่ปฏิเสธ (ศาลสั่งแยกฟ้อง): ${caseItem.deniedDefendants}`}>
+                              <span className="shrink-0">🟠 ปฏิเสธ (สั่งแยกฟ้อง):</span>
+                              <span className="truncate">{caseItem.deniedDefendants}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* แสดงอัยการเจ้าของสำนวน (เด่นชัด ชัดเจน) และ อัยการเวรชี้ (ไม่แย่งจุดสนใจ) แยกบทบาทชัดเจน */}
                       <div className="mt-1 space-y-1">
                         {caseItem.responsiblePerson && caseItem.responsiblePerson !== 'ผู้ดูแลสำนวน' && (
@@ -586,7 +723,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           !(isConfessed && caseItem.appointmentType === 'rights_protection');
 
                         const filteredSubsequent = (caseItem.subsequentAppointments || []).filter(
-                          (appt) => !(isConfessed && appt.type === 'rights_protection')
+                          (appt: CaseAppointment) => !(isConfessed && appt.type === 'rights_protection')
                         );
 
                         if (!showAppt && filteredSubsequent.length === 0) return null;
@@ -606,7 +743,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                               </span>
                             )}
 
-                            {filteredSubsequent.map((appt, aIdx) => (
+                            {filteredSubsequent.map((appt: CaseAppointment, aIdx: number) => (
                               <span
                                 key={appt.id || aIdx}
                                 className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200"

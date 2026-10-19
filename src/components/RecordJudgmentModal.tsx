@@ -20,7 +20,8 @@ import {
   Eye,
   ShieldCheck,
   Sparkles,
-  Loader2
+  Loader2,
+  Printer
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
@@ -49,6 +50,7 @@ interface RecordJudgmentModalProps {
   ) => void;
   onClearJudgment?: (caseId: string) => void;
   onOpenFullRecheckModal?: (caseItem: AppealCase) => void;
+  onOpenCourtPetition?: (caseItem: AppealCase, deadline?: string, count?: number) => void;
 }
 
 const QUICK_OUTCOME_SUGGESTIONS = [
@@ -80,6 +82,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   onSaveJudgmentDate,
   onClearJudgment,
   onOpenFullRecheckModal,
+  onOpenCourtPetition,
 }) => {
   const [judgmentDate, setJudgmentDate] = useState<string>(getTodayString());
   const [redCaseNo, setRedCaseNo] = useState<string>('');
@@ -106,11 +109,13 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [deadlineInfo, setDeadlineInfo] = useState({
-    deadlineDate: '',
-    originalDeadline: '',
-    isAdjustedForWeekend: false,
-  });
+  // Auto-calculated 1-month appeal deadline whenever judgmentDate changes
+  const deadlineInfo = React.useMemo(() => {
+    if (!judgmentDate || !judgmentDate.trim()) {
+      return { deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false };
+    }
+    return calculateAppealDeadline(judgmentDate);
+  }, [judgmentDate]);
 
   useEffect(() => {
     if (caseItem) {
@@ -123,6 +128,35 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
       setIsVerified(!!caseItem.judgmentVerified);
       setVerifiedBy(caseItem.judgmentVerifiedBy || caseItem.responsiblePerson || '');
       setRecheckNotes(caseItem.judgmentRecheckNotes || '');
+
+      // เชื่อมโยงหมายเลขคดีแดงจากการกรอกข้อมูลสำนวนในตอนแรก
+      const initialRedNo =
+        caseItem.redCaseNo &&
+        caseItem.redCaseNo.trim() &&
+        caseItem.redCaseNo.trim() !== 'ยังไม่มีเลขแดง' &&
+        caseItem.redCaseNo.trim() !== '-'
+          ? caseItem.redCaseNo.trim()
+          : '';
+      if (initialRedNo) {
+        setRedCaseNo(initialRedNo);
+      } else {
+        // หากในตอนแรกยังไม่ได้ระบุ ให้ลองตรวจหาจากข้อความคำพิพากษาหรือหมายเหตุเดิม
+        const textToSearch = `${caseItem.fullJudgmentText || ''} ${caseItem.judgmentOutcome || ''} ${caseItem.notes || ''}`;
+        const match = textToSearch.match(
+          /(?:คดีหมายเลขแดงที่|เลขคดีแดงที่|เลขคดีแดง|คดีแดงที่|คดีแดง|แดงที่|แดง)\s*([^\s,;()]+)/i
+        );
+        if (match && match[1]) {
+          const extracted = match[1].replace(/^[.:\s]+/, '').trim();
+          if (extracted && extracted !== '-' && extracted !== 'ยังไม่มีเลขแดง' && extracted.length >= 2) {
+            setRedCaseNo(extracted);
+          } else {
+            setRedCaseNo('');
+          }
+        } else {
+          setRedCaseNo('');
+        }
+      }
+
       // Automatically show split view if an image already exists
       if (caseItem.judgmentPhotoUrl) {
         setIsSplitView(true);
@@ -136,15 +170,6 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
       setPasteNotice(null);
     }
   }, [caseItem, isOpen]);
-
-  useEffect(() => {
-    if (judgmentDate) {
-      const info = calculateAppealDeadline(judgmentDate);
-      setDeadlineInfo(info);
-    } else {
-      setDeadlineInfo({ deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false });
-    }
-  }, [judgmentDate]);
 
   // Handle global clipboard paste of screenshot images with auto-compression
   useEffect(() => {
@@ -259,24 +284,21 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
       setErrorMsg('กรุณาระบุวันที่ศาลอ่านคำพิพากษา');
       return;
     }
-    if (!deadlineInfo.deadlineDate) {
+    const finalJudgment = fullJudgmentText.trim() || judgmentOutcome.trim();
+    const effectiveDeadline = deadlineInfo.deadlineDate || (judgmentDate ? calculateAppealDeadline(judgmentDate).deadlineDate : '');
+
+    if (!effectiveDeadline) {
       setErrorMsg('ไม่สามารถคำนวณวันครบกำหนดอุทธรณ์ได้ กรุณาตรวจสอบวันที่');
       return;
     }
-    if (!judgmentOutcome.trim() && !fullJudgmentText.trim()) {
-      setErrorMsg('กรุณาระบุหรือเลือกผลคำพิพากษา (เช่น ลงโทษตามฟ้อง, จำคุก รอการลงโทษ, ยกฟ้อง) เพื่อบันทึกคำพิพากษา');
-      return;
-    }
-
-    const finalJudgment = fullJudgmentText.trim() || judgmentOutcome.trim();
 
     onSaveJudgmentDate(
       caseItem.id,
       {
         judgmentDate,
-        redCaseNo: redCaseNo.trim() || undefined,
+        redCaseNo: redCaseNo.trim() || caseItem.redCaseNo || undefined,
         judgmentOutcome: finalJudgment,
-        appealDeadline: deadlineInfo.deadlineDate,
+        appealDeadline: effectiveDeadline,
         fullJudgmentText: finalJudgment,
         judgmentPhotoUrl: photoUrl || null,
         judgmentPhotoName: photoName || undefined,
@@ -332,7 +354,15 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-300">
-                สำนวนคดีดำ {caseItem.blackCaseNo} • {caseItem.court}
+                สำนวนคดีดำ {caseItem.blackCaseNo}
+                {(redCaseNo.trim() || caseItem.redCaseNo) ? (
+                  <span className="text-rose-400 font-semibold ml-1.5">
+                    • แดง {redCaseNo.trim() || caseItem.redCaseNo}
+                  </span>
+                ) : (
+                  <span className="text-slate-400 ml-1.5">• (ยังไม่มีเลขแดง)</span>
+                )}
+                {' '}• {caseItem.court}
               </p>
             </div>
           </div>
@@ -519,10 +549,19 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
             }`}
           >
             {/* Summary Box */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 space-y-1">
-              <div className="flex justify-between font-medium">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 space-y-1.5">
+              <div className="flex justify-between font-medium items-center flex-wrap gap-2">
                 <span className="text-slate-600">โจทก์: {caseItem.plaintiff}</span>
                 <span className="text-slate-600">จำเลย: {caseItem.defendant}</span>
+                {(redCaseNo.trim() || caseItem.redCaseNo) ? (
+                  <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                    🔴 คดีแดง {redCaseNo.trim() || caseItem.redCaseNo}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                    ยังไม่มีเลขแดง (กรอกในช่องด้านล่าง)
+                  </span>
+                )}
               </div>
               {(caseItem.responsiblePerson || caseItem.prosecutorName) && (
                 <div className="text-indigo-950 font-medium flex items-center gap-1.5 flex-wrap">
@@ -638,9 +677,18 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
             <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-amber-950 mb-1 flex items-center justify-between">
-                    <span>วันที่ศาลอ่านคำพิพากษา *</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-amber-950 flex items-center gap-1">
+                      <span>วันที่ศาลอ่านคำพิพากษา *</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setJudgmentDate(getTodayString())}
+                      className="text-[10px] text-amber-800 hover:text-amber-950 underline font-semibold cursor-pointer"
+                    >
+                      ใช้วันนี้
+                    </button>
+                  </div>
                   <input
                     type="date"
                     required
@@ -656,13 +704,40 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-rose-950 mb-1">
-                    วันครบกำหนดอุทธรณ์ 1 เดือน (อัตโนมัติ)
-                  </label>
-                  <div className="text-xs font-bold text-rose-700 bg-white border border-rose-300 rounded-xl px-3 py-2">
-                    {deadlineInfo.deadlineDate ? formatThaiDate(deadlineInfo.deadlineDate, { short: false }) : 'กรุณาระบุวันพิพากษา'}
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-rose-950">
+                      วันครบกำหนดอุทธรณ์ 1 เดือน (อัตโนมัติ)
+                    </label>
+                    {onOpenCourtPetition && caseItem && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetDeadline = deadlineInfo.deadlineDate || (judgmentDate ? calculateAppealDeadline(judgmentDate).deadlineDate : '');
+                          onOpenCourtPetition(caseItem, targetDeadline, 1);
+                        }}
+                        className="text-[11px] font-bold text-slate-950 bg-amber-200 hover:bg-amber-300 border border-amber-400 px-2.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shadow-2xs active:scale-95"
+                        title="พิมพ์คำร้องขอขยายอุทธรณ์ (แบบพิมพ์ศาล ๗ ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง)"
+                      >
+                        <Printer className="w-3 h-3 text-slate-950" />
+                        <span>พิมพ์ขยายอุทธรณ์</span>
+                      </button>
+                    )}
                   </div>
-                  {deadlineInfo.isAdjustedForWeekend && (
+                  <div className="text-xs font-bold text-rose-700 bg-white border border-rose-300 rounded-xl px-3 py-2 min-h-[38px] flex items-center justify-between">
+                    <span>
+                      {deadlineInfo.deadlineDate
+                        ? formatThaiDate(deadlineInfo.deadlineDate, { short: false })
+                        : (judgmentDate && judgmentDate.trim())
+                          ? formatThaiDate(calculateAppealDeadline(judgmentDate.trim()).deadlineDate, { short: false })
+                          : 'กรุณาระบุวันพิพากษา'}
+                    </span>
+                    {(deadlineInfo.deadlineDate || judgmentDate) && (
+                      <span className="text-[10px] font-normal text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                        1 เดือน
+                      </span>
+                    )}
+                  </div>
+                  {(deadlineInfo.isAdjustedForWeekend || (judgmentDate && calculateAppealDeadline(judgmentDate).isAdjustedForWeekend)) && (
                     <span className="text-[10px] text-amber-700 font-medium block mt-1">
                       ⚡ เลื่อนเป็นวันทำการถัดไป (ป.พ.พ. 193/8)
                     </span>
@@ -673,15 +748,18 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
 
             {/* Red Case No. */}
             <div>
-              <label className="block text-xs font-semibold text-slate-800 mb-1">
-                หมายเลขคดีแดง (ถ้าทราบ)
+              <label className="block text-xs font-semibold text-slate-800 mb-1 flex items-center justify-between">
+                <span>หมายเลขคดีแดง</span>
+                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">
+                  {caseItem.redCaseNo ? '🔗 ดึงจากข้อมูลสำนวนที่กรอกไว้ตอนแรก' : 'กรอกเลขแดงเมื่อศาลมีคำพิพากษา'}
+                </span>
               </label>
               <input
                 type="text"
                 placeholder="เช่น อ.891/2569 หรือ แดง 124/2569"
                 value={redCaseNo}
                 onChange={(e) => setRedCaseNo(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-bold text-rose-800"
               />
             </div>
 
@@ -726,6 +804,17 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                   const val = e.target.value;
                   setJudgmentOutcome(val);
                   setFullJudgmentText(val);
+                  if (!redCaseNo.trim()) {
+                    const match = val.match(
+                      /(?:คดีหมายเลขแดงที่|เลขคดีแดงที่|เลขคดีแดง|คดีแดงที่|คดีแดง|แดงที่|แดง)\s*([^\s,;()]+)/i
+                    );
+                    if (match && match[1]) {
+                      const extracted = match[1].replace(/^[.:\s]+/, '').trim();
+                      if (extracted && extracted !== '-' && extracted !== 'ยังไม่มีเลขแดง' && extracted.length >= 2) {
+                        setRedCaseNo(extracted);
+                      }
+                    }
+                  }
                 }}
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans leading-relaxed bg-white"
               />

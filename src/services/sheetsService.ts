@@ -495,7 +495,7 @@ export async function exportDailyFilingCasesToGoogleSheet(
     customTitle?: string;
   }
 ): Promise<{ id: string; url: string; title: string; sheetName: string; isNewSpreadsheet: boolean }> {
-  const rows = getDailyExportRows(cases, options?.conciseProcedure || false);
+  const rows = getDailyExportRows(cases, options?.conciseProcedure || false, filingDate);
   const sheetTabName = `ฟ้อง_${filingDate}`;
 
   // 1. กรณีต้องการเพิ่มเป็นแท็บใหม่ใน Google Sheet ที่มีอยู่เดิม

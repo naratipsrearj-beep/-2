@@ -482,3 +482,176 @@ export function getRequisitionAlertInfo(
   }
 }
 
+export interface MissingJudgmentAlertInfo {
+  isEligible: boolean;             // เป็นคดีที่มีคำพิพากษาแล้วแต่ยังไม่มีการกรอกข้อมูลวันพิพากษา
+  hasJudgmentPronounced: boolean;  // เข้าข่ายมีคำพิพากษาแล้ว
+  hasJudgmentDate: boolean;        // มีวันพิพากษาแล้วหรือไม่
+  daysElapsed: number;             // จำนวนวันนับจากวันฟ้อง/วันนัดพิพากษา
+  isAlertDue: boolean;             // ครบกำหนด 15 วันแล้วหรือไม่ (daysElapsed >= 15)
+  daysRemaining: number;           // จำนวนวันก่อนครบ 15 วัน (ติดลบคือเกิน 15 วัน)
+  daysOverdue: number;             // เกินกำหนด 15 วันมากี่วัน
+  baseDate: string;                // วันที่ใช้นับ (appointmentDate หรือ filingDate)
+  reason: string;                  // สาเหตุ เช่น "จำเลยรับสารภาพ", "มีเลขคดีแดงแล้ว", "ระบุว่ามีคำพิพากษา"
+  alertTitle: string;
+  alertDescription: string;
+  badgeLabel: string;
+  urgencyLevel: 'critical' | 'warning' | 'normal' | 'none';
+}
+
+/**
+ * ตรวจสอบและคำนวณการแจ้งเตือนสำหรับกรณีที่มีคำพิพากษาแล้วแต่ยังไม่มีการกรอกข้อมูลวันพิพากษา
+ * เพื่อป้องกันการลืมลงบันทึกในระบบ โดยแจ้งเตือนเมื่อครบกำหนด 15 วัน
+ */
+export function getMissingJudgmentAlertInfo(
+  c?: Partial<AppealCase> | null,
+  refDate: Date = new Date()
+): MissingJudgmentAlertInfo {
+  const emptyResult: MissingJudgmentAlertInfo = {
+    isEligible: false,
+    hasJudgmentPronounced: false,
+    hasJudgmentDate: false,
+    daysElapsed: 0,
+    isAlertDue: false,
+    daysRemaining: 15,
+    daysOverdue: 0,
+    baseDate: '',
+    reason: '',
+    alertTitle: '',
+    alertDescription: '',
+    badgeLabel: '',
+    urgencyLevel: 'none',
+  };
+
+  if (!c || c.isCompleted) return emptyResult;
+
+  // มีวันพิพากษาอยู่แล้ว
+  const hasJudgmentDate = Boolean(c.judgmentDate && typeof c.judgmentDate === 'string' && c.judgmentDate.trim() !== '');
+  if (hasJudgmentDate) {
+    return { ...emptyResult, hasJudgmentDate: true };
+  }
+
+  // ตรวจสอบว่าคดีนี้เข้าข่าย "มีคำพิพากษาแล้ว" หรือไม่
+  let hasJudgmentPronounced = false;
+  let reason = '';
+  let appointmentBaseDate = '';
+
+  const hasRedCase = Boolean(
+    c.redCaseNo &&
+    typeof c.redCaseNo === 'string' &&
+    c.redCaseNo.trim() !== '' &&
+    c.redCaseNo.trim() !== '-' &&
+    c.redCaseNo.trim() !== 'ยังไม่มีเลขแดง'
+  );
+
+  const hasJudgmentFlag = c.hasJudgment === true;
+  const isConfessed = isCaseConfessed(c) || c.defendantPlea === 'confessed' || c.courtStageStatus === 'confessed';
+
+  // ตรวจสอบนัดฟังคำพิพากษาที่ผ่านมาแล้ว
+  const todayZero = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+  if (c.appointmentType === 'judgment' && c.appointmentDate) {
+    try {
+      const [ay, am, ad] = c.appointmentDate.split('-').map(Number);
+      const apptZero = new Date(ay, am - 1, ad);
+      if (apptZero.getTime() <= todayZero.getTime()) {
+        hasJudgmentPronounced = true;
+        reason = 'ผ่านวันนัดฟังคำพิพากษาแล้ว';
+        appointmentBaseDate = c.appointmentDate;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (c.subsequentAppointments && c.subsequentAppointments.length > 0) {
+    for (const appt of c.subsequentAppointments) {
+      if (appt.type === 'judgment' && appt.date) {
+        try {
+          const [ay, am, ad] = appt.date.split('-').map(Number);
+          const apptZero = new Date(ay, am - 1, ad);
+          if (apptZero.getTime() <= todayZero.getTime()) {
+            hasJudgmentPronounced = true;
+            reason = 'ผ่านวันนัดฟังคำพิพากษาแล้ว';
+            appointmentBaseDate = appt.date;
+            break;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  if (!hasJudgmentPronounced) {
+    if (hasRedCase) {
+      hasJudgmentPronounced = true;
+      reason = `มีเลขคดีแดงแล้ว (${c.redCaseNo!.trim()})`;
+    } else if (hasJudgmentFlag) {
+      hasJudgmentPronounced = true;
+      reason = 'ระบุว่าศาลมีคำพิพากษาแล้ว';
+    } else if (isConfessed) {
+      hasJudgmentPronounced = true;
+      reason = 'จำเลยให้การรับสารภาพ';
+    }
+  }
+
+  if (!hasJudgmentPronounced) {
+    return emptyResult;
+  }
+
+  // วันที่ตั้งต้นในการนับ
+  const baseDate = appointmentBaseDate || c.filingDate || (c.createdAt ? c.createdAt.slice(0, 10) : '');
+  let daysElapsed = 0;
+
+  if (baseDate) {
+    try {
+      const [by, bm, bd] = baseDate.split('-').map(Number);
+      const baseZero = new Date(by, bm - 1, bd);
+      const diff = Math.floor((todayZero.getTime() - baseZero.getTime()) / (1000 * 60 * 60 * 24));
+      daysElapsed = Math.max(0, diff);
+    } catch {
+      daysElapsed = 0;
+    }
+  }
+
+  const isAlertDue = daysElapsed >= 15;
+  const daysRemaining = 15 - daysElapsed;
+  const daysOverdue = Math.max(0, daysElapsed - 15);
+
+  let urgencyLevel: 'critical' | 'warning' | 'normal' | 'none' = 'normal';
+  if (daysElapsed >= 30) {
+    urgencyLevel = 'critical';
+  } else if (isAlertDue) {
+    urgencyLevel = 'warning';
+  }
+
+  let badgeLabel = '';
+  let alertTitle = '';
+  let alertDescription = '';
+
+  if (isAlertDue) {
+    badgeLabel = `⚠️ ครบ 15 วัน รอลงวันพิพากษา (ค้าง ${daysElapsed} วัน)`;
+    alertTitle = `เตือนค้างบันทึกวันพิพากษา ${daysElapsed} วัน (${reason})`;
+    alertDescription = `มีคำพิพากษาแล้ว (${reason}) แต่ยังไม่มีการกรอกข้อมูลวันพิพากษาในระบบ เกินกำหนดเตือน 15 วันมาแล้ว ${daysOverdue} วัน`;
+  } else {
+    badgeLabel = `⚖️ รอลงวันพิพากษา (${daysElapsed}/15 วัน)`;
+    alertTitle = `รอลงวันพิพากษา (${daysElapsed} วัน)`;
+    alertDescription = `มีคำพิพากษาแล้ว (${reason}) อีก ${daysRemaining} วันจะครบกำหนดเตือน 15 วัน`;
+  }
+
+  return {
+    isEligible: true,
+    hasJudgmentPronounced: true,
+    hasJudgmentDate: false,
+    daysElapsed,
+    isAlertDue,
+    daysRemaining,
+    daysOverdue,
+    baseDate,
+    reason,
+    alertTitle,
+    alertDescription,
+    badgeLabel,
+    urgencyLevel,
+  };
+}
+

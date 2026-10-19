@@ -108,6 +108,8 @@ import { createDailyFilingDoc } from './services/docsService';
 import { checkAndSendAutomaticEmailAlerts } from './services/gmailService';
 import { CourtAppointmentType, CaseAppointment } from './types/appeal';
 import { getAppointmentLabel, isCaseConfessed } from './utils/appointmentUtils';
+import { downloadApplicationJsonBackup } from './utils/backupUtils';
+import { BackupViewerModal } from './components/BackupViewerModal';
 
 export default function App() {
   // Auth & Roles state
@@ -123,6 +125,7 @@ export default function App() {
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [isRequestEditModalOpen, setIsRequestEditModalOpen] = useState(false);
+  const [isBackupViewerOpen, setIsBackupViewerOpen] = useState(false);
   const [isProcessingPermissions, setIsProcessingPermissions] = useState(false);
   const [isPushingLocal, setIsPushingLocal] = useState(false);
 
@@ -573,6 +576,32 @@ export default function App() {
       showToast(`ส่งข้อมูลไม่สำเร็จ: ${err.message}`);
     } finally {
       setIsPushingLocal(false);
+    }
+  };
+
+  // Download JSON Backup (สำหรับแอดมินดาวน์โหลดข้อมูลทั้งหมด สำนวน, ตารางเวรชี้, รายการติดตาม ไปเก็บออฟไลน์)
+  const handleDownloadJsonBackup = () => {
+    if (userRole !== 'admin') {
+      showToast('เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถดาวน์โหลดไฟล์สำรองข้อมูลได้');
+      return;
+    }
+
+    try {
+      const result = downloadApplicationJsonBackup({
+        cases,
+        dutyRosters,
+        followUps,
+        userEmail: user?.email || (isPinAdmin ? 'Admin (PIN)' : 'Admin'),
+      });
+
+      if (result.success) {
+        showToast(
+          `ดาวน์โหลดไฟล์สำรองข้อมูล "${result.filename}" เรียบร้อยแล้ว (${result.counts.cases} สำนวน, ${result.counts.dutyRosters} ตารางเวรชี้, ${result.counts.followUps} รายการติดตาม)`
+        );
+      }
+    } catch (err: any) {
+      console.error('Download backup failed:', err);
+      showToast(`การดาวน์โหลดไฟล์สำรองข้อมูลขัดข้อง: ${err?.message || 'กรุณาลองใหม่อีกครั้ง'}`);
     }
   };
 
@@ -1588,6 +1617,8 @@ export default function App() {
         isSyncing={isSyncing}
         onPushLocalToCloud={handlePushLocalToCloud}
         isPushingLocal={isPushingLocal}
+        onDownloadBackup={userRole === 'admin' ? handleDownloadJsonBackup : undefined}
+        onOpenBackupViewer={() => setIsBackupViewerOpen(true)}
         connectionStatus={connectionStatus}
         firebaseProjectId={FIREBASE_PROJECT_ID}
         onOpenRulesGuide={() => setIsRulesGuideOpen(true)}
@@ -1696,6 +1727,14 @@ export default function App() {
           onSendEmailAlert={(caseItem) => setSelectedCaseForEmailAlert(caseItem)}
           onSendAllUrgentEmails={handleSendAllUrgentEmails}
           onQuickChangeRequisitionStatus={handleQuickChangeRequisitionStatus}
+          onRecordJudgment={(caseItem) => {
+            setSelectedCaseForRecordJudgment(caseItem);
+            setIsRecordJudgmentOpen(true);
+          }}
+          onEditCase={(caseItem) => {
+            setSelectedCaseForEdit(caseItem);
+            setIsEditCaseOpen(true);
+          }}
         />
 
         {/* Voice-to-Text Search Bar */}
@@ -1952,18 +1991,20 @@ export default function App() {
         />
       )}
 
-      <DutyRosterEntryModal
-        isOpen={isUploadDutyModalOpen}
-        onClose={() => {
-          setIsUploadDutyModalOpen(false);
-          setDutyRosterEditTargetId(undefined);
-        }}
-        onSuccess={handleRosterUploaded}
-        existingRosters={dutyRosters}
-        existingCases={cases}
-        initialRosterId={dutyRosterEditTargetId}
-        showToast={showToast}
-      />
+      {isUploadDutyModalOpen && (
+        <DutyRosterEntryModal
+          isOpen={isUploadDutyModalOpen}
+          onClose={() => {
+            setIsUploadDutyModalOpen(false);
+            setDutyRosterEditTargetId(undefined);
+          }}
+          onSuccess={handleRosterUploaded}
+          existingRosters={dutyRosters}
+          existingCases={cases}
+          initialRosterId={dutyRosterEditTargetId}
+          showToast={showToast}
+        />
+      )}
 
       <CompleteModal
         isOpen={!!selectedCaseForComplete}
@@ -2033,6 +2074,11 @@ export default function App() {
           setSelectedCaseForEdit(null);
         }}
         onSave={handleSaveEditedCase}
+        onOpenCourtPetition={(caseItem: AppealCase, newDeadline?: string, extensionCount?: number) => {
+          setIsEditCaseOpen(false);
+          setSelectedCaseForEdit(null);
+          setSelectedCaseForCourtPetition({ caseItem, newDeadline, extensionCount });
+        }}
         suggestedDutyOfficer={todayDutyOfficer}
         dutyRosters={dutyRosters}
         existingCases={cases}
@@ -2049,6 +2095,11 @@ export default function App() {
         onSaveJudgmentDate={handleSaveJudgmentDate}
         onClearJudgment={handleClearJudgment}
         onOpenFullRecheckModal={(c) => handleOpenCaseRecheck(c)}
+        onOpenCourtPetition={(caseItem, newDeadline, extensionCount) => {
+          setIsRecordJudgmentOpen(false);
+          setSelectedCaseForRecordJudgment(null);
+          setSelectedCaseForCourtPetition({ caseItem, newDeadline, extensionCount });
+        }}
       />
 
       {/* Judgment Recheck Modal (ตรวจทานเทียบเคียงข้อความคำพิพากษากับภาพถ่าย/แคปหน้าจอต้นฉบับ แบบแบ่ง 2 ฝั่ง) */}
@@ -2076,7 +2127,21 @@ export default function App() {
         onAddEditor={handleAddEditor}
         onRemoveEditor={handleRemoveEditor}
         onUpdateAdminPin={handleUpdateAdminPin}
+        onDownloadBackup={userRole === 'admin' ? handleDownloadJsonBackup : undefined}
+        onOpenBackupViewer={() => setIsBackupViewerOpen(true)}
+        backupCounts={{ cases: cases.length, dutyRosters: dutyRosters.length, followUps: followUps.length }}
         isProcessing={isProcessingPermissions}
+      />
+
+      {/* JSON Backup Viewer Modal */}
+      <BackupViewerModal
+        isOpen={isBackupViewerOpen}
+        onClose={() => setIsBackupViewerOpen(false)}
+        currentCases={cases}
+        currentDutyRosters={dutyRosters}
+        currentFollowUps={followUps}
+        userEmail={user?.email || (isPinAdmin ? 'Admin (PIN)' : undefined)}
+        onToast={showToast}
       />
 
       {/* Admin PIN Login Modal (Quick Unlock for Viewers or Guests) */}

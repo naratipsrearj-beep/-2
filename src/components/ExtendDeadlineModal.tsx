@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Calendar, AlertCircle, X, Check, Edit3, Plus, RotateCcw, Trash2, FileText, ExternalLink, Loader2, Scale, AlertTriangle } from 'lucide-react';
+import { Clock, Calendar, AlertCircle, X, Check, Edit3, Plus, RotateCcw, Trash2, FileText, ExternalLink, Loader2, Scale, AlertTriangle, Printer } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getTodayString } from '../utils/dateUtils';
 import { createAppealExtensionMemoDoc } from '../services/docsService';
@@ -434,10 +434,11 @@ export const ExtendDeadlineModal: React.FC<ExtendDeadlineModalProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenCourtPetition(caseItem, newDeadline, extensionCount)}
-                    className="px-3 py-1.5 text-xs font-bold text-amber-950 bg-amber-200 hover:bg-amber-300 border border-amber-400 rounded-lg transition shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer"
+                    className="px-3.5 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 border border-amber-500 rounded-xl transition shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                    title="พิมพ์คำร้องขอขยายอุทธรณ์ (แบบพิมพ์ศาล ๗ ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง)"
                   >
-                    <Scale className="w-3.5 h-3.5" />
-                    <span>เปิดแบบคำร้อง ↗</span>
+                    <Printer className="w-4 h-4 text-slate-950" />
+                    <span>พิมพ์ขยายอุทธรณ์ ↗</span>
                   </button>
                 </div>
               )}
@@ -495,6 +496,17 @@ export const ExtendDeadlineModal: React.FC<ExtendDeadlineModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {onOpenCourtPetition && (
+                <button
+                  type="button"
+                  onClick={() => onOpenCourtPetition(caseItem, newDeadline, extensionCount)}
+                  className="px-3.5 py-2 text-xs font-bold text-amber-950 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                  title="พิมพ์คำร้องขอขยายอุทธรณ์ (แบบพิมพ์ศาล ๗)"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-800" />
+                  <span>พิมพ์ขยายอุทธรณ์</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}

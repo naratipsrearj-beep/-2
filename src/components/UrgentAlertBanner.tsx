@@ -1,8 +1,8 @@
 import React from 'react';
-import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale } from 'lucide-react';
+import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale, Users, Check } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
-import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert } from '../utils/dateUtils';
-import { getRequisitionStatus, isPendingRequisitionCase, getRequisitionAlertInfo } from '../utils/appointmentUtils';
+import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
+import { getRequisitionStatus, isPendingRequisitionCase, getRequisitionAlertInfo, getMissingJudgmentAlertInfo } from '../utils/appointmentUtils';
 
 interface UrgentAlertBannerProps {
   cases: AppealCase[];
@@ -14,6 +14,9 @@ interface UrgentAlertBannerProps {
   onSendAllUrgentEmails?: () => void;
   onQuickChangeRequisitionStatus?: (caseItem: AppealCase, newStatus: 'confessed' | 'denied') => void;
   onEditCase?: (caseItem: AppealCase) => void;
+  onRecordJudgment?: (caseItem: AppealCase) => void;
+  onMarkSeveredCompleted?: (caseItem: AppealCase, newBlackNo?: string) => void;
+  onCreateSeveredCase?: (parentCase: AppealCase) => void;
 }
 
 export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
@@ -26,12 +29,33 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
   onSendAllUrgentEmails,
   onQuickChangeRequisitionStatus,
   onEditCase,
+  onRecordJudgment,
+  onMarkSeveredCompleted,
+  onCreateSeveredCase,
 }) => {
   // สำนวนเฉพาะของ อ.กุลชาติ: หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่
   // จนกว่าจะกดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว
   const kunchartPendingCases = cases
     .filter((c) => isKunchartCompletedPendingNoAppealAlert(c))
     .sort((a, b) => getDaysRemaining(a) - getDaysRemaining(b));
+
+  // สำนวนที่ต้องเตือนแยกฟ้องภายใน 7 วัน (กรณีจำเลยรับสารภาพ และมีกรณีจำเลยหลายคน บางคนปฏิเสธ หรือมีคำสั่งแยกฟ้อง)
+  const pendingSeveredAlertCases = cases
+    .map((c) => ({
+      caseItem: c,
+      alertInfo: getSeveredFilingAlertInfo(c),
+    }))
+    .filter(({ alertInfo }) => alertInfo.isAlertDue && alertInfo.isPending)
+    .sort((a, b) => a.alertInfo.daysRemaining - b.alertInfo.daysRemaining);
+
+  // สำนวนที่มีคำพิพากษาแล้ว แต่ยังไม่มีการกรอกข้อมูลวันพิพากษา (แจ้งเตือนเมื่อครบกำหนด 15 วัน)
+  const pendingMissingJudgmentAlertCases = cases
+    .map((c) => ({
+      caseItem: c,
+      alertInfo: getMissingJudgmentAlertInfo(c),
+    }))
+    .filter(({ alertInfo }) => alertInfo.isEligible && alertInfo.isAlertDue)
+    .sort((a, b) => b.alertInfo.daysElapsed - a.alertInfo.daysElapsed);
 
   // กรองเฉพาะสำนวนที่ "ยังไม่เสร็จสิ้น" และ "ใกล้ครบกำหนด หรือขาดอุทธรณ์แล้ว" (urgency: overdue, critical, warning)
   const urgentCases = cases
@@ -61,7 +85,13 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
     .filter(({ alertInfo, reqStatus }) => alertInfo.isAlertDue || reqStatus.isUrgent || reqStatus.isPast)
     .sort((a, b) => b.alertInfo.daysElapsed - a.alertInfo.daysElapsed);
 
-  if (urgentCases.length === 0 && pendingRequisitionCasesWithAlert.length === 0 && kunchartPendingCases.length === 0) {
+  if (
+    urgentCases.length === 0 &&
+    pendingRequisitionCasesWithAlert.length === 0 &&
+    kunchartPendingCases.length === 0 &&
+    pendingSeveredAlertCases.length === 0 &&
+    pendingMissingJudgmentAlertCases.length === 0
+  ) {
     return (
       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-emerald-800 flex items-center justify-between shadow-xs mb-6">
         <div className="flex items-center gap-3">
@@ -70,7 +100,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
           </div>
           <div>
             <h4 className="font-semibold text-emerald-950 font-['Prompt'] text-sm">
-              ไม่มีสำนวนคดีที่ใกล้ครบกำหนดอุทธรณ์หรือสำนวนเบิกฟ้องที่ต้องติดตามผล
+              ไม่มีสำนวนคดีที่ใกล้ครบกำหนดอุทธรณ์ สำนวนที่ต้องแยกฟ้อง หรือสำนวนเบิกฟ้องที่ต้องติดตามผล
             </h4>
             <p className="text-xs text-emerald-700 mt-0.5">
               ทุกสำนวนได้รับการดำเนินการเรียบร้อย หรือยังไม่ถึงกำหนดระยะเวลาเร่งด่วน
@@ -79,7 +109,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
         </div>
         <div className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-700 bg-white/70 px-3 py-1.5 rounded-lg border border-emerald-200">
           <Sparkles className="w-4 h-4 text-emerald-600" />
-          <span>ระบบคุมอุทธรณ์ & เบิกฟ้อง ทำงานปกติ</span>
+          <span>ระบบคุมอุทธรณ์ & เตือนแยกฟ้อง 7 วัน ทำงานปกติ</span>
         </div>
       </div>
     );
@@ -93,6 +123,241 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
 
   return (
     <div className="space-y-4 mb-6">
+      {/* 0. แจ้งเตือนกรณีต้องแยกฟ้องจำเลยที่ปฏิเสธภายใน 7 วัน (ป.วิ.อ. ม.176) */}
+      {pendingSeveredAlertCases.length > 0 && (
+        <div className="bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-xl border-2 border-purple-500/50 transition-all animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-purple-500/40 gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/30 text-purple-200 border border-purple-400/50 flex items-center justify-center shadow-md animate-pulse shrink-0">
+                <span className="text-xl">✂️</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-base sm:text-lg text-white font-['Prompt']">
+                    เตือนต้องแยกฟ้องจำเลยที่ปฏิเสธภายใน 7 วัน: พบ {pendingSeveredAlertCases.length} สำนวน
+                  </h3>
+                  <span className="bg-purple-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-xs border border-purple-400/60">
+                    ป.วิ.อ. มาตรา 176 วรรคสอง
+                  </span>
+                </div>
+                <p className="text-xs text-purple-200 mt-0.5">
+                  คดีที่มีจำเลยหลายคน โดยจำเลยบางคนรับสารภาพและบางคนให้การปฏิเสธ ศาลมีคำสั่งให้พนักงานอัยการแยกฟ้องจำเลยที่ปฏิเสธภายใน 7 วัน
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-3.5">
+            {pendingSeveredAlertCases.map(({ caseItem, alertInfo }) => {
+              const isOverdue = alertInfo.status === 'overdue';
+              const isDueToday = alertInfo.status === 'due_today';
+
+              return (
+                <div
+                  key={caseItem.id}
+                  className="rounded-xl p-3.5 border border-purple-400/40 bg-slate-800/90 text-white shadow-xs flex flex-col justify-between transition hover:shadow-lg hover:border-purple-300"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-amber-300 text-sm font-['Prompt']">
+                          ดำ {caseItem.blackCaseNo}
+                        </span>
+                        {caseItem.redCaseNo && (
+                          <span className="text-xs text-rose-300 font-semibold bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">
+                            แดง {caseItem.redCaseNo}
+                          </span>
+                        )}
+                        {caseItem.receivedNumberS1 && (
+                          <span className="text-[10px] text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-400/30">
+                            ส.1: {caseItem.receivedNumberS1}
+                          </span>
+                        )}
+                        {caseItem.filingNumberS4 && (
+                          <span className="text-[10px] text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30">
+                            ส.4: {caseItem.filingNumberS4}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                        isOverdue
+                          ? 'bg-rose-500 text-white border-rose-400 animate-pulse'
+                          : isDueToday
+                          ? 'bg-amber-400 text-slate-950 border-amber-300 font-extrabold animate-pulse'
+                          : 'bg-purple-500/40 text-purple-200 border-purple-400'
+                      }`}>
+                        {alertInfo.alertBadgeText}
+                      </span>
+                    </div>
+
+                    <div className="text-xs space-y-1.5 text-slate-300 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/60 mb-3">
+                      {caseItem.confessedDefendants && (
+                        <div className="flex items-start gap-1">
+                          <span className="text-yellow-400 font-semibold shrink-0">🟡 รับสารภาพ:</span>
+                          <span className="text-slate-200 font-medium truncate">{caseItem.confessedDefendants}</span>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-1">
+                        <span className="text-orange-400 font-bold shrink-0">🟠 ปฏิเสธ (ต้องแยกฟ้อง):</span>
+                        <span className="text-white font-bold truncate">{caseItem.deniedDefendants || caseItem.defendant}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-700/40 text-slate-400">
+                        <span>ศาลสั่ง: {formatThaiDate(alertInfo.orderDate)}</span>
+                        <span className="text-rose-300 font-semibold">ครบ 7 วัน: {formatThaiDate(alertInfo.deadlineDate)}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        <span>👔 เจ้าของสำนวน: {caseItem.responsiblePerson || 'รอกำหนด'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-2 border-t border-slate-700/60 flex-wrap">
+                    {onMarkSeveredCompleted && (
+                      <button
+                        type="button"
+                        onClick={() => onMarkSeveredCompleted(caseItem)}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                        title="บันทึกว่ายื่นแยกฟ้องเสร็จเรียบร้อยแล้ว"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>ยื่นแยกฟ้องแล้ว</span>
+                      </button>
+                    )}
+                    {onCreateSeveredCase && (
+                      <button
+                        type="button"
+                        onClick={() => onCreateSeveredCase(caseItem)}
+                        className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                        title="เปิดฟอร์มสร้างสำนวนแยกฟ้องที่เชื่อมโยงกับคดีนี้ทันที"
+                      >
+                        <span>➕ สร้างสำนวนแยกฟ้อง</span>
+                      </button>
+                    )}
+                    {onEditCase && (
+                      <button
+                        type="button"
+                        onClick={() => onEditCase(caseItem)}
+                        className="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-1.5 px-2 rounded-lg transition cursor-pointer"
+                        title="แก้ไขรายละเอียดสำนวน"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 0.1 แจ้งเตือนกรณีมีคำพิพากษาแล้วแต่ยังไม่ได้กรอกวันพิพากษา (ครบกำหนด 15 วัน) เพื่อป้องกันการลืมลงบันทึกในระบบ */}
+      {pendingMissingJudgmentAlertCases.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-950 via-stone-900 to-amber-900 text-white rounded-2xl p-4 sm:p-5 shadow-xl border-2 border-amber-500/60 transition-all animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-amber-500/40 gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/30 text-amber-300 border border-amber-400/50 flex items-center justify-center shadow-md animate-pulse shrink-0">
+                <Scale className="w-5 h-5 text-amber-300" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-base sm:text-lg text-white font-['Prompt']">
+                    เตือนค้างบันทึกวันพิพากษา (ครบกำหนด 15 วัน): พบ {pendingMissingJudgmentAlertCases.length} สำนวน
+                  </h3>
+                  <span className="bg-amber-500 text-stone-950 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full shadow-xs border border-amber-300">
+                    ครบ 15 วัน
+                  </span>
+                </div>
+                <p className="text-xs text-amber-200 mt-0.5">
+                  คดีที่มีคำพิพากษาแล้ว (เช่น จำเลยรับสารภาพ, มีเลขคดีแดง หรือผ่านวันนัดพิพากษา) แต่ยังไม่มีการลงวันพิพากษาในระบบ เพื่อป้องกันการลืมลงบันทึก
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-3.5">
+            {pendingMissingJudgmentAlertCases.map(({ caseItem, alertInfo }) => {
+              const isOver30Days = alertInfo.daysElapsed >= 30;
+
+              return (
+                <div
+                  key={caseItem.id}
+                  className="rounded-xl p-3.5 border border-amber-400/40 bg-stone-900/90 text-white shadow-xs flex flex-col justify-between transition hover:shadow-lg hover:border-amber-300"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-amber-300 text-sm font-['Prompt']">
+                          ดำ {caseItem.blackCaseNo}
+                        </span>
+                        {caseItem.redCaseNo && caseItem.redCaseNo !== 'ยังไม่มีเลขแดง' && (
+                          <span className="text-xs text-rose-300 font-semibold bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">
+                            แดง {caseItem.redCaseNo}
+                          </span>
+                        )}
+                        {caseItem.receivedNumberS1 && (
+                          <span className="text-[10px] text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-400/30">
+                            ส.1: {caseItem.receivedNumberS1}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                        isOver30Days
+                          ? 'bg-rose-600 text-white border-rose-400 animate-pulse'
+                          : 'bg-amber-500 text-stone-950 border-amber-300 font-extrabold animate-pulse'
+                      }`}>
+                        ค้าง {alertInfo.daysElapsed} วัน {alertInfo.daysOverdue > 0 ? `(เกิน ${alertInfo.daysOverdue} วัน)` : ''}
+                      </span>
+                    </div>
+
+                    <div className="text-xs space-y-1.5 text-stone-300 bg-stone-950/70 p-2.5 rounded-lg border border-amber-900/40 mb-3">
+                      <div className="flex items-start gap-1">
+                        <span className="text-amber-400 font-semibold shrink-0">สถานะ:</span>
+                        <span className="text-amber-200 font-medium">{alertInfo.reason}</span>
+                      </div>
+                      <div className="flex items-start gap-1">
+                        <span className="text-stone-400 shrink-0">จำเลย:</span>
+                        <span className="text-white font-medium truncate">{caseItem.defendant || '-'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1 border-t border-stone-800">
+                        <span>อัยการ: {caseItem.responsiblePerson || caseItem.prosecutorName || 'รอกำหนด'}</span>
+                        {alertInfo.baseDate && (
+                          <span>วันที่ฟ้อง: {formatThaiDate(alertInfo.baseDate, { short: true })}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-stone-800">
+                    {onRecordJudgment && (
+                      <button
+                        type="button"
+                        onClick={() => onRecordJudgment(caseItem)}
+                        className="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                        title="คลิกเพื่อบันทึกวันพิพากษาและเริ่มคุมระยะเวลาอุทธรณ์"
+                      >
+                        <Scale className="w-3.5 h-3.5" />
+                        <span>ลงบันทึกวันพิพากษา</span>
+                      </button>
+                    )}
+                    {onEditCase && (
+                      <button
+                        type="button"
+                        onClick={() => onEditCase(caseItem)}
+                        className="bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs py-1.5 px-2 rounded-lg transition cursor-pointer"
+                        title="แก้ไขรายละเอียดสำนวน"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 0. แจ้งเตือนเฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ: หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่ */}
       {kunchartPendingCases.length > 0 && (
         <div className="bg-gradient-to-r from-purple-50 via-fuchsia-50 to-pink-50 border-2 border-purple-300 rounded-2xl p-4 sm:p-5 shadow-sm transition-all animate-in fade-in">

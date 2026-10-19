@@ -23,10 +23,11 @@ import {
   RotateCw,
   Sliders,
   Sparkles,
-  Loader2
+  Loader2,
+  Users
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, CaseAppointment, MonthlyDutyRoster, CaseCompletionReason } from '../types/appeal';
-import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { calculateAppealDeadline, calculateSeveredDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
 import { isJudgmentRecorded, isCaseUnspecifiedStage } from '../utils/appointmentUtils';
 import { appointmentTypeOptions } from './CourtAppointmentModal';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
@@ -38,6 +39,7 @@ interface EditCaseModalProps {
   caseItem: AppealCase | null;
   onClose: () => void;
   onSave: (updatedCase: AppealCase) => void;
+  onOpenCourtPetition?: (caseItem: AppealCase, newDeadline?: string, extensionCount?: number) => void;
   suggestedDutyOfficer?: string;
   dutyRosters?: MonthlyDutyRoster[];
   existingCases?: AppealCase[];
@@ -48,6 +50,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   caseItem,
   onClose,
   onSave,
+  onOpenCourtPetition,
   suggestedDutyOfficer,
   dutyRosters = [],
   existingCases = [],
@@ -74,6 +77,17 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   const [severedOrderDate, setSeveredOrderDate] = useState('');
   const [severedDeadlineDate, setSeveredDeadlineDate] = useState('');
   const [severedNotes, setSeveredNotes] = useState('');
+
+  // กรณีจำเลยหลายคน: บางคนรับสารภาพ บางคนปฏิเสธ และมีคำสั่งแยกฟ้อง (ป.วิ.อ. ม.176)
+  const [hasMultipleDefendants, setHasMultipleDefendants] = useState<boolean>(false);
+  const [hasPartialDenial, setHasPartialDenial] = useState<boolean>(false);
+  const [confessedDefendants, setConfessedDefendants] = useState<string>('');
+  const [deniedDefendants, setDeniedDefendants] = useState<string>('');
+  const [hasPendingSeveredFiling, setHasPendingSeveredFiling] = useState<boolean>(false);
+  const [severedFilingOrderDate, setSeveredFilingOrderDate] = useState<string>('');
+  const [severedFilingDeadline, setSeveredFilingDeadline] = useState<string>('');
+  const [isSeveredFilingCompleted, setIsSeveredFilingCompleted] = useState<boolean>(false);
+  const [severedNewBlackCaseNo, setSeveredNewBlackCaseNo] = useState<string>('');
 
   // สถานะยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน)
   const [isUnspecifiedStage, setIsUnspecifiedStage] = useState<boolean>(false);
@@ -133,11 +147,12 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   }, [dutyRosters]);
 
   // Auto-calculated 1-month appeal deadline
-  const [deadlineInfo, setDeadlineInfo] = useState({
-    deadlineDate: '',
-    originalDeadline: '',
-    isAdjustedForWeekend: false,
-  });
+  const deadlineInfo = React.useMemo(() => {
+    if (!judgmentDate || !judgmentDate.trim()) {
+      return { deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false };
+    }
+    return calculateAppealDeadline(judgmentDate);
+  }, [judgmentDate]);
 
   useEffect(() => {
     if (caseItem && isOpen) {
@@ -167,6 +182,16 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setSeveredOrderDate(caseItem.severedOrderDate || '');
       setSeveredDeadlineDate(caseItem.severedDeadlineDate || '');
       setSeveredNotes(caseItem.severedNotes || '');
+
+      setHasMultipleDefendants(Boolean(caseItem.hasMultipleDefendants));
+      setHasPartialDenial(Boolean(caseItem.hasPartialDenial));
+      setConfessedDefendants(caseItem.confessedDefendants || '');
+      setDeniedDefendants(caseItem.deniedDefendants || '');
+      setHasPendingSeveredFiling(Boolean(caseItem.hasPendingSeveredFiling));
+      setSeveredFilingOrderDate(caseItem.severedFilingOrderDate || '');
+      setSeveredFilingDeadline(caseItem.severedFilingDeadline || '');
+      setIsSeveredFilingCompleted(Boolean(caseItem.isSeveredFilingCompleted));
+      setSeveredNewBlackCaseNo(caseItem.severedNewBlackCaseNo || '');
 
       const unspecified = isCaseUnspecifiedStage(caseItem);
       setIsUnspecifiedStage(unspecified);
@@ -207,15 +232,6 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setSubsequentAppointments(caseItem.subsequentAppointments || []);
     }
   }, [caseItem, isOpen]);
-
-  useEffect(() => {
-    if (judgmentDate && judgmentDate.trim()) {
-      const info = calculateAppealDeadline(judgmentDate);
-      setDeadlineInfo(info);
-    } else {
-      setDeadlineInfo({ deadlineDate: '', originalDeadline: '', isAdjustedForWeekend: false });
-    }
-  }, [judgmentDate]);
 
   // Paste listener for screenshot of judgment with compression
   useEffect(() => {
@@ -319,11 +335,30 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       }
     }
 
+    const effectiveHasJudgment = !isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate && judgmentDate.trim()));
+    const calculatedDeadline = judgmentDate ? calculateAppealDeadline(judgmentDate) : null;
+    const finalAppealDeadline = effectiveHasJudgment && judgmentDate && judgmentDate.trim()
+      ? (deadlineInfo.deadlineDate || calculatedDeadline?.deadlineDate || caseItem.appealDeadline)
+      : undefined;
+
+    let finalRedCaseNo = redCaseNo.trim() || undefined;
+    if (!finalRedCaseNo) {
+      const match = `${fullJudgmentText} ${judgmentOutcome} ${notes}`.match(
+        /(?:คดีหมายเลขแดงที่|เลขคดีแดงที่|เลขคดีแดง|คดีแดงที่|คดีแดง|แดงที่|แดง)\s*([^\s,;()]+)/i
+      );
+      if (match && match[1]) {
+        const extracted = match[1].replace(/^[.:\s]+/, '').trim();
+        if (extracted && extracted !== '-' && extracted !== 'ยังไม่มีเลขแดง' && extracted.length >= 2) {
+          finalRedCaseNo = extracted;
+        }
+      }
+    }
+
     const updatedCase: AppealCase = {
       ...caseItem,
       filingDate,
       blackCaseNo: blackCaseNo.trim(),
-      redCaseNo: redCaseNo.trim() || undefined,
+      redCaseNo: finalRedCaseNo,
       receivedNumberS1: receivedNumberS1.trim() || undefined,
       filingNumberS4: filingNumberS4.trim() || undefined,
       prosecutorName: prosecutorName.trim() || undefined,
@@ -334,7 +369,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       isUnspecifiedStage,
       courtStageStatus: isUnspecifiedStage
         ? 'unspecified'
-        : (hasJudgment || defendantPlea === 'confessed')
+        : (effectiveHasJudgment || defendantPlea === 'confessed')
           ? 'confessed'
           : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
             ? 'rights_protection'
@@ -343,38 +378,35 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               : isSeveredCase
                 ? 'severed'
                 : 'other',
-      hasJudgment: (isUnspecifiedStage || defendantPlea === 'denied' || isRequisitionCase || appointmentType === 'requisition')
-        ? false
-        : defendantPlea === 'confessed'
-          ? Boolean(judgmentDate.trim() || judgmentOutcome.trim() || fullJudgmentText.trim())
-          : hasJudgment,
+
+      hasJudgment: effectiveHasJudgment,
       defendantPlea: isUnspecifiedStage
         ? undefined
         : (isRequisitionCase || appointmentType === 'requisition')
           ? 'pending'
-          : (defendantPlea === 'confessed' || hasJudgment ? 'confessed' : defendantPlea),
-      judgmentDate: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && judgmentDate) ? judgmentDate : undefined,
-      appealDeadline: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition')
-        ? (deadlineInfo.deadlineDate || (judgmentDate ? calculateAppealDeadline(judgmentDate).deadlineDate : caseItem.appealDeadline))
-        : undefined,
-      extendedDeadline: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && hasExtension && extendedDeadline) ? extendedDeadline : undefined,
-      extensionCount: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && !isRequisitionCase && appointmentType !== 'requisition' && hasExtension && extendedDeadline) ? extensionCount : undefined,
+          : effectiveHasJudgment
+            ? (defendantPlea === 'confessed' ? 'confessed' : (defendantPlea || 'denied'))
+            : defendantPlea,
+      judgmentDate: effectiveHasJudgment && judgmentDate && judgmentDate.trim() ? judgmentDate.trim() : undefined,
+      appealDeadline: finalAppealDeadline,
+      extendedDeadline: effectiveHasJudgment && hasExtension && extendedDeadline ? extendedDeadline : undefined,
+      extensionCount: effectiveHasJudgment && hasExtension && extendedDeadline ? extensionCount : undefined,
       judgmentOutcome: isUnspecifiedStage
         ? ''
-        : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
-          ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)')
-          : (isRequisitionCase || appointmentType === 'requisition')
-            ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
-            : (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate))
-              ? (judgmentOutcome.trim() || fullJudgmentText.trim() || '')
+        : effectiveHasJudgment
+          ? (judgmentOutcome.trim() || fullJudgmentText.trim() || 'ศาลมีคำพิพากษาแล้ว')
+          : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+            ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)')
+            : (isRequisitionCase || appointmentType === 'requisition')
+              ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
               : (appointmentType !== 'none'
                 ? 'อยู่ระหว่างนัดพิจารณา (รอคำให้การ)'
                 : judgmentOutcome),
-      fullJudgmentText: (!isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) && defendantPlea !== 'denied') ? (fullJudgmentText.trim() || judgmentOutcome.trim() || undefined) : undefined,
-      judgmentPhotoUrl: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? (judgmentPhotoUrl || null) : null,
-      judgmentPhotoName: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? (judgmentPhotoName || undefined) : undefined,
-      judgmentVerified: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied') ? judgmentVerified : undefined,
-      judgmentVerifiedBy: (!isUnspecifiedStage && hasJudgment && defendantPlea !== 'denied' && judgmentVerified) ? (judgmentVerifiedBy.trim() || undefined) : undefined,
+      fullJudgmentText: effectiveHasJudgment ? (fullJudgmentText.trim() || judgmentOutcome.trim() || undefined) : undefined,
+      judgmentPhotoUrl: effectiveHasJudgment ? (judgmentPhotoUrl || null) : null,
+      judgmentPhotoName: effectiveHasJudgment ? (judgmentPhotoName || undefined) : undefined,
+      judgmentVerified: effectiveHasJudgment ? judgmentVerified : undefined,
+      judgmentVerifiedBy: effectiveHasJudgment && judgmentVerified ? (judgmentVerifiedBy.trim() || undefined) : undefined,
       responsiblePerson: responsiblePerson.trim() || 'ผู้ดูแลสำนวน',
       notes: notes.trim() || undefined,
       isCompleted,
@@ -396,6 +428,19 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       severedOrderDate: isSeveredCase ? (severedOrderDate || undefined) : undefined,
       severedDeadlineDate: isSeveredCase ? (severedDeadlineDate || undefined) : undefined,
       severedNotes: isSeveredCase ? (severedNotes.trim() || undefined) : undefined,
+
+      // กรณีจำเลยหลายคน: บางคนรับสารภาพ บางคนปฏิเสธ และมีคำสั่งแยกฟ้อง (ป.วิ.อ. ม.176)
+      hasMultipleDefendants: hasMultipleDefendants || hasPartialDenial,
+      hasPartialDenial,
+      confessedDefendants: hasPartialDenial ? (confessedDefendants.trim() || undefined) : undefined,
+      deniedDefendants: hasPartialDenial ? (deniedDefendants.trim() || undefined) : undefined,
+      hasPendingSeveredFiling: hasPartialDenial ? hasPendingSeveredFiling : false,
+      severedFilingOrderDate: (hasPartialDenial && hasPendingSeveredFiling) ? (severedFilingOrderDate || judgmentDate || filingDate || undefined) : undefined,
+      severedFilingDeadline: (hasPartialDenial && hasPendingSeveredFiling)
+        ? (severedFilingDeadline || calculateSeveredDeadline(severedFilingOrderDate || judgmentDate || filingDate, 7).deadlineDate)
+        : undefined,
+      isSeveredFilingCompleted: (hasPartialDenial && hasPendingSeveredFiling) ? isSeveredFilingCompleted : undefined,
+      severedNewBlackCaseNo: (hasPartialDenial && hasPendingSeveredFiling && isSeveredFilingCompleted) ? (severedNewBlackCaseNo.trim() || undefined) : undefined,
 
       appointmentType: (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection' ? 'none' : appointmentType,
       appointmentTypeName: appointmentType === 'other' ? appointmentTypeName.trim() : undefined,
@@ -488,6 +533,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setDefendantPlea('confessed');
+                  setHasJudgment(true);
                   setIsRequisitionCase(false);
                   if (!judgmentDate) {
                     setJudgmentDate(caseItem.judgmentDate || getTodayString());
@@ -1104,7 +1150,218 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* กรณีมีจำเลยหลายคน และบางคนให้การปฏิเสธ (ป.วิ.อ. ม.176 ศาลสั่งแยกฟ้อง) */}
+              <div className="bg-gradient-to-r from-purple-50/90 via-indigo-50/70 to-amber-50/50 border-2 border-purple-300 rounded-xl p-3.5 space-y-3 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-2 border-b border-purple-200">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-purple-700 text-white flex items-center justify-center text-xs font-bold shadow-xs shrink-0">
+                      👥
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-purple-950 font-['Prompt'] flex items-center gap-1.5">
+                        <span>กรณีจำเลยหลายคน: บางคนรับสารภาพ และบางคนปฏิเสธ (ป.วิ.อ. ม.176)</span>
+                      </h4>
+                      <p className="text-[11px] text-purple-800">
+                        หากศาลสั่งให้แยกฟ้องจำเลยที่ปฏิเสธ ระบบจะเชื่อมโยงกับระบบแยกฟ้อง และเริ่มเตือนภายใน 7 วัน
+                      </p>
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-purple-300 shadow-2xs hover:bg-purple-50 transition shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={hasPartialDenial}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setHasPartialDenial(checked);
+                        setHasMultipleDefendants(checked);
+                        if (checked) {
+                          setHasPendingSeveredFiling(true);
+                          const ordDate = judgmentDate || filingDate || getTodayString();
+                          setSeveredFilingOrderDate(ordDate);
+                          setSeveredFilingDeadline(calculateSeveredDeadline(ordDate, 7).deadlineDate);
+                          if (!confessedDefendants && defendant) {
+                            setConfessedDefendants(`จำเลยที่ 1 (หรือระบุชื่อ)`);
+                          }
+                          if (!deniedDefendants) {
+                            setDeniedDefendants(`จำเลยที่ 2 (ที่ให้การปฏิเสธ)`);
+                          }
+                        }
+                      }}
+                      className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-purple-300"
+                    />
+                    <span className="text-xs font-bold text-purple-950 font-['Prompt']">
+                      มีจำเลยหลายคน & บางคนปฏิเสธ
+                    </span>
+                  </label>
+                </div>
+
+                {hasPartialDenial && (
+                  <div className="space-y-3 pt-1 animate-in fade-in">
+                    {/* ข้อมูลจำเลยที่รับสารภาพ & จำเลยที่ปฏิเสธ */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-yellow-950 mb-1 flex items-center gap-1">
+                          <span>🟡 จำเลยที่รับสารภาพ</span>
+                          <span className="text-[10px] text-yellow-800">(มีคำพิพากษา/คุมอุทธรณ์)</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="เช่น จำเลยที่ 1 นายก... หรือระบุชื่อ"
+                          value={confessedDefendants}
+                          onChange={(e) => setConfessedDefendants(e.target.value)}
+                          className="w-full text-xs border border-yellow-400 bg-white rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-yellow-500 font-medium text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-orange-950 mb-1 flex items-center gap-1">
+                          <span>🟠 จำเลยที่ปฏิเสธ</span>
+                          <span className="text-[10px] text-orange-800 font-bold">(ต้องแยกฟ้องใหม่) *</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="เช่น จำเลยที่ 2 นายข... (ที่ศาลสั่งแยกฟ้อง)"
+                          value={deniedDefendants}
+                          onChange={(e) => setDeniedDefendants(e.target.value)}
+                          className="w-full text-xs border border-orange-400 bg-white rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-orange-500 font-semibold text-orange-950"
+                        />
+                      </div>
+                    </div>
+
+                    {/* ตัวเลือกคำสั่งศาลให้แยกฟ้อง */}
+                    <div className="bg-white/80 p-3 rounded-lg border border-purple-200 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-purple-950">
+                          <input
+                            type="checkbox"
+                            checked={hasPendingSeveredFiling}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setHasPendingSeveredFiling(checked);
+                              if (checked && !severedFilingOrderDate) {
+                                const ordDate = judgmentDate || filingDate || getTodayString();
+                                setSeveredFilingOrderDate(ordDate);
+                                setSeveredFilingDeadline(calculateSeveredDeadline(ordDate, 7).deadlineDate);
+                              }
+                            }}
+                            className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-purple-300"
+                          />
+                          <span>⚖️ ศาลมีคำสั่งให้พนักงานอัยการแยกฟ้องจำเลยที่ปฏิเสธ (ป.วิ.อ. ม.176 วรรคสอง)</span>
+                        </label>
+                        <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">
+                          กำหนด 7 วัน
+                        </span>
+                      </div>
+
+                      {hasPendingSeveredFiling && (
+                        <div className="pt-2 border-t border-purple-100 space-y-2.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-xs font-semibold text-purple-950">
+                                  วันที่ศาลสั่งแยกฟ้อง
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const today = getTodayString();
+                                    setSeveredFilingOrderDate(today);
+                                    setSeveredFilingDeadline(calculateSeveredDeadline(today, 7).deadlineDate);
+                                  }}
+                                  className="text-[10px] text-purple-700 hover:text-purple-950 underline cursor-pointer"
+                                >
+                                  ใช้วันนี้
+                                </button>
+                              </div>
+                              <input
+                                type="date"
+                                value={severedFilingOrderDate}
+                                onChange={(e) => {
+                                  const ord = e.target.value;
+                                  setSeveredFilingOrderDate(ord);
+                                  if (ord) {
+                                    setSeveredFilingDeadline(calculateSeveredDeadline(ord, 7).deadlineDate);
+                                  }
+                                }}
+                                className="w-full text-xs border border-purple-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-medium"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold text-purple-950 mb-1 flex items-center justify-between">
+                                <span>กำหนดเวลายื่นแยกฟ้อง (เตือนภายใน 7 วัน) *</span>
+                                <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                                  7 วัน
+                                </span>
+                              </label>
+                              <input
+                                type="date"
+                                value={severedFilingDeadline}
+                                onChange={(e) => setSeveredFilingDeadline(e.target.value)}
+                                className="w-full text-xs border border-purple-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-bold text-rose-700"
+                              />
+                              {severedFilingDeadline && (
+                                <span className="text-[10px] text-purple-800 block mt-0.5">
+                                  ครบกำหนด: {formatThaiDate(severedFilingDeadline, { short: false })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* สถานะการยื่นแยกฟ้อง */}
+                          <div className="p-2 bg-purple-50 rounded-lg border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-3">
+                              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-800">
+                                <input
+                                  type="radio"
+                                  name="editSeveredStatusRadio"
+                                  checked={!isSeveredFilingCompleted}
+                                  onChange={() => setIsSeveredFilingCompleted(false)}
+                                  className="text-purple-600 focus:ring-purple-500"
+                                />
+                                <span>⏳ รอแยกฟ้อง (ระบบจะเตือนนับถอยหลัง 7 วัน)</span>
+                              </label>
+
+                              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-800">
+                                <input
+                                  type="radio"
+                                  name="editSeveredStatusRadio"
+                                  checked={isSeveredFilingCompleted}
+                                  onChange={() => setIsSeveredFilingCompleted(true)}
+                                  className="text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <span>✅ ยื่นแยกฟ้องแล้ว</span>
+                              </label>
+                            </div>
+
+                            {isSeveredFilingCompleted && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-slate-600 shrink-0">คดีดำที่แยกฟ้อง:</span>
+                                <input
+                                  type="text"
+                                  placeholder="เช่น อ.125/2569"
+                                  value={severedNewBlackCaseNo}
+                                  onChange={(e) => setSeveredNewBlackCaseNo(e.target.value)}
+                                  className="text-xs border border-emerald-300 bg-white rounded-lg px-2 py-1 w-32 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800"
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* คำแนะนำการเชื่อมโยงระบบแยกฟ้อง */}
+                          <div className="text-[11px] text-purple-900 bg-purple-100/70 p-2 rounded-lg border border-purple-200 flex items-start gap-1.5">
+                            <span className="shrink-0 text-xs">🔗</span>
+                            <div>
+                              <span><strong>ระบบเชื่อมโยงหัวข้อแยกฟ้อง:</strong> สำนวนนี้จะปรากฏในแท็บ/ตัวกรอง <strong>"✂️ สำนวนที่ศาลแยกฟ้อง"</strong> พร้อมแสดงการแจ้งเตือนเตือนด่วนภายใน 7 วัน และเชื่อมโยงผ่าน ส.1, ส.4 โดยอัตโนมัติ</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-amber-950">
@@ -1132,18 +1389,43 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold text-rose-950 mb-1 flex items-center justify-between">
+                    <span>หมายเลขคดีแดง (ถ้าทราบ)</span>
+                    <span className="text-[10px] text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                      เชื่อมโยงเลขแดง
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น อ.891/2569"
+                    value={redCaseNo}
+                    onChange={(e) => setRedCaseNo(e.target.value)}
+                    className="w-full text-xs border border-rose-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500 font-bold text-rose-800"
+                  />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    {redCaseNo ? `เชื่อมโยง: แดง ${redCaseNo}` : 'ระบุเมื่อศาลตัดสิน'}
+                  </span>
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-rose-950 mb-1">
                     วันครบกำหนดอุทธรณ์ 1 เดือน (คำนวณอัตโนมัติ)
                   </label>
                   <div className="text-sm font-bold text-rose-700 bg-white border border-rose-300 rounded-xl px-3 py-2 flex items-center justify-between min-h-[38px]">
-                    <span>{deadlineInfo.deadlineDate ? formatThaiDate(deadlineInfo.deadlineDate, { short: false }) : 'กรุณาระบุวันพิพากษา'}</span>
-                    {deadlineInfo.deadlineDate && (
+                    <span>
+                      {deadlineInfo.deadlineDate
+                        ? formatThaiDate(deadlineInfo.deadlineDate, { short: false })
+                        : judgmentDate
+                          ? formatThaiDate(calculateAppealDeadline(judgmentDate).deadlineDate, { short: false })
+                          : 'กรุณาระบุวันพิพากษา'}
+                    </span>
+                    {(deadlineInfo.deadlineDate || judgmentDate) && (
                       <span className="text-[10px] font-normal text-rose-600 bg-rose-50 px-2 py-0.5 rounded">
                         1 เดือน
                       </span>
                     )}
                   </div>
-                  {deadlineInfo.isAdjustedForWeekend && (
+                  {(deadlineInfo.isAdjustedForWeekend || (judgmentDate && calculateAppealDeadline(judgmentDate).isAdjustedForWeekend)) && (
                     <span className="text-[10px] text-amber-700 font-medium block mt-1">
                       ⚡ วันครบกำหนดเดิมตรงกับวันหยุดเสาร์-อาทิตย์ กฎหมายเลื่อนเป็นวันทำการถัดไป
                     </span>

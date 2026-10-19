@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Copy, Check, ChevronDown, Scale, FileText, Sparkles, Share2, FileSpreadsheet, QrCode, Table } from 'lucide-react';
+import { Copy, Check, ChevronDown, Scale, FileText, Sparkles, Share2, FileSpreadsheet, QrCode, Table, Printer } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import {
   formatJudgmentForClipboard,
@@ -256,17 +256,17 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
                 className="w-full text-left px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-950 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
               >
                 <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-amber-600 group-hover:text-white transition">
-                  <Scale className="w-3.5 h-3.5" />
+                  <Printer className="w-3.5 h-3.5" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-slate-900 flex items-center gap-1">
-                    <span>แบบคำร้องขอขยายเวลาอุทธรณ์</span>
-                    <span className="bg-amber-200 text-amber-900 text-[9px] px-1 py-0.2 rounded font-bold">
+                    <span>พิมพ์ขยายอุทธรณ์</span>
+                    <span className="bg-yellow-300 text-slate-950 text-[9px] px-1.5 py-0.2 rounded font-bold shadow-2xs">
                       แบบพิมพ์ศาล (๗)
                     </span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">
-                    ดึงเลขคดี คู่ความ ศาลเพชรบุรี กำหนดเดิม/ใหม่ พิมพ์ลงกระดาษตราครุฑ / Google Docs
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง พิมพ์ลงกระดาษตราครุฑ / Google Docs
                   </div>
                 </div>
               </button>
@@ -464,17 +464,17 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
               className="w-full text-left px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-950 flex items-start gap-2.5 transition group cursor-pointer border-t border-slate-100"
             >
               <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-amber-600 group-hover:text-white transition">
-                <Scale className="w-3.5 h-3.5" />
+                <Printer className="w-3.5 h-3.5" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-slate-900 flex items-center gap-1">
-                  <span>แบบคำร้องขอขยายเวลาอุทธรณ์</span>
-                  <span className="bg-amber-200 text-amber-900 text-[9px] px-1 py-0.2 rounded font-bold">
+                  <span>พิมพ์ขยายอุทธรณ์</span>
+                  <span className="bg-yellow-300 text-slate-950 text-[9px] px-1.5 py-0.2 rounded font-bold shadow-2xs">
                     แบบพิมพ์ศาล (๗)
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  ดึงเลขคดี คู่ความ ศาลเพชรบุรี กำหนดเดิม/ใหม่ พิมพ์ลงกระดาษตราครุฑ / Google Docs
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง พิมพ์ลงกระดาษตราครุฑ / Google Docs
                 </div>
               </div>
             </button>

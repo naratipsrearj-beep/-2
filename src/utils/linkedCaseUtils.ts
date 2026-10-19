@@ -41,16 +41,22 @@ export function areCasesLinked(c1: AppealCase, c2: AppealCase): boolean {
   // 1. Direct ID link
   if (c1.severedFromCaseId && c1.severedFromCaseId === c2.id) return true;
   if (c2.severedFromCaseId && c2.severedFromCaseId === c1.id) return true;
+  if (c1.severedNewCaseId && c1.severedNewCaseId === c2.id) return true;
+  if (c2.severedNewCaseId && c2.severedNewCaseId === c1.id) return true;
 
-  // 2. Original Black Case No link
+  // 2. Original / New Black Case No link
   const c1Black = cleanBlackCaseNo(c1.blackCaseNo);
   const c2Black = cleanBlackCaseNo(c2.blackCaseNo);
   const c1OrigBlack = cleanBlackCaseNo(c1.originalBlackCaseNo);
   const c2OrigBlack = cleanBlackCaseNo(c2.originalBlackCaseNo);
+  const c1NewBlack = cleanBlackCaseNo(c1.severedNewBlackCaseNo);
+  const c2NewBlack = cleanBlackCaseNo(c2.severedNewBlackCaseNo);
 
   if (c1OrigBlack && c1Black && c1OrigBlack === c2Black) return true;
   if (c2OrigBlack && c2Black && c2OrigBlack === c1Black) return true;
   if (c1OrigBlack && c2OrigBlack && c1OrigBlack === c2OrigBlack) return true;
+  if (c1NewBlack && c2Black && c1NewBlack === c2Black) return true;
+  if (c2NewBlack && c1Black && c2NewBlack === c1Black) return true;
 
   // 3. Shared ส.1 (receivedNumberS1)
   const c1S1 = cleanDocketNumber(c1.receivedNumberS1);
@@ -291,3 +297,38 @@ export function caseMatchesWithLinkedSearch(
     linkedCases: linked,
   };
 }
+
+/**
+ * สร้างข้อมูลจำลองสำหรับเปิดฟอร์มสร้างสำนวนแยกฟ้องใหม่ โดยดึงข้อมูลจากสำนวนเดิม
+ */
+export function createSeveredCasePrefill(parentCase: AppealCase): Partial<AppealCase> {
+  const orderDate = parentCase.severedFilingOrderDate || parentCase.severedOrderDate || parentCase.judgmentDate || parentCase.filingDate;
+  const deadline = parentCase.severedFilingDeadline || parentCase.severedDeadlineDate;
+  
+  return {
+    isSeveredCase: true,
+    severedFromCaseId: parentCase.id,
+    originalBlackCaseNo: parentCase.blackCaseNo,
+    originalRedCaseNo: parentCase.redCaseNo || '',
+    originalReceivedNumberS1: parentCase.receivedNumberS1 || '',
+    originalFilingNumberS4: parentCase.filingNumberS4 || '',
+    receivedNumberS1: parentCase.receivedNumberS1 || '',
+    filingNumberS4: parentCase.filingNumberS4 || '',
+    court: parentCase.court,
+    plaintiff: parentCase.plaintiff || 'พนักงานอัยการ',
+    defendant: parentCase.deniedDefendants
+      ? `${parentCase.deniedDefendants} (จำเลยที่ปฏิเสธ - ศาลสั่งแยกฟ้อง)`
+      : `${parentCase.defendant} (จำเลยที่ปฏิเสธ - แยกฟ้อง)`,
+    caseType: parentCase.caseType || 'อาญา',
+    prosecutorName: parentCase.prosecutorName || '',
+    responsiblePerson: parentCase.responsiblePerson || '',
+    severedOrderDate: orderDate,
+    severedDeadlineDate: deadline,
+    severedNotes: `สำนวนแยกฟ้องจำเลยที่ให้การปฏิเสธจากคดีดำเดิม ${parentCase.blackCaseNo} ตามคำสั่งศาล (ป.วิ.อ. ม.176 วรรคสอง กำหนดเวลายื่นฟ้องภายใน 7 วัน)`,
+    defendantPlea: 'denied',
+    appointmentType: 'pre_trial',
+    appointmentTypeName: 'นัดพร้อม / ตรวจพยานหลักฐาน (สำนวนแยกฟ้อง)',
+    notes: `แยกฟ้องจากคดีดำ ${parentCase.blackCaseNo} (ส.1: ${parentCase.receivedNumberS1 || '-'}, ส.4: ${parentCase.filingNumberS4 || '-'})`,
+  };
+}
+

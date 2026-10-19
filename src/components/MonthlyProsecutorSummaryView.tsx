@@ -31,7 +31,7 @@ import {
   Shield
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType } from '../types/appeal';
-import { formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { formatThaiDate, getTodayString, calculateAppealDeadline } from '../utils/dateUtils';
 import {
   getAvailableFilingMonths,
   getMonthlyProsecutorSummary,
@@ -292,12 +292,15 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
     try {
       let updatedCase: AppealCase;
       if (pleaModalChoice === 'confessed') {
+        const jDate = pleaModalJudgmentDate || pleaModalCase.judgmentDate;
+        const calculatedDeadline = jDate ? calculateAppealDeadline(jDate).deadlineDate : undefined;
         updatedCase = {
           ...pleaModalCase,
           defendantPlea: 'confessed',
           isRequisitionCase: false,
-          hasJudgment: Boolean(pleaModalJudgmentDate),
-          judgmentDate: pleaModalJudgmentDate || pleaModalCase.judgmentDate,
+          hasJudgment: Boolean(jDate),
+          judgmentDate: jDate,
+          appealDeadline: calculatedDeadline || pleaModalCase.appealDeadline,
           judgmentOutcome: pleaModalOutcome || pleaModalCase.judgmentOutcome || 'จำเลยรับสารภาพ',
           appointmentType: (pleaModalCase.appointmentType === 'rights_protection' || pleaModalCase.appointmentType === 'requisition') ? 'none' : pleaModalCase.appointmentType,
           notes: pleaModalNotes || pleaModalCase.notes,
@@ -1429,6 +1432,12 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
                       onChange={(e) => setPleaModalJudgmentDate(e.target.value)}
                       className="w-full px-3 py-1.5 rounded-xl border border-yellow-300 bg-white text-xs focus:ring-2 focus:ring-yellow-400 text-slate-800"
                     />
+                    {pleaModalJudgmentDate && (
+                      <div className="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded-lg p-2 flex items-center justify-between mt-1">
+                        <span className="font-semibold">วันครบกำหนดอุทธรณ์ 1 เดือน:</span>
+                        <span className="font-bold">{formatThaiDate(calculateAppealDeadline(pleaModalJudgmentDate).deadlineDate, { short: false })}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <label className="text-[11px] text-yellow-900 font-medium">ผลคำพิพากษาโดยย่อ (เช่น จำคุก 1 ปี ปรับ 5,000 บาท รอลงอาญา):</label>

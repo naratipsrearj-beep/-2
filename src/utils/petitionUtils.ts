@@ -47,10 +47,60 @@ export function toThaiNumerals(str: string | number): string {
   return String(str).replace(/[0-9]/g, (digit) => THAI_DIGITS[parseInt(digit, 10)]);
 }
 
-const THAI_MONTHS_FULL = [
+export const THAI_MONTHS_FULL = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
 ];
+
+/**
+ * บวกจำนวนวันให้กับ YYYY-MM-DD
+ */
+export function addDaysToDateStr(dateStr?: string, days: number = 1): string {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + days);
+    return dt.toISOString().slice(0, 10);
+  } catch {
+    return dateStr || '';
+  }
+}
+
+/**
+ * บวกจำนวนเดือนให้กับ YYYY-MM-DD
+ */
+export function addMonthsToDateStr(dateStr?: string, months: number = 2): string {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setMonth(dt.getMonth() + months);
+    return dt.toISOString().slice(0, 10);
+  } catch {
+    return dateStr || '';
+  }
+}
+
+/**
+ * แปลงวันที่เป็นข้อความ วัน เดือน ปี แบบกระชับ เช่น "๑๖ ตุลาคม ๒๕๖๙"
+ */
+export function formatDayMonthYearSimple(dateStr?: string, thaiDigits = true): string {
+  if (!dateStr) return '................................';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const day = d;
+    const month = THAI_MONTHS_FULL[m - 1] || '';
+    const buddhistYear = (y > 2400 ? y : y + 543);
+
+    if (thaiDigits) {
+      return `${toThaiNumerals(day)} ${month} ${toThaiNumerals(buddhistYear)}`;
+    }
+    return `${day} ${month} ${buddhistYear}`;
+  } catch {
+    return dateStr || '';
+  }
+}
 
 /**
  * แปลงวันที่เป็นรูปแบบศาลไทย เช่น วันที่ ๑๕ เดือน ตุลาคม พุทธศักราช ๒๕๖๙
@@ -61,7 +111,7 @@ export function formatCourtThaiDate(dateStr?: string, thaiDigits = false): strin
     const [y, m, d] = dateStr.split('-').map(Number);
     const day = d;
     const month = THAI_MONTHS_FULL[m - 1] || '';
-    const buddhistYear = y + 543;
+    const buddhistYear = (y > 2400 ? y : y + 543);
 
     if (thaiDigits) {
       return `วันที่ ${toThaiNumerals(day)} เดือน ${month} พุทธศักราช ${toThaiNumerals(buddhistYear)}`;
@@ -83,74 +133,60 @@ export function generateCourtPetitionText(
   const courtName = data.court || 'ศาลจังหวัดเพชรบุรี';
   const blackNo = data.blackCaseNo || '........................';
   const redNo = data.redCaseNo || '........................';
-  const caseType = data.caseType || 'อาญา';
   const plaintiff = data.plaintiff || 'พนักงานอัยการจังหวัดเพชรบุรี';
   const defendant = data.defendant || '................................................';
-  const countStr = data.extensionCount > 1 ? ` (ครั้งที่ ${data.extensionCount})` : ' (ครั้งที่ ๑)';
+  const countStr = data.extensionCount > 1 ? `ครั้งที่ ${toThaiNumerals(data.extensionCount)}` : 'ครั้งที่ ๑';
   const prosecutor = data.prosecutorName || '................................................';
 
   const [py, pm, pd] = (data.petitionDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
-  const petitionDay = pd;
-  const petitionMonth = THAI_MONTHS_FULL[pm - 1] || '';
-  const petitionYear = py + 543;
+  const petitionDay = pd ? toThaiNumerals(pd) : '......';
+  const petitionMonth = THAI_MONTHS_FULL[pm - 1] || 'ตุลาคม';
+  const petitionYear = toThaiNumerals(py > 2400 ? py : py + 543);
 
-  const originalDeadlineText = data.originalDeadline
-    ? formatCourtThaiDate(data.originalDeadline)
-    : '................................................';
-  const newDeadlineText = data.newDeadline
-    ? formatCourtThaiDate(data.newDeadline)
-    : '................................................';
   const judgmentDateText = data.judgmentDate
-    ? formatCourtThaiDate(data.judgmentDate)
+    ? formatDayMonthYearSimple(data.judgmentDate, true)
+    : '................................................';
+  const originalDeadlineText = data.originalDeadline
+    ? formatDayMonthYearSimple(data.originalDeadline, true)
     : '................................................';
 
-  const judgmentOutcomeText = data.judgmentOutcome
-    ? `ปรากฏตามคำพิพากษาของศาลคือ "${data.judgmentOutcome}"`
-    : 'ปรากฏตามคำพิพากษาของศาล';
+  // วันถัดจากวันครบระยะเวลาอุทธรณ์
+  const nextDay = data.originalDeadline ? addDaysToDateStr(data.originalDeadline, 1) : '';
+  const nextDayDeadlineText = nextDay
+    ? formatDayMonthYearSimple(nextDay, true)
+    : '................................................';
 
-  const extensionContextText =
-    data.extensionCount > 1
-      ? `และคดีนี้ ศาลได้เคยอนุญาตให้โจทก์ขยายระยะเวลาอุทธรณ์มาแล้ว โดยจะครบกำหนดใน${originalDeadlineText}`
-      : `และคดีนี้จะครบกำหนดระยะเวลาอุทธรณ์ ๑ เดือน ตามกฎหมายใน${originalDeadlineText}`;
+  // ขยายวันทีครบอุทธรณ์ไปอีกสองเดือน
+  const extended2Months = data.newDeadline || (data.originalDeadline ? addMonthsToDateStr(data.originalDeadline, 2) : '');
+  const newDeadlineText = extended2Months
+    ? formatDayMonthYearSimple(extended2Months, true)
+    : '................................................';
 
-  const reasonText = data.reason || PRESET_PETITION_REASONS[0].text;
-
-  // สำหรับกระดาษพิมพ์ตราครุฑสำเร็จรูป จะเว้นระยะห่างด้านบนไว้
   const topSpacing = options.forPreprintedGarudaPaper
     ? `\n\n\n\n\n`
-    : `\n[ ตราครุฑ ]\n\n`;
+    : `                                        [ตราครุฑ]\n\n`;
 
   return [
     topSpacing,
-    `                                                                      (๗)`,
-    `                                                     คดีหมายเลขดำที่   ${blackNo}`,
-    `                                                     คดีหมายเลขแดงที่  ${redNo}`,
-    `                             ${courtName}`,
-    `วันที่  ${petitionDay}  เดือน  ${petitionMonth}  พุทธศักราช  ${petitionYear}`,
-    `ความ  ${caseType}`,
+    `(คำร้อง) ขอขยายระยะเวลาอุทธรณ์                                   คดีหมายเลขดำที่ ( ${blackNo} )`,
+    `        ${countStr}                                             คดีหมายเลขแดงที่ ( ${redNo} )`,
+    `                                   ศาล จังหวัดเพชรบุรี`,
     ``,
-    `${plaintiff}                                                                  โจทก์`,
-    `ระหว่าง`,
-    `${defendant}                                                                  จำเลย`,
+    `                      วันที่ ${petitionDay} เดือน ${petitionMonth} พุทธศักราช ${petitionYear}`,
     ``,
-    `                                    คำร้องขอขยายระยะเวลาอุทธรณ์${countStr}`,
+    `                                    ความอาญา`,
     ``,
-    `      ข้าพเจ้า ${plaintiff} โจทก์ ขอยื่นคำร้องต่อศาล มีข้อความตามที่จะกราบเรียนต่อไปนี้`,
+    `ระหว่าง { .....${plaintiff}....................................................โจทก์`,
+    `        ( ${defendant} )..................................................จำเลย`,
     ``,
-    `      ข้อ ๑. คดีนี้ ศาลได้โปรดอ่านคำพิพากษาเมื่อ${judgmentDateText} ${judgmentOutcomeText} ${extensionContextText}`,
-    ``,
-    `      ข้อ ๒. เนื่องจาก ${reasonText}`,
-    ``,
-    `      ด้วยเหตุดังกล่าวข้างต้น โจทก์จึงมีความจำเป็นอย่างยิ่งที่จะต้องกราบเรียนต่อศาล เพื่อขอประทานศาลได้โปรดมีคำสั่งอนุญาตให้ขยายระยะเวลาอุทธรณ์ของโจทก์ออกไปอีก${countStr} นับแต่วันครบกำหนดเดิม จนถึง${newDeadlineText} เพื่อประโยชน์แห่งความยุติธรรม`,
-    ``,
-    `      ควรมิควรแล้วแต่จะโปรด`,
-    ``,
-    `                                          (ลงชื่อ) .............................................................. โจทก์`,
-    `                                                ( ${prosecutor} )`,
-    `                                                    พนักงานอัยการเจ้าของสำนวน`,
-    ``,
-    `คำร้องฉบับนี้ ข้าพเจ้า ${prosecutor} พนักงานอัยการผู้เรียงและยื่น`,
-    `                                          (ลงชื่อ) .............................................................. ผู้เรียงและยื่น`,
-    `                                          (ลงชื่อ) .............................................................. ผู้เขียนหรือพิมพ์`,
+    `        ข้าพเจ้าพนักงานอัยการ .....จังหวัดเพชรบุรี...............................................โจทก์......`,
+    `ขอยื่นคำร้องมีข้อความตามที่กล่าวต่อไปนี้`,
+    `        ...............ข้อ ๑. คดีนี้ ศาลจังหวัดเพชรบุรีได้มีคำพิพากษาจำเลย เมื่อวันที่ ( ${judgmentDateText} ) และจะครบกำหนดระยะเวลาอุทธรณ์ ในวันที่ ( ${originalDeadlineText} ) ซึ่งคดีนี้อยู่ระหว่างเสนอผู้บังคับบัญชา โจทก์ จึงยื่นคำร้องขอขยายระยะเวลาอุทธรณ์ออกไปอีก มีกำหนด ๒ เดือน นับแต่วันที่ ( ${nextDayDeadlineText} ) ถึงวันที่ ( ${newDeadlineText} ) ขอศาลได้โปรดอนุญาต................................`,
+    `..................................................................ควรมิควรแล้วแต่จะโปรด................................................`,
+    `....................................................ลงชื่อ....................................................โจทก์`,
+    `        ...............คำร้องฉบับนี้ ข้าพเจ้า ( ${prosecutor} ) พนักงานอัยการจังหวัดเพชรบุรี โจทก์ เป็นผู้เรียงและพิมพ์.............................................................................................................................`,
+    `....................................................ลงชื่อ....................................................ผู้เรียงและพิมพ์`,
+    `หมายเหตุ ข้าพเจ้ารอฟังคำสั่งอยู่ ถ้าไม่รอให้ถือว่าทราบแล้ว`,
+    `....................................................ผู้ร้อง`,
   ].join('\n');
 }

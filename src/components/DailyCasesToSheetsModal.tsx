@@ -56,7 +56,7 @@ export const DailyCasesToSheetsModal: React.FC<DailyCasesToSheetsModalProps> = (
 
   if (!isOpen) return null;
 
-  const rows = getDailyExportRows(cases, conciseProcedure);
+  const rows = getDailyExportRows(cases, conciseProcedure, filingDate);
 
   // คัดลอกข้อมูลสำหรับกดวางใน Google Sheets / Excel (Ctrl+V) พร้อมสีพื้นหลังช่องการดำเนินการ
   const handleCopy = async (forExistingForm: boolean) => {

@@ -157,7 +157,7 @@ export const JudgmentRecheckModal: React.FC<JudgmentRecheckModalProps> = ({
   const followUpItem = !isCase ? (item as DailyJudgmentFollowUp) : null;
 
   const titleText = isCase
-    ? `สำนวนดำ ${caseItem?.blackCaseNo} / แดง ${caseItem?.redCaseNo} • ${caseItem?.court}`
+    ? `สำนวนดำ ${caseItem?.blackCaseNo} ${caseItem?.redCaseNo && caseItem.redCaseNo !== 'ยังไม่มีเลขแดง' && caseItem.redCaseNo !== '-' ? `/ แดง ${caseItem.redCaseNo}` : '(ยังไม่มีเลขแดง)'} • ${caseItem?.court}`
     : `คดี ${followUpItem?.caseNumber} • ${followUpItem?.court} (นัด ${formatThaiDate(followUpItem?.followUpDate || '')})`;
 
   // File Upload Handlers

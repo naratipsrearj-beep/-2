@@ -1,6 +1,6 @@
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate } from './dateUtils';
-import { getAppointmentLabel, isCaseConfessed, isCaseDenied, isJudgmentRecorded } from './appointmentUtils';
+import { getAppointmentLabel, isCaseConfessed, isCaseDenied } from './appointmentUtils';
 
 /**
  * 7 Column Headers as specifically requested by user:
@@ -45,11 +45,38 @@ export function formatBlackCaseNo(c: AppealCase): string {
 
 /**
  * ช่องที่ 3: เลขคดีแดง
+ * ดึงหมายเลขคดีแดงที่กรอกไว้ในสำนวนคดี หรือเชื่อมโยงจากข้อความคำพิพากษาที่ระบุไว้
  */
 export function formatRedCaseNo(c: AppealCase): string {
-  if (c.redCaseNo && c.redCaseNo.trim()) {
+  if (
+    c.redCaseNo &&
+    typeof c.redCaseNo === 'string' &&
+    c.redCaseNo.trim() &&
+    c.redCaseNo.trim() !== '-' &&
+    c.redCaseNo.trim() !== 'ยังไม่มีเลขแดง'
+  ) {
     return c.redCaseNo.trim();
   }
+
+  // ตรวจหาเลขคดีแดงที่อาจระบุไว้ในข้อความคำพิพากษา ผลคำตัดสิน หรือบันทึกข้อความที่กรอกไว้ในตอนแรก
+  const texts = [c.fullJudgmentText, c.judgmentOutcome, c.notes, c.requisitionNotes]
+    .filter(Boolean)
+    .join(' ');
+  const match = texts.match(
+    /(?:คดีหมายเลขแดงที่|เลขคดีแดงที่|เลขคดีแดง|คดีแดงที่|คดีแดง|แดงที่|แดง)\s*([^\s,;()]+)/i
+  );
+  if (match && match[1]) {
+    const extracted = match[1].replace(/^[.:\s]+/, '').trim();
+    if (extracted && extracted !== '-' && extracted !== 'ยังไม่มีเลขแดง' && extracted.length >= 2) {
+      return extracted;
+    }
+  }
+
+  // กรณีเป็นสำนวนแยกฟ้องและมีเลขคดีแดงเดิม
+  if (c.isSeveredCase && c.originalRedCaseNo && c.originalRedCaseNo.trim()) {
+    return `เดิม ${c.originalRedCaseNo.trim()}`;
+  }
+
   return 'ยังไม่มีเลขแดง';
 }
 
@@ -80,11 +107,13 @@ export function formatDefendant(c: AppealCase): string {
 /**
  * ช่องที่ 6: การดำเนินการว่าเป็นสำนวนรับสารภาพหรือสำนวนมีนัดต่อ
  */
-export function formatProcedureStatus(c: AppealCase, concise: boolean = false): string {
+export function formatProcedureStatus(c: AppealCase, concise: boolean = false, fallbackFilingDate?: string): string {
   // 1. สำนวนรับสารภาพ -> สีเหลือง (หากเคยเป็นสำนวนเบิกฟ้องแล้วเปลี่ยนมารับสารภาพ จะเข้าเงื่อนไขนี้)
+  // ตามคำขอผู้ใช้: ให้มีวันพิพากษาในกรณียังไม่ได้กรอกคำพิพากษาด้วย (ใช้วันที่ฟ้อง c.filingDate หรือ fallbackFilingDate)
   if (isCaseConfessed(c) || c.defendantPlea === 'confessed') {
-    if (!concise && isJudgmentRecorded(c) && c.judgmentDate) {
-      return `สำนวนรับสารภาพ (พิพากษา ${formatThaiDate(c.judgmentDate, { short: true })})`;
+    const judgmentDateStr = c.judgmentDate || c.filingDate || fallbackFilingDate;
+    if (!concise && judgmentDateStr) {
+      return `สำนวนรับสารภาพ (พิพากษา ${formatThaiDate(judgmentDateStr, { short: true })})`;
     }
     return 'สำนวนรับสารภาพ';
   }
@@ -237,20 +266,20 @@ export function formatCompletedDate(c: AppealCase, concise: boolean = false): st
 /**
  * แปลงรายการคดีเป็น Array 7 ช่องตรงตามที่ผู้ใช้กำหนด
  */
-export function getDailyExportRow(c: AppealCase, conciseProcedure: boolean = false): string[] {
+export function getDailyExportRow(c: AppealCase, conciseProcedure: boolean = false, fallbackFilingDate?: string): string[] {
   return [
     formatS1S4(c),
     formatBlackCaseNo(c),
     formatRedCaseNo(c),
     formatProsecutorName(c),
     formatDefendant(c),
-    formatProcedureStatus(c, conciseProcedure),
+    formatProcedureStatus(c, conciseProcedure, fallbackFilingDate),
     formatCompletedDate(c, conciseProcedure),
   ];
 }
 
-export function getDailyExportRows(cases: AppealCase[], conciseProcedure: boolean = false): string[][] {
-  return cases.map((c) => getDailyExportRow(c, conciseProcedure));
+export function getDailyExportRows(cases: AppealCase[], conciseProcedure: boolean = false, fallbackFilingDate?: string): string[][] {
+  return cases.map((c) => getDailyExportRow(c, conciseProcedure, fallbackFilingDate));
 }
 
 /**
@@ -278,7 +307,7 @@ export function formatDailyCasesTsv(
     lines.push(DAILY_EXPORT_HEADERS.join('\t'));
   }
   cases.forEach((c) => {
-    lines.push(getDailyExportRow(c, concise).join('\t'));
+    lines.push(getDailyExportRow(c, concise, filingDate).join('\t'));
   });
 
   return lines.join('\n');
@@ -315,7 +344,7 @@ export function formatDailyCasesCsv(
     lines.push(DAILY_EXPORT_HEADERS.map(escapeCell).join(','));
   }
   cases.forEach((c) => {
-    lines.push(getDailyExportRow(c, concise).map(escapeCell).join(','));
+    lines.push(getDailyExportRow(c, concise, filingDate).map(escapeCell).join(','));
   });
 
   return lines.join('\r\n');
@@ -392,7 +421,7 @@ export function formatDailyCasesHtml(
 
   // Data rows
   cases.forEach((c) => {
-    const row = getDailyExportRow(c, concise);
+    const row = getDailyExportRow(c, concise, filingDate);
     const procStyle = getProcedureStyleInfo(c, row[5]);
 
     html += `  <tr>\n`;

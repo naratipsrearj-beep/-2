@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
 import { AppAuthUser } from '../services/auth';
 
@@ -22,6 +22,8 @@ interface HeaderProps {
   isSyncing: boolean;
   onPushLocalToCloud?: () => void;
   isPushingLocal?: boolean;
+  onDownloadBackup?: () => void;
+  onOpenBackupViewer?: () => void;
   connectionStatus?: 'connected' | 'error' | 'connecting';
   firebaseProjectId?: string;
   onOpenRulesGuide?: () => void;
@@ -44,6 +46,8 @@ export const Header: React.FC<HeaderProps> = ({
   isSyncing,
   onPushLocalToCloud,
   isPushingLocal = false,
+  onDownloadBackup,
+  onOpenBackupViewer,
   connectionStatus = 'connected',
   firebaseProjectId = 'nrt555',
   onOpenRulesGuide,
@@ -175,6 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Admin: Push Local to Cloud Button */}
             {role === 'admin' && onPushLocalToCloud && (
               <button
+                type="button"
                 onClick={onPushLocalToCloud}
                 disabled={isPushingLocal}
                 className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
@@ -182,6 +187,34 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isPushingLocal ? 'animate-spin' : ''}`} />
                 <span>{isPushingLocal ? 'กำลังส่งข้อมูล...' : 'ส่งข้อมูลขึ้น Cloud'}</span>
+              </button>
+            )}
+
+            {/* Admin: Download JSON Backup */}
+            {role === 'admin' && onDownloadBackup && (
+              <button
+                type="button"
+                onClick={onDownloadBackup}
+                className="flex items-center gap-1.5 bg-emerald-600/30 hover:bg-emerald-600/45 text-emerald-200 border border-emerald-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+                title="ดาวน์โหลดไฟล์สำรองข้อมูลทั้งหมดของระบบ (สำนวน, ตารางเวรชี้, รายการติดตาม) เป็นไฟล์ JSON สำหรับเก็บออฟไลน์ (Offline Archival)"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">สำรองข้อมูล JSON</span>
+                <span className="sm:hidden">สำรอง JSON</span>
+              </button>
+            )}
+
+            {/* View Backup / Open JSON Backup Viewer */}
+            {onOpenBackupViewer && (
+              <button
+                type="button"
+                onClick={onOpenBackupViewer}
+                className="flex items-center gap-1.5 bg-blue-600/30 hover:bg-blue-600/45 text-blue-200 border border-blue-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+                title="เปิดดูข้อมูลสำรอง / ตรวจสอบไฟล์สำรอง JSON ในระบบ (JSON Backup Viewer)"
+              >
+                <Eye className="w-3.5 h-3.5 text-blue-300" />
+                <span className="hidden sm:inline">ดูข้อมูลสำรอง</span>
+                <span className="sm:hidden">ดูข้อมูล</span>
               </button>
             )}
 
