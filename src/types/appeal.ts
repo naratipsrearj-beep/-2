@@ -11,6 +11,7 @@ export type CourtAppointmentType =
   | 'none'                  // ไม่มีนัด
   | 'rights_protection'     // นัดคุ้มครองสิทธิ
   | 'investigation'         // นัดสืบเสาะ
+  | 'witness_confessed'     // นัดสืบประกอบรับสารภาพ (ม.176)
   | 'judgment'              // นัดฟังคำพิพากษา / คำสั่ง
   | 'mediation'             // นัดไกล่เกลี่ย
   | 'pre_trial'             // นัดพร้อม / ตรวจพยานหลักฐาน
@@ -63,6 +64,12 @@ export interface AppealCase {
   judgmentOutcome?: string;    // ผลคำพิพากษาโดยย่อ (เช่น ยกฟ้อง, ลงโทษตามฟ้อง, จำคุก 2 ปี)
   responsiblePerson: string;   // อัยการเจ้าของสำนวน
   notes?: string;              // หมายเหตุเพิ่มเติม
+  
+  // เสนอเวรชี้ (หากกดแล้วยังคงคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)
+  isSubmittedToDuty?: boolean;         // เสนอเวรชี้แล้วหรือไม่
+  submittedToDutyDate?: string;       // วันที่เสนอเวรชี้ (YYYY-MM-DD)
+  submittedToDutyOfficer?: string;    // ชื่ออัยการเวรชี้ที่เสนอ
+  submittedToDutyNotes?: string;      // หมายเหตุการเสนอเวรชี้
   
   // สำนวนเบิกฟ้อง และวันนัดเบิกฟ้อง
   isRequisitionCase?: boolean;        // เป็นสำนวนเบิกฟ้องหรือไม่

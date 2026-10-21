@@ -6,8 +6,8 @@ import { getRequisitionStatus, isPendingRequisitionCase, getRequisitionAlertInfo
 
 interface UrgentAlertBannerProps {
   cases: AppealCase[];
-  onMarkComplete: (caseItem: AppealCase) => void;
-  onExtendDeadline: (caseItem: AppealCase) => void;
+  onMarkComplete?: (caseItem: AppealCase) => void;
+  onExtendDeadline?: (caseItem: AppealCase) => void;
   onConfirmNoAppeal?: (caseId: string) => void;
   onSyncCalendar?: (caseItem: AppealCase) => void;
   onSendEmailAlert?: (caseItem: AppealCase) => void;
@@ -472,14 +472,16 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                           <span>ดู/แก้ไข</span>
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => onExtendDeadline(caseItem)}
-                        className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-amber-200 cursor-pointer"
-                      >
-                        <Calendar className="w-3 h-3 text-amber-700" />
-                        <span>ขอขยายเวลา</span>
-                      </button>
+                      {onExtendDeadline && (
+                        <button
+                          type="button"
+                          onClick={() => onExtendDeadline(caseItem)}
+                          className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-amber-200 cursor-pointer"
+                        >
+                          <Calendar className="w-3 h-3 text-amber-700" />
+                          <span>ขอขยายเวลา</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -630,15 +632,17 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                           <span>แก้ไขสำนวน</span>
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => onMarkComplete(caseItem)}
-                        className="flex-1 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
-                        title="กดเสร็จสิ้นเมื่อดำเนินการเบิกฟ้องเรียบร้อย"
-                      >
-                        <CheckCircle className="w-3 h-3 text-emerald-600" />
-                        <span>เสร็จสิ้น</span>
-                      </button>
+                      {onMarkComplete && (
+                        <button
+                          type="button"
+                          onClick={() => onMarkComplete(caseItem)}
+                          className="flex-1 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
+                          title="กดเสร็จสิ้นเมื่อดำเนินการเบิกฟ้องเรียบร้อย"
+                        >
+                          <CheckCircle className="w-3 h-3 text-emerald-600" />
+                          <span>เสร็จสิ้น</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -783,30 +787,34 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
 
                   {/* Action Buttons */}
                   <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5">
-                    <button
-                      onClick={() => onMarkComplete(caseItem)}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
-                      title="เมื่อกดแล้ว สำนวนนี้จะไม่แจ้งเตือนอีกต่อไป"
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>กดเสร็จสิ้นสำนวน</span>
-                    </button>
+                    {onMarkComplete && (
+                      <button
+                        onClick={() => onMarkComplete(caseItem)}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
+                        title="เมื่อกดแล้ว สำนวนนี้จะไม่แจ้งเตือนอีกต่อไป"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>กดเสร็จสิ้นสำนวน</span>
+                      </button>
+                    )}
 
-                    <button
-                      onClick={() => onExtendDeadline(caseItem)}
-                      className={`text-xs py-1.5 px-2.5 rounded-lg font-medium transition cursor-pointer ${
-                        caseItem.extendedDeadline
-                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      }`}
-                      title={
-                        caseItem.extendedDeadline
-                          ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
-                          : 'ขอขยายระยะเวลาอุทธรณ์'
-                      }
-                    >
-                      {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยายเวลา'}
-                    </button>
+                    {onExtendDeadline && (
+                      <button
+                        onClick={() => onExtendDeadline(caseItem)}
+                        className={`text-xs py-1.5 px-2.5 rounded-lg font-medium transition cursor-pointer ${
+                          caseItem.extendedDeadline
+                            ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                        title={
+                          caseItem.extendedDeadline
+                            ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
+                            : 'ขอขยายระยะเวลาอุทธรณ์'
+                        }
+                      >
+                        {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยายเวลา'}
+                      </button>
+                    )}
 
                     {onSyncCalendar && (
                       <button

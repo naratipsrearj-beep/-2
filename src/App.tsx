@@ -48,6 +48,7 @@ import { getTodayDuty } from './services/dutyService';
 import {
   getUserRole,
   canUserEdit,
+  canUserComplete,
   ProjectSettings,
   PermissionRequest,
   DEFAULT_SETTINGS,
@@ -71,6 +72,8 @@ import {
   rejectEditPermission,
   addAllowedEditor,
   removeAllowedEditor,
+  addAllowedAppealOfficer,
+  removeAllowedAppealOfficer,
   seedInitialFirestoreDataIfEmpty,
   uploadAllLocalDataToFirestore,
   testConnectionStatus,
@@ -110,6 +113,8 @@ import { CourtAppointmentType, CaseAppointment } from './types/appeal';
 import { getAppointmentLabel, isCaseConfessed } from './utils/appointmentUtils';
 import { downloadApplicationJsonBackup } from './utils/backupUtils';
 import { BackupViewerModal } from './components/BackupViewerModal';
+import { MonthlyProsecutorHearingScheduleView } from './components/MonthlyProsecutorHearingScheduleView';
+import { SubmitToDutyModal } from './components/SubmitToDutyModal';
 
 export default function App() {
   // Auth & Roles state
@@ -149,13 +154,14 @@ export default function App() {
     checkConnection();
   }, []);
 
-  // RBAC Roles: Admin (naratipsrearj@gmail.com / Admin PIN) | Editor | Viewer
+  // RBAC Roles: Admin (naratipsrearj@gmail.com / Admin PIN) | Editor | Appeal Officer | Viewer
   const isPinAdmin = Boolean((user as AppAuthUser)?.isPinAdmin);
   const userRole = React.useMemo(
     () => getUserRole(user?.email, projectSettings, isPinAdmin),
     [user?.email, projectSettings, isPinAdmin]
   );
   const canEdit = React.useMemo(() => canUserEdit(userRole), [userRole]);
+  const canComplete = React.useMemo(() => canUserComplete(userRole), [userRole]);
 
   // Main data state
   const [cases, setCases] = useState<AppealCase[]>([]);
@@ -170,8 +176,8 @@ export default function App() {
   const [dutyRosterEditTargetId, setDutyRosterEditTargetId] = useState<string | undefined>();
   const [addCaseInitialResponsiblePerson, setAddCaseInitialResponsiblePerson] = useState<string | undefined>();
 
-  // Navigation tabs: 'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor'
-  const [activeTab, setActiveTab] = useState<'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor'>('all');
+  // Navigation tabs: 'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor' | 'prosecutor_hearings'
+  const [activeTab, setActiveTab] = useState<'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor' | 'prosecutor_hearings'>('all');
   const [monthlySummaryInitialMonth, setMonthlySummaryInitialMonth] = useState<string | undefined>();
   const [statsFilter, setStatsFilter] = useState<string>('all');
   const [globalVoiceQuery, setGlobalVoiceQuery] = useState<string>('');
@@ -180,6 +186,7 @@ export default function App() {
   const [isAddCaseOpen, setIsAddCaseOpen] = useState(false);
   const [addCaseInitialFilingDate, setAddCaseInitialFilingDate] = useState<string | undefined>();
   const [selectedCaseForComplete, setSelectedCaseForComplete] = useState<AppealCase | null>(null);
+  const [selectedCaseForSubmitDuty, setSelectedCaseForSubmitDuty] = useState<AppealCase | null>(null);
   const [selectedCaseForExtend, setSelectedCaseForExtend] = useState<AppealCase | null>(null);
   const [selectedCaseForCourtPetition, setSelectedCaseForCourtPetition] = useState<{
     caseItem: AppealCase;
@@ -491,7 +498,10 @@ export default function App() {
   };
 
   // Permission Request & Management Handlers
-  const handleRequestEdit = async (note: string) => {
+  const handleRequestEdit = async (
+    note: string,
+    requestedRole: 'editor' | 'appeal_officer' = 'appeal_officer'
+  ) => {
     if (!user || !user.email) return;
     try {
       await requestEditPermission(
@@ -500,21 +510,34 @@ export default function App() {
           displayName: user.displayName,
           photoURL: user.photoURL,
         },
-        note
+        note,
+        requestedRole
       );
-      showToast('ส่งคำขอสิทธิ์แก้ไขข้อมูลไปยังแอดมินแล้ว');
+      showToast(
+        requestedRole === 'appeal_officer'
+          ? 'ส่งคำขอสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ไปยังแอดมินแล้ว'
+          : 'ส่งคำขอสิทธิ์ผู้ร่วมแก้ไขข้อมูลไปยังแอดมินแล้ว'
+      );
     } catch (err: any) {
       console.error('Request edit failed:', err);
       showToast('ส่งคำขอไม่สำเร็จ: ' + err.message);
     }
   };
 
-  const handleApproveRequest = async (requestId: string, userEmail: string) => {
+  const handleApproveRequest = async (
+    requestId: string,
+    userEmail: string,
+    role: 'editor' | 'appeal_officer' = 'appeal_officer'
+  ) => {
     if (!user?.email) return;
     setIsProcessingPermissions(true);
     try {
-      await approveEditPermission(requestId, userEmail, projectSettings, user.email);
-      showToast(`อนุมัติสิทธิ์แก้ไขให้ "${userEmail}" เรียบร้อยแล้ว`);
+      await approveEditPermission(requestId, userEmail, projectSettings, user.email, role);
+      showToast(
+        role === 'appeal_officer'
+          ? `อนุมัติสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ให้ "${userEmail}" เรียบร้อยแล้ว (ดูสำนวนและกดเสร็จสิ้นเท่านั้น)`
+          : `อนุมัติสิทธิ์ผู้ร่วมแก้ไขให้ "${userEmail}" เรียบร้อยแล้ว`
+      );
     } catch (err: any) {
       console.error('Approve failed:', err);
       showToast('อนุมัติไม่สำเร็จ: ' + err.message);
@@ -541,7 +564,7 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await addAllowedEditor(email, projectSettings, user.email);
-      showToast(`เพิ่มสิทธิ์แก้ไขให้ "${email}" สำเร็จ`);
+      showToast(`เพิ่มสิทธิ์ผู้ร่วมแก้ไขให้ "${email}" สำเร็จ`);
     } catch (err: any) {
       console.error('Add editor failed:', err);
       showToast('ไม่สามารถเพิ่มผู้ใช้งานได้: ' + err.message);
@@ -555,9 +578,37 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await removeAllowedEditor(email, projectSettings, user.email);
-      showToast(`เพิกถอนสิทธิ์ของ "${email}" เรียบร้อยแล้ว`);
+      showToast(`เพิกถอนสิทธิ์ผู้ร่วมแก้ไขของ "${email}" เรียบร้อยแล้ว`);
     } catch (err: any) {
       console.error('Remove editor failed:', err);
+      showToast('ไม่สามารถเพิกถอนสิทธิ์ได้: ' + err.message);
+    } finally {
+      setIsProcessingPermissions(false);
+    }
+  };
+
+  const handleAddAppealOfficer = async (email: string) => {
+    if (!user?.email) return;
+    setIsProcessingPermissions(true);
+    try {
+      await addAllowedAppealOfficer(email, projectSettings, user.email);
+      showToast(`เพิ่มสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ให้ "${email}" เรียบร้อยแล้ว (ดูสำนวนและกดเสร็จสิ้นเท่านั้น)`);
+    } catch (err: any) {
+      console.error('Add appeal officer failed:', err);
+      showToast('ไม่สามารถเพิ่มผู้ใช้งานได้: ' + err.message);
+    } finally {
+      setIsProcessingPermissions(false);
+    }
+  };
+
+  const handleRemoveAppealOfficer = async (email: string) => {
+    if (!user?.email) return;
+    setIsProcessingPermissions(true);
+    try {
+      await removeAllowedAppealOfficer(email, projectSettings, user.email);
+      showToast(`เพิกถอนสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ของ "${email}" เรียบร้อยแล้ว`);
+    } catch (err: any) {
+      console.error('Remove appeal officer failed:', err);
       showToast('ไม่สามารถเพิกถอนสิทธิ์ได้: ' + err.message);
     } finally {
       setIsProcessingPermissions(false);
@@ -653,6 +704,10 @@ export default function App() {
     caseData: Omit<AppealCase, 'id' | 'createdAt' | 'updatedAt'>,
     saveToCalendar: boolean
   ) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถเพิ่มสำนวนได้ (เจ้าหน้าที่คุมอุทธรณ์ไม่มีสิทธิ์เพิ่มสำนวน)');
+      return;
+    }
     const newId = `case_${Date.now()}`;
     const newCase: AppealCase = {
       ...caseData,
@@ -795,6 +850,74 @@ export default function App() {
     }
   };
 
+  // เสนอเวรชี้ (หากกดแล้วยังคงคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)
+  const handleConfirmSubmitToDuty = async (
+    caseId: string,
+    dutyOfficer: string,
+    submissionDate: string,
+    notes?: string
+  ) => {
+    const targetCase = cases.find((c) => c.id === caseId);
+    if (!targetCase) return;
+
+    const updatedCase: AppealCase = {
+      ...targetCase,
+      isSubmittedToDuty: true,
+      submittedToDutyDate: submissionDate,
+      submittedToDutyOfficer: dutyOfficer,
+      submittedToDutyNotes: notes !== undefined ? notes : targetCase.submittedToDutyNotes,
+      updatedAt: new Date().toISOString(),
+      // ข้อกำหนดสำคัญ: ยังคงคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น (isCompleted ยังคงเป็นค่าเดิม)
+    };
+
+    const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
+    setCases(newCases);
+    saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore submit to duty error:', e));
+
+    showToast(`สำนวน ${targetCase.blackCaseNo} เสนอเวรชี้ (${dutyOfficer}) แล้ว (ยังคงคุมระยะเวลาอุทธรณ์ตามปกติ)`);
+
+    const currentToken = token || (await getAccessToken());
+    if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
+      try {
+        await updateAppealCaseInSheet(currentToken, sheetConfig.spreadsheetId, updatedCase);
+      } catch (err) {
+        console.error('Failed to update Google Sheet', err);
+      }
+    }
+  };
+
+  // ยกเลิกสถานะเสนอเวรชี้
+  const handleCancelSubmitToDuty = async (caseId: string) => {
+    const targetCase = cases.find((c) => c.id === caseId);
+    if (!targetCase) return;
+
+    const updatedCase: AppealCase = {
+      ...targetCase,
+      isSubmittedToDuty: false,
+      submittedToDutyDate: undefined,
+      submittedToDutyOfficer: undefined,
+      submittedToDutyNotes: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
+    setCases(newCases);
+    saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore cancel submit to duty error:', e));
+
+    showToast(`ยกเลิกสถานะเสนอเวรชี้สำหรับสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
+
+    const currentToken = token || (await getAccessToken());
+    if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
+      try {
+        await updateAppealCaseInSheet(currentToken, sheetConfig.spreadsheetId, updatedCase);
+      } catch (err) {
+        console.error('Failed to update Google Sheet', err);
+      }
+    }
+  };
+
   // Extend / Edit / Revert Appeal Deadline
   const handleConfirmExtend = async (
     caseId: string,
@@ -844,6 +967,10 @@ export default function App() {
 
   // Delete Case with confirmation modal (MANDATORY per Workspace skill destructive operation rule)
   const handleDeleteCase = (caseId: string) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถลบสำนวนได้ (เจ้าหน้าที่คุมอุทธรณ์ไม่มีสิทธิ์ลบสำนวน)');
+      return;
+    }
     const targetCase = cases.find((c) => c.id === caseId);
     if (!targetCase) return;
 
@@ -1047,6 +1174,10 @@ export default function App() {
 
   // Edit / Update Case Handlers (สำหรับเพิ่มเติมหรือแก้ไขข้อมูลสำนวนคดีที่ฟ้องในแต่ละวัน)
   const handleSaveEditedCase = async (updatedCase: AppealCase) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถแก้ไขข้อมูลคดีได้ (เจ้าหน้าที่คุมอุทธรณ์สามารถกดได้เฉพาะเสร็จสิ้นสำนวน)');
+      return;
+    }
     const newCases = cases.map((c) => (c.id === updatedCase.id ? updatedCase : c));
     setCases(newCases);
     saveCases(newCases);
@@ -1066,6 +1197,10 @@ export default function App() {
 
   // Quick Assign Duty Officer to Case (กำหนดเวรชี้ให้คดีจากตารางเวรชี้ประจำเดือน)
   const handleQuickAssignOfficer = async (caseId: string, officerName: string) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถกำหนดเวรชี้ได้');
+      return;
+    }
     const targetCase = cases.find((c) => c.id === caseId);
     if (!targetCase) return;
 
@@ -1081,6 +1216,7 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore assign officer error:', e));
+
     showToast(`กำหนดเวรชี้ "${officerName}" ให้สำนวนคดีดำ ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -1095,6 +1231,10 @@ export default function App() {
 
   // Batch Assign Duty Officer to All Cases filed on Date that lack a prosecutor
   const handleBatchAssignOfficerToDate = async (filingDate: string, officerName: string) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถกำหนดเวรชี้ได้');
+      return;
+    }
     const unassignedCases = cases.filter(
       (c) => c.filingDate === filingDate && (!c.prosecutorName || !c.prosecutorName.trim())
     );
@@ -1134,6 +1274,10 @@ export default function App() {
     caseItem: AppealCase,
     newStatus: 'confessed' | 'denied' | 'pending' | 'requisition' | 'unspecified'
   ) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถแก้ไขคำให้การได้');
+      return;
+    }
     let updatedCase: AppealCase;
     if (newStatus === 'confessed') {
       updatedCase = {
@@ -1825,6 +1969,22 @@ export default function App() {
                 รับสารภาพ/ปฏิเสธ
               </span>
             </button>
+
+            {/* Tab 5: สรุปวันนัดศาลรายเดือน (คุ้มครองสิทธิ • สืบเสาะ • นัดสืบประกอบรับสารภาพ) */}
+            <button
+              onClick={() => setActiveTab('prosecutor_hearings')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTab === 'prosecutor_hearings'
+                  ? 'bg-blue-800 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <Calendar className="w-4 h-4 text-amber-300" />
+              <span>วันนัดศาลรายเดือน (อัยการ)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'prosecutor_hearings' ? 'bg-blue-950 text-amber-300' : 'bg-blue-50 text-blue-800'}`}>
+                คุ้มครองสิทธิ/สืบเสาะ
+              </span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1850,6 +2010,7 @@ export default function App() {
           <CaseTable
             cases={cases}
             canEdit={canEdit}
+            canComplete={canComplete}
             initialFilter={statsFilter}
             externalSearchTerm={globalVoiceQuery}
             onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
@@ -1873,6 +2034,7 @@ export default function App() {
             onOpenCourtPetition={(caseItem) => setSelectedCaseForCourtPetition({ caseItem })}
             onQuickChangeRequisitionStatus={handleQuickChangeRequisitionStatus}
             onQuickChangePleaStatus={handleQuickChangePleaStatus}
+            onOpenSubmitToDuty={(caseItem) => setSelectedCaseForSubmitDuty(caseItem)}
             onToast={showToast}
           />
         )}
@@ -1883,6 +2045,7 @@ export default function App() {
             cases={cases}
             dutyRosters={dutyRosters}
             canEdit={canEdit}
+            canComplete={canComplete}
             token={token}
             sheetConfig={sheetConfig}
             initialSelectedDate={addCaseInitialFilingDate}
@@ -1916,6 +2079,7 @@ export default function App() {
               setMonthlySummaryInitialMonth(yearMonth);
               setActiveTab('monthly_prosecutor');
             }}
+            onOpenSubmitToDuty={(caseItem) => setSelectedCaseForSubmitDuty(caseItem)}
             onToast={showToast}
           />
         )}
@@ -1954,6 +2118,20 @@ export default function App() {
             }}
             onUpdateCase={handleSaveEditedCase}
             onQuickChangePleaStatus={handleQuickChangePleaStatus}
+            onToast={showToast}
+          />
+        )}
+
+        {/* Tab 5: Monthly Prosecutor Court Hearing Schedule (คุ้มครองสิทธิ • สืบเสาะ • นัดสืบประกอบรับสารภาพ) */}
+        {activeTab === 'prosecutor_hearings' && (
+          <MonthlyProsecutorHearingScheduleView
+            cases={cases}
+            initialYearMonth={monthlySummaryInitialMonth}
+            onSelectCase={(caseItem) => {
+              setSelectedCaseForEdit(caseItem);
+              setIsEditCaseOpen(true);
+            }}
+            onOpenSubmitToDuty={(caseItem) => setSelectedCaseForSubmitDuty(caseItem)}
             onToast={showToast}
           />
         )}
@@ -2014,6 +2192,17 @@ export default function App() {
         onReopenCase={handleReopenCase}
       />
 
+      <SubmitToDutyModal
+        isOpen={!!selectedCaseForSubmitDuty}
+        caseItem={selectedCaseForSubmitDuty}
+        dutyRosters={dutyRosters}
+        existingCases={cases}
+        onClose={() => setSelectedCaseForSubmitDuty(null)}
+        onConfirmSubmitToDuty={handleConfirmSubmitToDuty}
+        onCancelSubmitToDuty={handleCancelSubmitToDuty}
+        onToast={showToast}
+      />
+
       <ExtendDeadlineModal
         isOpen={!!selectedCaseForExtend}
         caseItem={selectedCaseForExtend}
@@ -2069,6 +2258,7 @@ export default function App() {
       <EditCaseModal
         isOpen={isEditCaseOpen && !!selectedCaseForEdit}
         caseItem={selectedCaseForEdit}
+        readOnly={!canEdit}
         onClose={() => {
           setIsEditCaseOpen(false);
           setSelectedCaseForEdit(null);
@@ -2126,6 +2316,8 @@ export default function App() {
         onRejectRequest={handleRejectRequest}
         onAddEditor={handleAddEditor}
         onRemoveEditor={handleRemoveEditor}
+        onAddAppealOfficer={handleAddAppealOfficer}
+        onRemoveAppealOfficer={handleRemoveAppealOfficer}
         onUpdateAdminPin={handleUpdateAdminPin}
         onDownloadBackup={userRole === 'admin' ? handleDownloadJsonBackup : undefined}
         onOpenBackupViewer={() => setIsBackupViewerOpen(true)}

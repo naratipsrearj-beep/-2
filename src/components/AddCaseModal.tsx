@@ -338,13 +338,10 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
       // ไม่บังคับวันที่นัดหรือคำพิพากษา
     } else if (hasJudgment) {
       if (!judgmentDate) {
-        alert('กรุณาระบุวันที่ศาลอ่านคำพิพากษา สำหรับสำนวนที่มีคำพิพากษาแล้ว');
+        alert('กรุณาระบุวันที่ศาลอ่านคำพิพากษา เพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน');
         return;
       }
-      if (!judgmentOutcome.trim()) {
-        alert('กรุณากรอกผลคำพิพากษาโดยย่อ (เช่น ลงโทษจำคุก, ปรับ, รอการลงโทษ, ยกฟ้อง) หากศาลยังไม่อ่านคำพิพากษา กรุณาเอาเครื่องหมายถูกออกจากช่อง "ศาลมีคำพิพากษาแล้ว"');
-        return;
-      }
+      // สามารถกรอกข้อความคำพิพากษาทีหลังได้ โดยระบบจะเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือนให้ทันทีนับแต่วันที่พิพากษา
     } else {
       // Pending trial / rights protection / denied plea
       if (appointmentType !== 'none' && !appointmentDate) {
@@ -1786,10 +1783,16 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center gap-1.5 font-['Prompt']">
-                  <FileText className="w-3.5 h-3.5 text-amber-600" />
-                  <span>คำพิพากษา / ผลการตัดสินของศาล *</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 font-['Prompt']">
+                    <FileText className="w-3.5 h-3.5 text-amber-600" />
+                    <span>คำพิพากษา / ผลการตัดสินของศาล</span>
+                    <span className="text-[10px] font-normal text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-200">
+                      กรอกทีหลังได้
+                    </span>
+                  </label>
+                  <span className="text-[10px] text-slate-500">เว้นว่างไว้เพื่อกรอกทีหลังได้</span>
+                </div>
                 <textarea
                   rows={3}
                   placeholder="เช่น ยกฟ้อง, ลงโทษจำคุก 2 ปี ปรับ 50,000 บาท รอการลงโทษ, พิพากษาตามยอม"
@@ -2035,6 +2038,13 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   >
                     + 🔍 นัดสืบเสาะ
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddSubsequentPreset('witness_confessed', 'สืบประกอบรับสารภาพ', 'นัดสืบพยานโจทก์ประกอบคำรับสารภาพ (ม.176)')}
+                    className="px-2 py-0.5 rounded text-[11px] font-medium bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 transition"
+                  >
+                    + 📝 นัดสืบประกอบรับสารภาพ
+                  </button>
                 </div>
 
                 {subsequentAppointments.length === 0 ? (
@@ -2081,6 +2091,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                               <option value="witness_examination">🎙️ นัดสืบพยานโจทก์-จำเลย</option>
                               <option value="rights_protection">🛡️ นัดคุ้มครองสิทธิ</option>
                               <option value="investigation">🔍 นัดสืบเสาะ</option>
+                              <option value="witness_confessed">📝 นัดสืบประกอบรับสารภาพ</option>
                               <option value="mediation">🤝 นัดไกล่เกลี่ย</option>
                               <option value="judgment">⚖️ นัดฟังคำพิพากษา</option>
                               <option value="other">📌 นัดอื่นๆ</option>

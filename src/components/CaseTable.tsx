@@ -25,7 +25,9 @@ import {
   Palette,
   Truck,
   Shield,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Send,
+  Eye
 } from 'lucide-react';
 import { AppealCase, CaseAppointment } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
@@ -52,6 +54,7 @@ import { buildLinkedCasesMap, caseMatchesWithLinkedSearch, baseCaseMatcher } fro
 interface CaseTableProps {
   cases: AppealCase[];
   canEdit?: boolean;
+  canComplete?: boolean;
   onMarkComplete: (caseItem: AppealCase) => void;
   onExtendDeadline: (caseItem: AppealCase) => void;
   onConfirmNoAppeal?: (caseId: string) => void;
@@ -69,6 +72,7 @@ interface CaseTableProps {
   onAddNewCase: () => void;
   onOpenFileLabel?: (caseItem: AppealCase) => void;
   onOpenCourtPetition?: (caseItem: AppealCase) => void;
+  onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -77,6 +81,7 @@ interface CaseTableProps {
 export const CaseTable: React.FC<CaseTableProps> = ({
   cases,
   canEdit = true,
+  canComplete = canEdit,
   onMarkComplete,
   onExtendDeadline,
   onConfirmNoAppeal,
@@ -94,6 +99,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onAddNewCase,
   onOpenFileLabel,
   onOpenCourtPetition,
+  onOpenSubmitToDuty,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -1065,6 +1071,18 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           เหลืออีก {daysLeft} วัน
                         </span>
                       )}
+
+                      {caseItem.isSubmittedToDuty && (
+                        <div className="mt-1">
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full"
+                            title={`เสนอเวรชี้แล้ว: ${caseItem.submittedToDutyOfficer || ''} (ยังคุมอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)`}
+                          >
+                            <Send className="w-2.5 h-2.5 text-blue-600" />
+                            <span>เสนอเวรชี้{caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}</span>
+                          </span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Actions */}
@@ -1150,6 +1168,21 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                                 }
                               >
                                 {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยาย'}
+                              </button>
+                            )}
+
+                            {onOpenSubmitToDuty && (
+                              <button
+                                onClick={() => onOpenSubmitToDuty(caseItem)}
+                                className={`text-[11px] py-1 px-2.5 rounded-lg transition font-medium cursor-pointer flex items-center gap-1 ${
+                                  caseItem.isSubmittedToDuty
+                                    ? 'bg-blue-100 hover:bg-blue-200 text-blue-900 border border-blue-300 font-bold shadow-2xs'
+                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                                }`}
+                                title="เสนอเวรชี้ (สำนวนยังคงคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)"
+                              >
+                                <Send className="w-3 h-3 text-blue-600" />
+                                <span>{caseItem.isSubmittedToDuty ? 'แก้เวรชี้' : 'เสนอเวรชี้'}</span>
                               </button>
                             )}
 
@@ -1248,6 +1281,42 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                               onOpenFileLabel={onOpenFileLabel}
                               onOpenCourtPetition={onOpenCourtPetition}
                             />
+
+                            {/* สิทธิ์เจ้าหน้าที่คุมอุทธรณ์: สามารถดูสำนวนได้ */}
+                            {onEditCase && (
+                              <button
+                                onClick={() => onEditCase(caseItem)}
+                                className="p-1.5 text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50 rounded-lg transition"
+                                title="ดูรายละเอียดสำนวนคดี (อ่านอย่างเดียว)"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* เจ้าหน้าที่คุมอุทธรณ์: สามารถกดได้แค่เสร็จสิ้น แต่ไม่สามารถแก้ไขหรือลบคดีได้ */}
+                            {canComplete && onMarkComplete && (
+                              <>
+                                {!isCompleted ? (
+                                  <button
+                                    onClick={() => onMarkComplete(caseItem)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer active:scale-95"
+                                    title="กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>เสร็จสิ้น</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => onMarkComplete(caseItem)}
+                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
+                                    title="แก้ไขวันที่เสร็จสิ้น / เหตุผล หรือเปิดสำนวนใหม่"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                    <span>แก้เสร็จ</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
 
                             {onOpenJudgmentDoc && (
                               <button

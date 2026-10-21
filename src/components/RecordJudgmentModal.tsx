@@ -768,9 +768,12 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 font-['Prompt']">
                   <FileText className="w-3.5 h-3.5 text-amber-600" />
-                  <span>คำพิพากษา / ผลการตัดสินของศาล *</span>
+                  <span>คำพิพากษา / ผลการตัดสินของศาล</span>
+                  <span className="text-[10px] font-normal text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-200">
+                    กรอกทีหลังได้
+                  </span>
                 </label>
-                <span className="text-[10px] text-slate-400">เลือกผลด่วน หรือพิมพ์/วางข้อความคำพิพากษา</span>
+                <span className="text-[10px] text-slate-400">เว้นว่างไว้ได้ เพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือนทันที</span>
               </div>
 
               {/* Quick Chips */}
@@ -797,8 +800,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
               {/* Single Judgment Input */}
               <textarea
                 rows={isSplitView ? 6 : 4}
-                required
-                placeholder="ระบุหรือวางข้อความคำพิพากษา เช่น ลงโทษตามฟ้อง จำคุก 2 ปี ปรับ 50,000 บาท รอการลงโทษ 2 ปี หรือคัดลอกคำพิพากษาฉบับเต็มมาวางที่นี่..."
+                placeholder="ระบุหรือวางข้อความคำพิพากษา เช่น ลงโทษตามฟ้อง จำคุก 2 ปี ปรับ 50,000 บาท หรือเว้นว่างไว้ก่อนเพื่อมากรอกทีหลัง โดยระบบจะเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือนให้ทันที..."
                 value={fullJudgmentText || judgmentOutcome}
                 onChange={(e) => {
                   const val = e.target.value;

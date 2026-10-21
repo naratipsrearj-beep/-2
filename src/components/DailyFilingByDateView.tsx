@@ -39,7 +39,8 @@ import {
   Palette,
   BarChart3,
   Eye,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Send
 } from 'lucide-react';
 import { AppealCase, MonthlyDutyRoster, SheetConfig } from '../types/appeal';
 import {
@@ -283,6 +284,7 @@ interface DailyFilingByDateViewProps {
   initialSelectedDate?: string;
   externalDateSearch?: string;
   canEdit?: boolean;
+  canComplete?: boolean;
   token?: string | null;
   sheetConfig?: SheetConfig | null;
   onMarkComplete: (caseItem: AppealCase) => void;
@@ -305,6 +307,7 @@ interface DailyFilingByDateViewProps {
   onQuickChangePleaStatus?: (caseItem: AppealCase, newPlea: 'confessed' | 'denied' | 'pending' | 'requisition' | 'unspecified') => void;
   onOpenMonthlyProsecutorSummary?: (yearMonth?: string) => void;
   onToast?: (message: string) => void;
+  onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
   onMarkSeveredCompleted?: (caseItem: AppealCase, newBlackNo?: string) => void;
   onCreateSeveredCase?: (parentCase: AppealCase) => void;
 }
@@ -315,6 +318,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   initialSelectedDate,
   externalDateSearch = '',
   canEdit = true,
+  canComplete = canEdit,
   token,
   sheetConfig,
   onMarkComplete,
@@ -337,6 +341,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onQuickChangePleaStatus,
   onOpenMonthlyProsecutorSummary,
   onToast,
+  onOpenSubmitToDuty,
   onMarkSeveredCompleted,
   onCreateSeveredCase,
 }) => {
@@ -2442,6 +2447,17 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             หมายเหตุ: {caseItem.notes}
                           </div>
                         )}
+
+                        {caseItem.isSubmittedToDuty && (
+                          <div className="flex items-center gap-1.5 text-xs text-blue-900 bg-blue-50/90 border border-blue-200 px-2.5 py-1 rounded-lg w-fit">
+                            <Send className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span>
+                              <strong>เสนอเวรชี้แล้ว:</strong> {caseItem.submittedToDutyOfficer || 'ระบุแล้ว'}
+                              {caseItem.submittedToDutyDate ? ` (${formatThaiDate(caseItem.submittedToDutyDate)})` : ''}
+                              <span className="text-[10px] text-blue-700 ml-1 font-normal">(ยังคุมอุทธรณ์อยู่)</span>
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Right Side: Deadline & Actions */}
@@ -2599,6 +2615,23 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 </button>
                               )}
 
+                              {/* ปุ่ม เสนอเวรชี้ (หากกดแล้วยังคุมอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น) */}
+                              {onOpenSubmitToDuty && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenSubmitToDuty(caseItem)}
+                                  className={`px-2 py-1 text-xs rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
+                                    caseItem.isSubmittedToDuty
+                                      ? 'text-blue-950 bg-blue-100 hover:bg-blue-200 border border-blue-300 font-bold'
+                                      : 'text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 font-semibold'
+                                  }`}
+                                  title="เสนอเวรชี้ (สำนวนจะยังคงถูกคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)"
+                                >
+                                  <Send className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>{caseItem.isSubmittedToDuty ? '✓ แก้เวรชี้' : 'เสนอเวรชี้'}</span>
+                                </button>
+                              )}
+
                               {/* ปุ่มยืนยันไม่อุทธรณ์ เฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ */}
                               {isKunchartCase(caseItem) && isCompleted && !caseItem.isNoAppealConfirmed && (
                                 <button
@@ -2671,6 +2704,34 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </>
                           ) : (
                             <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                              {/* สิทธิ์เจ้าหน้าที่คุมอุทธรณ์: สามารถดูสำนวนได้ */}
+                              {onEditCase && (
+                                <button
+                                  type="button"
+                                  onClick={() => onEditCase(caseItem)}
+                                  className="px-2 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  title="ดูรายละเอียดสำนวนคดี (อ่านอย่างเดียว)"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                                  <span>ดูสำนวน</span>
+                                </button>
+                              )}
+                              {/* สิทธิ์เจ้าหน้าที่คุมอุทธรณ์: สามารถกดได้แค่เสร็จสิ้น แต่ไม่สามารถแก้ไขหรือลบคดีได้ */}
+                              {canComplete && onMarkComplete && (
+                                <button
+                                  type="button"
+                                  onClick={() => onMarkComplete(caseItem)}
+                                  className={`px-2.5 py-1 text-xs rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
+                                    isCompleted
+                                      ? 'text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 font-bold'
+                                      : 'text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 font-semibold'
+                                  }`}
+                                  title={isCompleted ? 'แก้ไขวันที่เสร็จสิ้น / เหตุผล' : 'กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)'}
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>{isCompleted ? 'แก้เสร็จ' : 'เสร็จสิ้น'}</span>
+                                </button>
+                              )}
                               {caseItem.prosecutorName && (
                                 <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded border border-amber-200 font-medium">
                                   ⚖️ เวรชี้: {caseItem.prosecutorName}
@@ -3087,6 +3148,46 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                               onOpenCourtPetition={onOpenCourtPetition}
                               onToast={onToast}
                             />
+
+                            {/* สิทธิ์เจ้าหน้าที่คุมอุทธรณ์: ดูสำนวนและกดเสร็จสิ้นได้ */}
+                            {!canEdit && (
+                              <div className="flex items-center gap-1.5 text-xs">
+                                {onEditCase && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onEditCase(caseItem)}
+                                    className="px-2 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                    title="ดูรายละเอียดสำนวนคดี (อ่านอย่างเดียว)"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                                    <span>ดูสำนวน</span>
+                                  </button>
+                                )}
+                                {canComplete && onMarkComplete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onMarkComplete(caseItem)}
+                                    className={`px-2 py-1 text-xs rounded-lg transition font-bold border cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95 ${
+                                      caseItem.isCompleted
+                                        ? 'text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300'
+                                        : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300'
+                                    }`}
+                                    title={
+                                      caseItem.isCompleted
+                                        ? `แก้ไขวันที่เสร็จสิ้น (ปัจจุบัน: ${caseItem.completedDate ? formatThaiDate(caseItem.completedDate) : 'เสร็จสิ้น'})`
+                                        : 'กรอกวันที่เสร็จสิ้นสำนวน'
+                                    }
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>
+                                      {caseItem.isCompleted
+                                        ? (caseItem.completedDate ? `แก้วันเสร็จ (${formatThaiDate(caseItem.completedDate, { short: true })})` : 'แก้วันเสร็จสิ้น')
+                                        : 'เสร็จสิ้น'}
+                                    </span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
 
                             {canEdit && (
                               <>

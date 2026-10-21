@@ -52,9 +52,12 @@ export async function testConnectionStatus(): Promise<{
   }
 }
 
+export type UserRole = 'admin' | 'editor' | 'appeal_officer' | 'viewer';
+
 export interface ProjectSettings {
   adminEmail: string;
   allowedEditors: string[];
+  allowedAppealOfficers?: string[]; // เจ้าหน้าที่คุมอุทธรณ์: ดูสำนวนได้ และกดได้แค่เสร็จสิ้นเท่านั้น
   adminPin?: string;
   updatedAt?: string;
   updatedBy?: string;
@@ -66,6 +69,7 @@ export interface PermissionRequest {
   displayName?: string;
   photoURL?: string;
   requestedAt: string;
+  requestedRole?: 'editor' | 'appeal_officer';
   status: 'pending' | 'approved' | 'rejected';
   note?: string;
 }
@@ -74,6 +78,7 @@ export interface PermissionRequest {
 export const DEFAULT_SETTINGS: ProjectSettings = {
   adminEmail: ADMIN_EMAIL,
   allowedEditors: [],
+  allowedAppealOfficers: [],
   adminPin: DEFAULT_ADMIN_PIN,
   updatedAt: new Date().toISOString(),
 };
@@ -98,7 +103,7 @@ export function getUserRole(
   email: string | null | undefined,
   settings: ProjectSettings = DEFAULT_SETTINGS,
   isPinAdmin?: boolean
-): 'admin' | 'editor' | 'viewer' {
+): UserRole {
   if (isPinAdmin) {
     return 'admin';
   }
@@ -116,6 +121,14 @@ export function getUserRole(
   );
   if (isAllowedEditor) {
     return 'editor';
+  }
+
+  // Allowed appeal officers list authorized by Admin (ดูสำนวนได้ และกดได้แค่เสร็จสิ้นเท่านั้น)
+  const isAllowedAppealOfficer = (settings.allowedAppealOfficers || []).some(
+    (e) => e.toLowerCase().trim() === cleanEmail
+  );
+  if (isAllowedAppealOfficer) {
+    return 'appeal_officer';
   }
 
   return 'viewer';
@@ -138,8 +151,25 @@ export async function updateAdminPin(
   return updated;
 }
 
-export function canUserEdit(role: 'admin' | 'editor' | 'viewer'): boolean {
+/**
+ * สิทธิ์แก้ไขข้อมูลทั้งหมด (เพิ่ม, ลบ, แก้ไข, กรอกคำพิพากษา, ขยายเวลา)
+ */
+export function canUserEdit(role: UserRole): boolean {
   return role === 'admin' || role === 'editor';
+}
+
+/**
+ * สิทธิ์กดเสร็จสิ้นสำนวน (แอดมิน, ผู้มีสิทธิ์แก้ไข, และเจ้าหน้าที่คุมอุทธรณ์)
+ */
+export function canUserComplete(role: UserRole): boolean {
+  return role === 'admin' || role === 'editor' || role === 'appeal_officer';
+}
+
+/**
+ * ตรวจสอบว่าเป็นเจ้าหน้าที่คุมอุทธรณ์ (ดูสำนวนได้ และกดได้แค่เสร็จสิ้นเท่านั้น)
+ */
+export function isAppealOfficer(role: UserRole): boolean {
+  return role === 'appeal_officer';
 }
 
 /**
@@ -425,7 +455,8 @@ export function subscribeToPermissionRequests(
  */
 export async function requestEditPermission(
   user: { email: string; displayName?: string | null; photoURL?: string | null },
-  note?: string
+  note?: string,
+  requestedRole: 'editor' | 'appeal_officer' = 'editor'
 ): Promise<void> {
   const cleanEmail = user.email.toLowerCase().trim();
   // Safe document ID using encoded email
@@ -437,38 +468,59 @@ export async function requestEditPermission(
     displayName: user.displayName || cleanEmail.split('@')[0],
     photoURL: user.photoURL || undefined,
     requestedAt: new Date().toISOString(),
+    requestedRole,
     status: 'pending',
-    note: note || 'ขอสิทธิ์เพื่อร่วมแก้ไขและบันทึกข้อมูลสำนวนคดี',
+    note: note || (requestedRole === 'appeal_officer'
+      ? 'ขอสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ (ดูสำนวนและกดเสร็จสิ้นสำนวน)'
+      : 'ขอสิทธิ์เพื่อร่วมแก้ไขและบันทึกข้อมูลสำนวนคดี'),
   };
   const cleanData = JSON.parse(JSON.stringify(payload));
   await setDoc(docRef, cleanData, { merge: true });
 }
 
 /**
- * Approve permission request and add user to allowedEditors
+ * Approve permission request and add user to allowedEditors or allowedAppealOfficers
  */
 export async function approveEditPermission(
   requestId: string,
   userEmail: string,
   currentSettings: ProjectSettings,
-  adminEmail: string
+  adminEmail: string,
+  targetRole: 'editor' | 'appeal_officer' = 'editor'
 ): Promise<void> {
   const cleanEmail = userEmail.toLowerCase().trim();
   const currentEditors = currentSettings.allowedEditors || [];
-  if (!currentEditors.some((e) => e.toLowerCase().trim() === cleanEmail)) {
-    const updatedEditors = [...currentEditors, cleanEmail];
-    await updateProjectSettingsInFirestore(
-      {
-        ...currentSettings,
-        allowedEditors: updatedEditors,
-      },
-      adminEmail
-    );
+  const currentOfficers = currentSettings.allowedAppealOfficers || [];
+
+  let updatedEditors = [...currentEditors];
+  let updatedOfficers = [...currentOfficers];
+
+  if (targetRole === 'appeal_officer') {
+    if (!updatedOfficers.some((e) => e.toLowerCase().trim() === cleanEmail)) {
+      updatedOfficers.push(cleanEmail);
+    }
+    // หากเคยอยู่ใน editors ให้เอาออก
+    updatedEditors = updatedEditors.filter((e) => e.toLowerCase().trim() !== cleanEmail);
+  } else {
+    if (!updatedEditors.some((e) => e.toLowerCase().trim() === cleanEmail)) {
+      updatedEditors.push(cleanEmail);
+    }
+    // หากเคยอยู่ใน officers ให้เอาออก
+    updatedOfficers = updatedOfficers.filter((e) => e.toLowerCase().trim() !== cleanEmail);
   }
+
+  await updateProjectSettingsInFirestore(
+    {
+      ...currentSettings,
+      allowedEditors: updatedEditors,
+      allowedAppealOfficers: updatedOfficers,
+    },
+    adminEmail
+  );
 
   // Update request doc status
   const reqDocRef = doc(db, 'permission_requests', requestId);
-  await setDoc(reqDocRef, { status: 'approved' }, { merge: true });
+  await setDoc(reqDocRef, { status: 'approved', approvedRole: targetRole }, { merge: true });
 }
 
 /**
@@ -491,12 +543,17 @@ export async function addAllowedEditor(
 ): Promise<void> {
   const cleanEmail = email.toLowerCase().trim();
   const currentEditors = currentSettings.allowedEditors || [];
+  const currentOfficers = currentSettings.allowedAppealOfficers || [];
+
   if (!currentEditors.some((e) => e.toLowerCase().trim() === cleanEmail)) {
     const updatedEditors = [...currentEditors, cleanEmail];
+    // ถ้าเคยเป็น officer ให้อัปเกรดเป็น editor
+    const updatedOfficers = currentOfficers.filter((e) => e.toLowerCase().trim() !== cleanEmail);
     await updateProjectSettingsInFirestore(
       {
         ...currentSettings,
         allowedEditors: updatedEditors,
+        allowedAppealOfficers: updatedOfficers,
       },
       adminEmail
     );
@@ -520,6 +577,55 @@ export async function removeAllowedEditor(
     {
       ...currentSettings,
       allowedEditors: updatedEditors,
+    },
+    adminEmail
+  );
+}
+
+/**
+ * Directly add email to allowed appeal officers (เจ้าหน้าที่คุมอุทธรณ์: ดูสำนวนได้ และกดเสร็จสิ้นได้เท่านั้น)
+ */
+export async function addAllowedAppealOfficer(
+  email: string,
+  currentSettings: ProjectSettings,
+  adminEmail: string
+): Promise<void> {
+  const cleanEmail = email.toLowerCase().trim();
+  const currentOfficers = currentSettings.allowedAppealOfficers || [];
+  const currentEditors = currentSettings.allowedEditors || [];
+
+  if (!currentOfficers.some((e) => e.toLowerCase().trim() === cleanEmail)) {
+    const updatedOfficers = [...currentOfficers, cleanEmail];
+    // ถ้าเคยอยู่ใน editors ให้เอาออก
+    const updatedEditors = currentEditors.filter((e) => e.toLowerCase().trim() !== cleanEmail);
+    await updateProjectSettingsInFirestore(
+      {
+        ...currentSettings,
+        allowedEditors: updatedEditors,
+        allowedAppealOfficers: updatedOfficers,
+      },
+      adminEmail
+    );
+  }
+}
+
+/**
+ * Remove email from allowed appeal officers
+ */
+export async function removeAllowedAppealOfficer(
+  email: string,
+  currentSettings: ProjectSettings,
+  adminEmail: string
+): Promise<void> {
+  const cleanEmail = email.toLowerCase().trim();
+  const currentOfficers = currentSettings.allowedAppealOfficers || [];
+  const updatedOfficers = currentOfficers.filter(
+    (e) => e.toLowerCase().trim() !== cleanEmail
+  );
+  await updateProjectSettingsInFirestore(
+    {
+      ...currentSettings,
+      allowedAppealOfficers: updatedOfficers,
     },
     adminEmail
   );

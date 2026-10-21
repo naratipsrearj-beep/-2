@@ -28,8 +28,9 @@ interface CourtAppointmentModalProps {
 export const appointmentTypeOptions: { value: CourtAppointmentType; label: string; description: string; icon: string }[] = [
   { value: 'none', label: 'ไม่มีนัด (รอคุมระยะเวลาอุทธรณ์)', description: 'ไม่มีนัดของศาลในระหว่างนี้', icon: '⏳' },
   { value: 'rights_protection', label: 'นัดคุ้มครองสิทธิ', description: 'นัดชี้สองสถาน / คุ้มครองสิทธิและเสรีภาพ', icon: '🛡️' },
-  { value: 'requisition', label: 'สำนวนเบิกฟ้อง / นัดเบิกฟ้อง', description: 'สำนวนเบิกฟ้องคดี / เบิกตัวจำเลยมาฟ้องศาล', icon: '🚚' },
   { value: 'investigation', label: 'นัดสืบเสาะ', description: 'นัดสืบเสาะและพินิจพฤติการณ์จำเลย', icon: '🔍' },
+  { value: 'witness_confessed', label: 'นัดสืบประกอบรับสารภาพ', description: 'นัดสืบพยานโจทก์ประกอบคำรับสารภาพ (ม.176)', icon: '📝' },
+  { value: 'requisition', label: 'สำนวนเบิกฟ้อง / นัดเบิกฟ้อง', description: 'สำนวนเบิกฟ้องคดี / เบิกตัวจำเลยมาฟ้องศาล', icon: '🚚' },
   { value: 'judgment', label: 'นัดฟังคำพิพากษา / คำสั่ง', description: 'ศาลนัดฟังคำพิพากษาหรือคำสั่งศาล', icon: '⚖️' },
   { value: 'mediation', label: 'นัดไกล่เกลี่ย', description: 'นัดศูนย์ไกล่เกลี่ยและประนอมข้อพิพาท', icon: '🤝' },
   { value: 'pre_trial', label: 'นัดพร้อม / ตรวจพยานหลักฐาน', description: 'นัดพร้อมเพื่อกำหนดประเด็นและตรวจพยาน', icon: '📋' },
@@ -366,6 +367,13 @@ export const CourtAppointmentModal: React.FC<CourtAppointmentModalProps> = ({
               >
                 + 🛡️ นัดคุ้มครองสิทธิ (นัด 2)
               </button>
+              <button
+                type="button"
+                onClick={() => handleAddSubsequentPreset('witness_confessed', 'นัดสืบพยานโจทก์ประกอบคำรับสารภาพ (ม.176)')}
+                className="px-2 py-0.5 rounded text-[11px] font-medium bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 transition"
+              >
+                + 📝 นัดสืบประกอบรับสารภาพ
+              </button>
             </div>
 
             {subsequentAppointments.length === 0 ? (
@@ -411,6 +419,7 @@ export const CourtAppointmentModal: React.FC<CourtAppointmentModalProps> = ({
                           <option value="witness_examination">🎙️ นัดสืบพยานโจทก์-จำเลย</option>
                           <option value="rights_protection">🛡️ นัดคุ้มครองสิทธิ</option>
                           <option value="investigation">🔍 นัดสืบเสาะ</option>
+                          <option value="witness_confessed">📝 นัดสืบประกอบรับสารภาพ</option>
                           <option value="mediation">🤝 นัดไกล่เกลี่ย</option>
                           <option value="judgment">⚖️ นัดฟังคำพิพากษา</option>
                           <option value="other">📌 นัดอื่นๆ</option>

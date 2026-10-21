@@ -28,7 +28,9 @@ import {
   X,
   CheckCircle2,
   Clock,
-  Shield
+  Shield,
+  BarChart3,
+  CalendarCheck
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType } from '../types/appeal';
 import { formatThaiDate, getTodayString, calculateAppealDeadline } from '../utils/dateUtils';
@@ -46,10 +48,12 @@ import {
   isCaseRequisition,
   getAppointmentLabel
 } from '../utils/appointmentUtils';
+import { MonthlyProsecutorHearingScheduleView } from './MonthlyProsecutorHearingScheduleView';
 
 interface MonthlyProsecutorSummaryViewProps {
   cases: AppealCase[];
   initialYearMonth?: string;
+  initialSubTab?: 'filing_summary' | 'hearing_schedule';
   onSelectCase?: (caseItem: AppealCase) => void;
   onUpdateCase?: (updatedCase: AppealCase) => Promise<void> | void;
   onQuickChangePleaStatus?: (caseItem: AppealCase, newStatus: 'confessed' | 'denied' | 'pending') => Promise<void> | void;
@@ -59,11 +63,13 @@ interface MonthlyProsecutorSummaryViewProps {
 export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryViewProps> = ({
   cases,
   initialYearMonth,
+  initialSubTab = 'filing_summary',
   onSelectCase,
   onUpdateCase,
   onQuickChangePleaStatus,
   onToast,
 }) => {
+  const [subTab, setSubTab] = useState<'filing_summary' | 'hearing_schedule'>(initialSubTab);
   const availableMonths = useMemo(() => getAvailableFilingMonths(cases), [cases]);
 
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -378,8 +384,57 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 sm:p-7 text-white shadow-xl relative overflow-hidden border border-slate-800">
+      {/* View Switcher: ยอดฟ้องคดี (รับสารภาพ/ปฏิเสธ) vs สรุปวันนัดศาลรายเดือน (คุ้มครองสิทธิ/สืบเสาะ/สืบประกอบ) */}
+      <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSubTab('filing_summary')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              subTab === 'filing_summary'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 text-emerald-300" />
+            <span>ยอดฟ้องคดีรายอัยการ (รับสารภาพ/ปฏิเสธ/เบิกฟ้อง)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSubTab('hearing_schedule')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              subTab === 'hearing_schedule'
+                ? 'bg-blue-800 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            <Calendar className="w-4 h-4 text-amber-300" />
+            <span>สรุปวันนัดศาลรายเดือน (คุ้มครองสิทธิ • สืบเสาะ • สืบประกอบ)</span>
+            <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
+              ใหม่
+            </span>
+          </button>
+        </div>
+
+        <div className="text-[11px] text-slate-500 font-medium px-2 hidden sm:block">
+          {subTab === 'filing_summary'
+            ? 'สรุปปริมาณคดีที่ยื่นฟ้องในเดือน'
+            : 'สรุปวันนัดพิจารณาของอัยการเจ้าของสำนวน'}
+        </div>
+      </div>
+
+      {subTab === 'hearing_schedule' ? (
+        <MonthlyProsecutorHearingScheduleView
+          cases={cases}
+          initialYearMonth={selectedMonth}
+          onSelectCase={onSelectCase}
+          onToast={onToast}
+        />
+      ) : (
+        <>
+          {/* Top Header Card */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 sm:p-7 text-white shadow-xl relative overflow-hidden border border-slate-800">
         <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
         <div className="absolute bottom-0 left-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
 
@@ -1520,6 +1575,8 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

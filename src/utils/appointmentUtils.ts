@@ -256,6 +256,8 @@ export function getAppointmentLabel(
       return 'นัดคุ้มครองสิทธิ';
     case 'investigation':
       return 'นัดสืบเสาะ';
+    case 'witness_confessed':
+      return 'นัดสืบประกอบรับสารภาพ';
     case 'judgment':
       return 'นัดฟังคำพิพากษา';
     case 'mediation':
@@ -284,6 +286,8 @@ export function getAppointmentBadgeStyle(type?: CourtAppointmentType): {
       return { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', icon: '🛡️' };
     case 'investigation':
       return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: '🔍' };
+    case 'witness_confessed':
+      return { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300', icon: '📝' };
     case 'judgment':
       return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: '⚖️' };
     case 'mediation':
@@ -299,6 +303,43 @@ export function getAppointmentBadgeStyle(type?: CourtAppointmentType): {
     default:
       return { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200', icon: '⏳' };
   }
+}
+
+/**
+ * ระบุประเภทนัดเป้าหมาย 3 หมวด (คุ้มครองสิทธิ, สืบเสาะ, สืบประกอบรับสารภาพ)
+ * ตรวจสอบอย่างละเอียดทั้งจาก type, typeName และ notes
+ */
+export function classifyTargetAppointmentCategory(
+  type?: CourtAppointmentType,
+  typeName?: string,
+  notes?: string
+): 'rights_protection' | 'investigation' | 'witness_confessed' | null {
+  const combined = `${typeName || ''} ${notes || ''}`.toLowerCase();
+
+  // 1. นัดสืบประกอบรับสารภาพ (witness_confessed / สืบประกอบ / ประกอบรับสารภาพ)
+  if (type === 'witness_confessed') return 'witness_confessed';
+  if (
+    combined.includes('สืบประกอบ') ||
+    combined.includes('สืบพยานประกอบ') ||
+    combined.includes('ประกอบรับสารภาพ') ||
+    combined.includes('สืบประกอบคำรับสารภาพ')
+  ) {
+    return 'witness_confessed';
+  }
+
+  // 2. นัดคุ้มครองสิทธิ (rights_protection)
+  if (type === 'rights_protection') return 'rights_protection';
+  if (combined.includes('คุ้มครองสิทธิ') || combined.includes('ชี้สองสถาน')) {
+    return 'rights_protection';
+  }
+
+  // 3. นัดสืบเสาะ (investigation)
+  if (type === 'investigation') return 'investigation';
+  if (combined.includes('สืบเสาะ') || combined.includes('พินิจ')) {
+    return 'investigation';
+  }
+
+  return null;
 }
 
 /**

@@ -7,7 +7,7 @@ import { AppAuthUser } from '../services/auth';
 interface HeaderProps {
   user: User | AppAuthUser | null;
   token: string | null;
-  role?: 'admin' | 'editor' | 'viewer';
+  role?: 'admin' | 'editor' | 'appeal_officer' | 'viewer';
   pendingRequestsCount?: number;
   sheetConfig: SheetConfig | null;
   todayDutyOfficer?: string;
@@ -269,6 +269,10 @@ export const Header: React.FC<HeaderProps> = ({
                     ) : role === 'editor' ? (
                       <span className="text-emerald-400 flex items-center gap-0.5">
                         <span>✍️ ผู้ร่วมแก้ไข</span>
+                      </span>
+                    ) : role === 'appeal_officer' ? (
+                      <span className="text-purple-300 flex items-center gap-0.5">
+                        <span>⚖️ จนท.คุมอุทธรณ์ (กดเสร็จสิ้นได้)</span>
                       </span>
                     ) : (
                       <span className="text-blue-300 flex items-center gap-0.5">

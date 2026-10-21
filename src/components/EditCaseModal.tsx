@@ -39,6 +39,7 @@ interface EditCaseModalProps {
   caseItem: AppealCase | null;
   onClose: () => void;
   onSave: (updatedCase: AppealCase) => void;
+  readOnly?: boolean;
   onOpenCourtPetition?: (caseItem: AppealCase, newDeadline?: string, extensionCount?: number) => void;
   suggestedDutyOfficer?: string;
   dutyRosters?: MonthlyDutyRoster[];
@@ -50,6 +51,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   caseItem,
   onClose,
   onSave,
+  readOnly = false,
   onOpenCourtPetition,
   suggestedDutyOfficer,
   dutyRosters = [],
@@ -310,6 +312,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (readOnly) {
+      onClose();
+      return;
+    }
+
     if (!blackCaseNo.trim()) {
       alert('กรุณากรอกหมายเลขคดีดำ');
       return;
@@ -320,13 +327,10 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       // ไม่บังคับคำพิพากษาหรือวันที่นัด
     } else if (hasJudgment) {
       if (!judgmentDate) {
-        alert('กรุณาระบุวันที่ศาลอ่านคำพิพากษา สำหรับสำนวนที่มีคำพิพากษาแล้ว');
+        alert('กรุณาระบุวันที่ศาลอ่านคำพิพากษา เพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน');
         return;
       }
-      if (!judgmentOutcome.trim()) {
-        alert('กรุณากรอกผลคำพิพากษาโดยย่อ (เช่น ลงโทษจำคุก, ปรับ, รอการลงโทษ, ยกฟ้อง) หากศาลยังไม่อ่านคำพิพากษา หรือยังไม่ทราบผลคำพิพากษา กรุณาเอาเครื่องหมายถูกออกจากช่อง "ศาลมีคำพิพากษาแล้ว"');
-        return;
-      }
+      // สามารถกรอกข้อความคำพิพากษาทีหลังได้ โดยระบบจะเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือนให้ทันทีนับแต่วันที่พิพากษา
     } else {
       // Pending trial / rights protection / denied plea
       if (appointmentType !== 'none' && !appointmentDate) {
@@ -394,7 +398,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       judgmentOutcome: isUnspecifiedStage
         ? ''
         : effectiveHasJudgment
-          ? (judgmentOutcome.trim() || fullJudgmentText.trim() || 'ศาลมีคำพิพากษาแล้ว')
+          ? (judgmentOutcome.trim() || fullJudgmentText.trim() || '')
           : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
             ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)')
             : (isRequisitionCase || appointmentType === 'requisition')
@@ -451,6 +455,10 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       subsequentAppointments: (hasJudgment || defendantPlea === 'confessed')
         ? subsequentAppointments.filter((a) => a.type !== 'rights_protection')
         : (subsequentAppointments.length > 0 ? subsequentAppointments : undefined),
+      isSubmittedToDuty: caseItem.isSubmittedToDuty,
+      submittedToDutyDate: caseItem.submittedToDutyDate,
+      submittedToDutyOfficer: caseItem.submittedToDutyOfficer,
+      submittedToDutyNotes: caseItem.submittedToDutyNotes,
       updatedAt: new Date().toISOString(),
     };
 
@@ -464,13 +472,22 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
         {/* Header */}
         <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm">
-              <Edit3 className="w-5 h-5" />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0 shadow-sm ${
+              readOnly ? 'bg-purple-600' : 'bg-indigo-600'
+            }`}>
+              {readOnly ? <Shield className="w-5 h-5" /> : <Edit3 className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="font-bold text-base font-['Prompt'] text-white">
-                แก้ไข / เพิ่มเติมข้อมูลสำนวนคดี
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base font-['Prompt'] text-white">
+                  {readOnly ? 'รายละเอียดสำนวนคดี (ดูสำนวน)' : 'แก้ไข / เพิ่มเติมข้อมูลสำนวนคดี'}
+                </h3>
+                {readOnly && (
+                  <span className="text-[10px] font-bold bg-purple-400/20 text-purple-200 border border-purple-400/40 px-2 py-0.5 rounded-full">
+                    ⚖️ จนท.คุมอุทธรณ์ (ดูอย่างเดียว)
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-300">
                 คดีดำ {caseItem.blackCaseNo} {caseItem.redCaseNo ? `(แดง ${caseItem.redCaseNo})` : ''} • ฟ้องวันที่ {formatThaiDate(caseItem.filingDate)}
               </p>
@@ -486,6 +503,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+          <fieldset disabled={readOnly} className="space-y-5">
           {/* Key Option: Case Stage / Judgment Toggle */}
           {/* สถานะสำนวนในการพิจารณาของศาล - ปรับ UI ให้สั้นลง สบายตา ไม่กินพื้นที่ (ตามที่ผู้ใช้ร้องขอ) */}
           <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
@@ -1976,6 +1994,13 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   >
                     + 🔍 นัดสืบเสาะ
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddSubsequentPreset('witness_confessed', 'สืบประกอบรับสารภาพ', 'นัดสืบพยานโจทก์ประกอบคำรับสารภาพ (ม.176)')}
+                    className="px-2 py-0.5 rounded text-[11px] font-medium bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 transition"
+                  >
+                    + 📝 นัดสืบประกอบรับสารภาพ
+                  </button>
                 </div>
 
                 {subsequentAppointments.length === 0 ? (
@@ -2022,6 +2047,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                               <option value="witness_examination">🎙️ นัดสืบพยานโจทก์-จำเลย</option>
                               <option value="rights_protection">🛡️ นัดคุ้มครองสิทธิ</option>
                               <option value="investigation">🔍 นัดสืบเสาะ</option>
+                              <option value="witness_confessed">📝 นัดสืบประกอบรับสารภาพ</option>
                               <option value="mediation">🤝 นัดไกล่เกลี่ย</option>
                               <option value="judgment">⚖️ นัดฟังคำพิพากษา</option>
                               <option value="other">📌 นัดอื่นๆ</option>
@@ -2240,24 +2266,43 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               )}
             </div>
           </div>
+          </fieldset>
 
           {/* Modal Footer Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
-            >
-              <Save className="w-4 h-4" />
-              <span>บันทึกการแก้ไขข้อมูล</span>
-            </button>
-          </div>
+          {readOnly ? (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-2 text-xs text-purple-900 bg-purple-50 px-3 py-2 rounded-xl border border-purple-200">
+                <Shield className="w-4 h-4 text-purple-600 shrink-0" />
+                <span>
+                  <strong>สิทธิ์เจ้าหน้าที่คุมอุทธรณ์:</strong> ดูรายละเอียดสำนวนคดีได้ครบถ้วน แต่ไม่สามารถแก้ไขข้อมูลหรือลบคดีได้ (สามารถกดเสร็จสิ้นสำนวนได้จากตารางหรือปุ่มเสร็จสิ้น)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-xl shadow-xs transition cursor-pointer self-end sm:self-center"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>บันทึกการแก้ไขข้อมูล</span>
+              </button>
+            </div>
+          )}
         </form>
 
         {/* Duty Officer Picker Modal */}

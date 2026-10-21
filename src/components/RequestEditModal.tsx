@@ -8,7 +8,7 @@ interface RequestEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: User | AppAuthUser;
-  onRequest: (note: string) => Promise<void>;
+  onRequest: (note: string, requestedRole?: 'editor' | 'appeal_officer') => Promise<void>;
   existingRequestStatus?: 'pending' | 'approved' | 'rejected' | null;
 }
 
@@ -19,6 +19,7 @@ export const RequestEditModal: React.FC<RequestEditModalProps> = ({
   onRequest,
   existingRequestStatus,
 }) => {
+  const [requestedRole, setRequestedRole] = useState<'editor' | 'appeal_officer'>('appeal_officer');
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -29,7 +30,7 @@ export const RequestEditModal: React.FC<RequestEditModalProps> = ({
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onRequest(note);
+      await onRequest(note, requestedRole);
       setIsSubmitted(true);
     } finally {
       setIsSubmitting(false);
@@ -44,7 +45,7 @@ export const RequestEditModal: React.FC<RequestEditModalProps> = ({
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-amber-400" />
             <h2 className="text-sm font-bold font-['Prompt'] text-white">
-              ขอสิทธิ์แก้ไขข้อมูลในระบบ
+              ขอสิทธิ์การใช้งานในระบบ
             </h2>
           </div>
           <button
@@ -66,8 +67,8 @@ export const RequestEditModal: React.FC<RequestEditModalProps> = ({
                 ส่งคำขอเรียบร้อยแล้ว
               </h3>
               <p className="text-xs text-slate-600 max-w-xs mx-auto leading-relaxed">
-                คำขอสิทธิ์แก้ไขข้อมูลของคุณถูกส่งไปยังแอดมิน ({ADMIN_EMAIL}) แล้ว
-                เมื่อแอดมินอนุมัติ ระบบจะเปิดสิทธิ์ให้คุณสามารถเพิ่มและแก้ไขข้อมูลได้แบบเรียลไทม์ทันที
+                คำขอสิทธิ์ของคุณถูกส่งไปยังแอดมิน ({ADMIN_EMAIL}) แล้ว
+                เมื่อแอดมินอนุมัติ ระบบจะเปิดสิทธิ์การใช้งานให้คุณตามประเภทสิทธิ์ที่ได้รับอนุมัติทันที
               </p>
               <button
                 type="button"
@@ -86,8 +87,67 @@ export const RequestEditModal: React.FC<RequestEditModalProps> = ({
                   <span className="font-mono text-slate-900 font-bold">{user.email}</span>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  ระบบนี้จำกัดสิทธิ์การแก้ไขข้อมูลเฉพาะเจ้าของระบบ ({ADMIN_EMAIL}) หรือผู้ที่ได้รับการอนุญาตเท่านั้น
+                  ระบบนี้จำกัดสิทธิ์เฉพาะเจ้าของระบบ ({ADMIN_EMAIL}) หรือผู้ที่ได้รับอนุญาตเท่านั้น
                 </p>
+              </div>
+
+              {/* Role Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  ประเภทสิทธิ์ที่ต้องการขอ:
+                </label>
+                <div className="space-y-2">
+                  <label className={`block p-2.5 rounded-xl border cursor-pointer transition ${
+                    requestedRole === 'appeal_officer'
+                      ? 'bg-purple-50/80 border-purple-300 ring-1 ring-purple-400'
+                      : 'bg-white border-slate-200 hover:bg-slate-50'
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="radio"
+                        name="reqRole"
+                        value="appeal_officer"
+                        checked={requestedRole === 'appeal_officer'}
+                        onChange={() => setRequestedRole('appeal_officer')}
+                        className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                      />
+                      <div>
+                        <div className="text-xs font-bold text-purple-950 flex items-center gap-1">
+                          <span>⚖️ เจ้าหน้าที่คุมอุทธรณ์</span>
+                          <span className="text-[10px] bg-purple-200/80 text-purple-900 px-1.5 py-0.2 rounded font-semibold">(แนะนำ)</span>
+                        </div>
+                        <p className="text-[11px] text-purple-800/80 mt-0.5">
+                          สามารถดูสำนวนคดีและตรวจสอบวันนัดได้ทั้งหมด และกดปุ่ม <strong>"เสร็จสิ้น"</strong> สำนวนได้ (ไม่สามารถแก้ไขหรือลบคดีได้)
+                        </p>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className={`block p-2.5 rounded-xl border cursor-pointer transition ${
+                    requestedRole === 'editor'
+                      ? 'bg-emerald-50/80 border-emerald-300 ring-1 ring-emerald-400'
+                      : 'bg-white border-slate-200 hover:bg-slate-50'
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="radio"
+                        name="reqRole"
+                        value="editor"
+                        checked={requestedRole === 'editor'}
+                        onChange={() => setRequestedRole('editor')}
+                        className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div>
+                        <div className="text-xs font-bold text-emerald-950">
+                          ✍️ ผู้มีสิทธิ์แก้ไขทั้งหมด (Editor)
+                        </div>
+                        <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                          สามารถเพิ่มคดี ลบคดี แก้ไขข้อมูล กรอกคำพิพากษา และขยายเวลาได้
+                        </p>
+                      </div>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               <div>
@@ -95,10 +155,10 @@ export const RequestEditModal: React.FC<RequestEditModalProps> = ({
                   เหตุผลหรือข้อความแจ้งแอดมิน (ทางเลือก):
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="เช่น ต้องการช่วยลงข้อมูลสำนวนคดีและบันทึกผลคำพิพากษาประจำวัน"
+                  placeholder={requestedRole === 'appeal_officer' ? 'เช่น เจ้าหน้าที่ธุรการคุมระยะเวลาอุทธรณ์ ต้องการกดเสร็จสิ้นสำนวน' : 'เช่น ต้องการช่วยลงข้อมูลสำนวนคดีและบันทึกผลคำพิพากษา'}
                   className="w-full border border-slate-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>

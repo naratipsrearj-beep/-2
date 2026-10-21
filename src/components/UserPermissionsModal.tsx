@@ -7,10 +7,12 @@ interface UserPermissionsModalProps {
   onClose: () => void;
   settings: ProjectSettings;
   requests: PermissionRequest[];
-  onApproveRequest: (requestId: string, userEmail: string) => Promise<void>;
+  onApproveRequest: (requestId: string, userEmail: string, role?: 'editor' | 'appeal_officer') => Promise<void>;
   onRejectRequest: (requestId: string) => Promise<void>;
   onAddEditor: (email: string) => Promise<void>;
   onRemoveEditor: (email: string) => Promise<void>;
+  onAddAppealOfficer?: (email: string) => Promise<void>;
+  onRemoveAppealOfficer?: (email: string) => Promise<void>;
   onUpdateAdminPin?: (newPin: string) => Promise<void>;
   onDownloadBackup?: () => void;
   onOpenBackupViewer?: () => void;
@@ -27,6 +29,8 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   onRejectRequest,
   onAddEditor,
   onRemoveEditor,
+  onAddAppealOfficer,
+  onRemoveAppealOfficer,
   onUpdateAdminPin,
   onDownloadBackup,
   onOpenBackupViewer,
@@ -34,6 +38,7 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
   isProcessing = false,
 }) => {
   const [newEditorEmail, setNewEditorEmail] = useState('');
+  const [addRole, setAddRole] = useState<'editor' | 'appeal_officer'>('appeal_officer');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Admin PIN management state
@@ -66,6 +71,7 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
 
   const pendingRequests = requests.filter((r) => r.status === 'pending');
   const allowedEditors = settings.allowedEditors || [];
+  const allowedAppealOfficers = settings.allowedAppealOfficers || [];
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,16 +85,29 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
       setErrorMsg('อีเมลนี้เป็นแอดมินหลักของระบบอยู่แล้ว');
       return;
     }
-    if (allowedEditors.some((ed) => ed.toLowerCase() === clean)) {
-      setErrorMsg('อีเมลนี้อยู่ในรายชื่อผู้มีสิทธิ์แก้ไขอยู่แล้ว');
-      return;
-    }
 
-    try {
-      await onAddEditor(clean);
-      setNewEditorEmail('');
-    } catch (err: any) {
-      setErrorMsg(err.message || 'ไม่สามารถเพิ่มผู้ใช้งานได้');
+    if (addRole === 'appeal_officer') {
+      if (allowedAppealOfficers.some((ed) => ed.toLowerCase() === clean)) {
+        setErrorMsg('อีเมลนี้อยู่ในรายชื่อเจ้าหน้าที่คุมอุทธรณ์อยู่แล้ว');
+        return;
+      }
+      try {
+        await onAddAppealOfficer?.(clean);
+        setNewEditorEmail('');
+      } catch (err: any) {
+        setErrorMsg(err.message || 'ไม่สามารถเพิ่มผู้ใช้งานได้');
+      }
+    } else {
+      if (allowedEditors.some((ed) => ed.toLowerCase() === clean)) {
+        setErrorMsg('อีเมลนี้อยู่ในรายชื่อผู้มีสิทธิ์แก้ไขอยู่แล้ว');
+        return;
+      }
+      try {
+        await onAddEditor(clean);
+        setNewEditorEmail('');
+      } catch (err: any) {
+        setErrorMsg(err.message || 'ไม่สามารถเพิ่มผู้ใช้งานได้');
+      }
     }
   };
 
@@ -252,6 +271,15 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
                           <span className="text-xs font-bold text-slate-900">
                             {req.displayName || req.email}
                           </span>
+                          {req.requestedRole === 'appeal_officer' ? (
+                            <span className="text-[10px] font-bold bg-purple-100 text-purple-900 px-2 py-0.5 rounded-full border border-purple-200">
+                              ⚖️ ขอสิทธิ์ จนท.คุมอุทธรณ์
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-200">
+                              ✍️ ขอสิทธิ์ผู้แก้ไข
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-600 font-mono flex items-center gap-1 mt-0.5">
                           <Mail className="w-3 h-3 text-slate-400" />
@@ -268,21 +296,32 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
+                    <div className="flex flex-wrap items-center gap-1.5 self-end sm:self-center">
                       <button
                         type="button"
-                        onClick={() => onApproveRequest(req.id, req.email)}
+                        onClick={() => onApproveRequest(req.id, req.email, 'appeal_officer')}
                         disabled={isProcessing}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
+                        className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-xs transition disabled:opacity-50 cursor-pointer"
+                        title="อนุมัติเป็นเจ้าหน้าที่คุมอุทธรณ์ (ดูสำนวนได้ และกดได้แค่เสร็จสิ้นเท่านั้น)"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>อนุมัติสิทธิ์</span>
+                        <span>อนุมัติ จนท.คุมอุทธรณ์</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onApproveRequest(req.id, req.email, 'editor')}
+                        disabled={isProcessing}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-xs transition disabled:opacity-50 cursor-pointer"
+                        title="อนุมัติเป็นผู้แก้ไขข้อมูลทั้งหมด (Editor)"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>อนุมัติผู้แก้ไข</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => onRejectRequest(req.id)}
                         disabled={isProcessing}
-                        className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                        className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-semibold px-2 py-1.5 rounded-lg transition disabled:opacity-50 cursor-pointer"
                       >
                         ปฏิเสธ
                       </button>
@@ -293,90 +332,170 @@ export const UserPermissionsModal: React.FC<UserPermissionsModalProps> = ({
             )}
           </div>
 
-          {/* Section 2: Add Editor Manually */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-            <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2.5">
+          {/* Section 2: Add User Directly */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+            <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <UserPlus className="w-4 h-4 text-amber-600" />
-              <span>เพิ่มอีเมลผู้มีสิทธิ์แก้ไขโดยตรง</span>
+              <span>เพิ่มอีเมลผู้ใช้งานโดยตรง</span>
             </h3>
+
+            {/* Select Role */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-600 font-medium">เลือกสิทธิ์:</span>
+              <button
+                type="button"
+                onClick={() => setAddRole('appeal_officer')}
+                className={`text-xs px-2.5 py-1 rounded-lg border font-semibold transition flex items-center gap-1 cursor-pointer ${
+                  addRole === 'appeal_officer'
+                    ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                <span>⚖️ เจ้าหน้าที่คุมอุทธรณ์</span>
+                <span className="text-[10px] opacity-80">(ดูและกดเสร็จสิ้นเท่านั้น)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddRole('editor')}
+                className={`text-xs px-2.5 py-1 rounded-lg border font-semibold transition flex items-center gap-1 cursor-pointer ${
+                  addRole === 'editor'
+                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                <span>✍️ ผู้มีสิทธิ์แก้ไขทั้งหมด</span>
+                <span className="text-[10px] opacity-80">(Editor)</span>
+              </button>
+            </div>
+
             <form onSubmit={handleAddSubmit} className="flex flex-col sm:flex-row gap-2">
               <input
                 type="email"
                 value={newEditorEmail}
                 onChange={(e) => setNewEditorEmail(e.target.value)}
-                placeholder="ระบุ Gmail เช่น colleague@gmail.com"
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                placeholder="ระบุ Gmail เช่น officer@gmail.com"
+                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
               />
               <button
                 type="submit"
                 disabled={isProcessing || !newEditorEmail.trim()}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>อนุญาตสิทธิ์</span>
               </button>
             </form>
             {errorMsg && (
-              <p className="text-xs text-rose-600 mt-2 flex items-center gap-1">
+              <p className="text-xs text-rose-600 mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>{errorMsg}</span>
               </p>
             )}
           </div>
 
-          {/* Section 3: Allowed Editors List */}
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2">
-              <Users className="w-4 h-4 text-blue-600" />
-              <span>รายชื่อผู้มีสิทธิ์แก้ไขข้อมูลในระบบ ({allowedEditors.length + 1} บัญชี)</span>
-            </h3>
-
-            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white">
-              {/* Owner */}
-              <div className="p-3 bg-amber-50/50 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs">
-                    👑
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">{ADMIN_EMAIL}</div>
-                    <div className="text-[10px] text-amber-700 font-semibold">เจ้าของระบบ / แอดมินหลัก (สิทธิ์สูงสุด)</div>
-                  </div>
-                </div>
-                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300">
-                  Owner
+          {/* Section 3: Allowed Users Lists */}
+          <div className="space-y-4">
+            {/* 3.1 เจ้าหน้าที่คุมอุทธรณ์ (ดูสำนวนได้ และกดได้แค่เสร็จสิ้นเท่านั้น) */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 mb-1.5 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-purple-600" />
+                <span>
+                  รายชื่อเจ้าหน้าที่คุมอุทธรณ์ ({allowedAppealOfficers.length} บัญชี)
                 </span>
-              </div>
+              </h3>
+              <p className="text-[11px] text-slate-500 mb-2">
+                สิทธิ์นี้สามารถดูสำนวนคดีและตรวจสอบวันนัดได้ทั้งหมด และ<strong>กดได้เฉพาะปุ่ม "เสร็จสิ้น"</strong> สำนวน ไม่สามารถแก้ไขข้อมูลในคดีหรือลบคดีได้
+              </p>
 
-              {/* Other Editors */}
-              {allowedEditors.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-400">
-                  ยังไม่มีผู้ช่วยแก้ไขเพิ่มเติม (เฉพาะแอดมินหลักเท่านั้นที่มีสิทธิ์แก้ไข)
-                </div>
-              ) : (
-                allowedEditors.map((ed) => (
-                  <div key={ed} className="p-3 flex items-center justify-between hover:bg-slate-50 transition">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-                        <User className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-slate-800 font-mono">{ed}</div>
-                        <div className="text-[10px] text-slate-400">ได้รับอนุญาตให้เพิ่ม/แก้ไขข้อมูลได้</div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onRemoveEditor(ed)}
-                      disabled={isProcessing}
-                      className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition disabled:opacity-50"
-                      title="เพิกถอนสิทธิ์แก้ไข"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+              <div className="divide-y divide-slate-100 border border-purple-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                {allowedAppealOfficers.length === 0 ? (
+                  <div className="p-3.5 text-center text-xs text-slate-400 bg-purple-50/20">
+                    ยังไม่มีรายชื่อเจ้าหน้าที่คุมอุทธรณ์ (เพิ่มได้จากช่องด้านบน หรืออนุมัติจากคำขอ)
                   </div>
-                ))
-              )}
+                ) : (
+                  allowedAppealOfficers.map((off) => (
+                    <div key={off} className="p-3 flex items-center justify-between hover:bg-purple-50/40 transition">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs">
+                          ⚖️
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-slate-800 font-mono">{off}</div>
+                          <div className="text-[10px] text-purple-700 font-medium">ดูสำนวนได้ • กดได้แค่เสร็จสิ้นเท่านั้น</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveAppealOfficer?.(off)}
+                        disabled={isProcessing}
+                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition disabled:opacity-50 cursor-pointer"
+                        title="เพิกถอนสิทธิ์เจ้าหน้าที่คุมอุทธรณ์"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 3.2 ผู้มีสิทธิ์แก้ไขข้อมูลทั้งหมด */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 mb-1.5 flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-600" />
+                <span>รายชื่อผู้มีสิทธิ์แก้ไขข้อมูลทั้งหมด ({allowedEditors.length + 1} บัญชี)</span>
+              </h3>
+              <p className="text-[11px] text-slate-500 mb-2">
+                สามารถเพิ่มคดี ลบคดี แก้ไขข้อมูล กรอกคำพิพากษา ขยายเวลา และกดเสร็จสิ้นสำนวนได้
+              </p>
+
+              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                {/* Owner */}
+                <div className="p-3 bg-amber-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs">
+                      👑
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">{ADMIN_EMAIL}</div>
+                      <div className="text-[10px] text-amber-700 font-semibold">เจ้าของระบบ / แอดมินหลัก (สิทธิ์สูงสุด)</div>
+                    </div>
+                  </div>
+                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                    Owner
+                  </span>
+                </div>
+
+                {/* Other Editors */}
+                {allowedEditors.length === 0 ? (
+                  <div className="p-3.5 text-center text-xs text-slate-400">
+                    ยังไม่มีผู้ช่วยแก้ไขเพิ่มเติม (เฉพาะแอดมินหลักเท่านั้นที่มีสิทธิ์แก้ไข)
+                  </div>
+                ) : (
+                  allowedEditors.map((ed) => (
+                    <div key={ed} className="p-3 flex items-center justify-between hover:bg-slate-50 transition">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                          <User className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-slate-800 font-mono">{ed}</div>
+                          <div className="text-[10px] text-slate-500">ได้รับอนุญาตให้เพิ่ม/แก้ไขข้อมูลได้ทั้งหมด</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveEditor(ed)}
+                        disabled={isProcessing}
+                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition disabled:opacity-50 cursor-pointer"
+                        title="เพิกถอนสิทธิ์แก้ไข"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
 

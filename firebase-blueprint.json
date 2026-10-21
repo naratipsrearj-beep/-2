@@ -25,6 +25,10 @@
         "isCompleted": { "type": "boolean" },
         "completedDate": { "type": "string" },
         "completionReason": { "type": "string" },
+        "isSubmittedToDuty": { "type": "boolean" },
+        "submittedToDutyDate": { "type": "string" },
+        "submittedToDutyOfficer": { "type": "string" },
+        "submittedToDutyNotes": { "type": "string" },
         "judgmentOutcome": { "type": "string" },
         "fullJudgmentText": { "type": "string" },
         "responsiblePerson": { "type": "string" },
@@ -76,6 +80,9 @@
       "properties": {
         "adminEmail": { "type": "string" },
         "allowedEditors": {
+          "type": "array"
+        },
+        "allowedAppealOfficers": {
           "type": "array"
         },
         "adminPin": { "type": "string" },
