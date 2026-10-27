@@ -2,11 +2,20 @@ import { AppealCase, CourtAppointmentType } from '../types/appeal';
 import { formatThaiDate } from './dateUtils';
 
 /**
+ * ตรวจสอบว่าเป็นสำนวนที่ศาลมีคำสั่งจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนีหรือไม่
+ */
+export function isCaseTemporarilyDischarged(c?: Partial<AppealCase> | null): boolean {
+  if (!c) return false;
+  return Boolean(c.isTemporarilyDischarged);
+}
+
+/**
  * ตรวจสอบว่าสำนวนนี้ยังไม่ได้เลือกสถานะการพิจารณาของศาลหรือไม่
  * (เช่น ผู้ใช้บันทึกคุมสำนวนที่จะฟ้องในวันไว้ก่อน โดยยังไม่ระบุผลการพิจารณา)
  */
 export function isCaseUnspecifiedStage(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
+  if (c.isTemporarilyDischarged) return false;
   if (c.isUnspecifiedStage === true || c.courtStageStatus === 'unspecified') return true;
   // หากไม่มีคำพิพากษา, ไม่มีคำให้การ, ไม่มีนัด, ไม่ใช่เบิกฟ้อง, ไม่ใช่แยกฟ้อง และยังไม่เสร็จสิ้น
   if (
@@ -25,6 +34,7 @@ export function isCaseUnspecifiedStage(c?: Partial<AppealCase> | null): boolean 
 
 export function isCaseRequisition(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
+  if (c.isTemporarilyDischarged) return false;
   if (isCaseUnspecifiedStage(c)) return false;
   // หากทราบผลคำให้การแล้วว่าจำเลยรับสารภาพหรือปฏิเสธ จะไม่ถือว่าเป็นสำนวนเบิกฟ้องที่รอผลอีกต่อไป
   if (c.defendantPlea === 'confessed' || c.defendantPlea === 'denied') return false;
@@ -42,6 +52,7 @@ export function isCaseRequisition(c?: Partial<AppealCase> | null): boolean {
  */
 export function isCaseDenied(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
+  if (c.isTemporarilyDischarged) return false;
   if (isCaseUnspecifiedStage(c)) return false;
   // หากจำเลยระบุว่ารับสารภาพโดยตรง ต้องไม่ถือว่าปฏิเสธเด็ดขาด
   if (c.defendantPlea === 'confessed') return false;
@@ -76,6 +87,7 @@ export function isCaseDenied(c?: Partial<AppealCase> | null): boolean {
  */
 export function isCaseConfessed(c?: Partial<AppealCase> | null): boolean {
   if (!c) return false;
+  if (c.isTemporarilyDischarged) return false;
   if (isCaseUnspecifiedStage(c)) return false;
   // หากจำเลยระบุว่าปฏิเสธชัดเจน ต้องไม่ถือว่ารับสารภาพ
   if (c.defendantPlea === 'denied') return false;

@@ -446,6 +446,11 @@ export function isKunchartCompletedPendingNoAppealAlert(
  * ประเมินระดับความเร่งด่วนในการคุมอุทธรณ์
  */
 export function getAppealUrgency(caseItem: AppealCase, refDate: Date = new Date()): AppealUrgency {
+  // สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี (ไม่ต้องคุมสำนวนอุทธรณ์ระหว่างหลบหนี)
+  if (caseItem.isTemporarilyDischarged) {
+    return 'temporarily_discharged';
+  }
+
   if (caseItem.isCompleted) {
     // เงื่อนไขพิเศษเฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ:
     // หากกดเสร็จสิ้นแล้ว ก็ยังให้เตือนตอนก่อนครบอุทธรณ์ 5 วันอยู่

@@ -543,6 +543,12 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                             ⚖️ {caseItem.prosecutorName}
                           </span>
                         )}
+                        {caseItem.isSubmittedToDuty && (
+                          <span className="text-[10px] text-blue-900 bg-blue-100 font-bold px-1.5 py-0.5 rounded border border-blue-300 flex items-center gap-1 shadow-2xs" title="สำนวนนี้เสนอเวรชี้แล้ว (ยังคงคุมระยะเวลาอุทธรณ์)">
+                            <Send className="w-2.5 h-2.5 text-blue-700" />
+                            <span>เสนอเวรชี้แล้ว{caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}</span>
+                          </span>
+                        )}
                       </div>
 
                       <span
@@ -732,6 +738,12 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                         {caseItem.prosecutorName && (
                           <span className="text-[10px] text-slate-600 bg-slate-100 font-normal px-1.5 py-0.5 rounded border border-slate-200" title={`อัยการเวรชี้: ${caseItem.prosecutorName}`}>
                             ⚖️ {caseItem.prosecutorName}
+                          </span>
+                        )}
+                        {caseItem.isSubmittedToDuty && (
+                          <span className="text-[10px] text-blue-900 bg-blue-100 font-bold px-1.5 py-0.5 rounded border border-blue-300 flex items-center gap-1 shadow-2xs" title="สำนวนนี้เสนอเวรชี้แล้ว (ยังคงคุมระยะเวลาอุทธรณ์)">
+                            <Send className="w-2.5 h-2.5 text-blue-700" />
+                            <span>เสนอเวรชี้แล้ว{caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}</span>
                           </span>
                         )}
                       </div>

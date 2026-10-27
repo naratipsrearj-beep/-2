@@ -850,6 +850,48 @@ export default function App() {
     }
   };
 
+  // ปรับปุ่มเวรชี้: แค่กดแล้วขึ้นว่าเสนอเวรชี้ทันที โดยไม่ต้องเข้าไปกรอกข้อมูลอะไร
+  // และให้สามารถแก้ไขหรือยกเลิกได้หากกดเสนอเวรชี้ไปแล้ว
+  const handleToggleSubmitToDuty = async (caseItem: AppealCase) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถเสนอเวรชี้ได้');
+      return;
+    }
+
+    if (!caseItem.isSubmittedToDuty) {
+      // 1. ยังไม่เสนอเวรชี้: แค่กดแล้วบันทึกสถานะเสนอเวรชี้ทันที ไม่ต้องกรอกอะไร
+      const submissionDate = getTodayString();
+      const dutyOfficer = caseItem.prosecutorName || todayDutyOfficer || '';
+
+      const updatedCase: AppealCase = {
+        ...caseItem,
+        isSubmittedToDuty: true,
+        submittedToDutyDate: submissionDate,
+        submittedToDutyOfficer: dutyOfficer,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const newCases = cases.map((c) => (c.id === caseItem.id ? updatedCase : c));
+      setCases(newCases);
+      saveCases(newCases);
+      saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore submit to duty error:', e));
+
+      showToast(`สำนวน ${caseItem.blackCaseNo} เสนอเวรชี้แล้ว เรียบร้อย`);
+
+      const currentToken = token || (await getAccessToken());
+      if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
+        try {
+          await updateAppealCaseInSheet(currentToken, sheetConfig.spreadsheetId, updatedCase);
+        } catch (err) {
+          console.error('Failed to update Google Sheet', err);
+        }
+      }
+    } else {
+      // 2. หากเสนอเวรชี้ไปแล้ว: ให้เปิดหน้าต่างแก้ไขข้อมูลเวรชี้ หรือกดยกเลิกสถานะได้
+      setSelectedCaseForSubmitDuty(caseItem);
+    }
+  };
+
   // เสนอเวรชี้ (หากกดแล้วยังคงคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)
   const handleConfirmSubmitToDuty = async (
     caseId: string,
@@ -1379,6 +1421,49 @@ export default function App() {
   // Quick Change Requisition Case Status (รองรับการเรียกใช้เดิม)
   const handleQuickChangeRequisitionStatus = async (caseItem: AppealCase, newStatus: 'confessed' | 'denied') => {
     return handleQuickChangePleaStatus(caseItem, newStatus);
+  };
+
+  // สลับสถานะสำนวนจำหน่ายคดีออกจากสารบบชั่วคราวเนื่องจากจำเลยหลบหนี
+  // หากเป็น true -> จำหน่ายคดีชั่วคราว ไม่ต้องคุมอุทธรณ์ระหว่างหลบหนี
+  // หากเป็น false -> จับกุมตัวได้แล้ว กลับมาคุมอุทธรณ์ตามเดิมทันที
+  const handleToggleTemporaryDischarge = async (
+    caseItem: AppealCase,
+    isDischarged: boolean,
+    recapturedDate?: string
+  ) => {
+    if (!canEdit) {
+      showToast('เฉพาะแอดมินหรือผู้ร่วมแก้ไขเท่านั้นที่สามารถเปลี่ยนสถานะจำหน่ายชั่วคราวได้');
+      return;
+    }
+
+    const updatedCase: AppealCase = {
+      ...caseItem,
+      isTemporarilyDischarged: isDischarged,
+      temporaryDischargeDate: isDischarged ? (caseItem.temporaryDischargeDate || getTodayString()) : caseItem.temporaryDischargeDate,
+      recapturedDate: !isDischarged ? (recapturedDate || getTodayString()) : undefined,
+      courtStageStatus: isDischarged ? 'temporarily_discharged' : (caseItem.courtStageStatus === 'temporarily_discharged' ? 'confessed' : caseItem.courtStageStatus),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newCases = cases.map((c) => (c.id === caseItem.id ? updatedCase : c));
+    setCases(newCases);
+    saveCases(newCases);
+    saveCaseToFirestore(updatedCase).catch((e: any) => console.warn('Firestore toggle temp discharge error:', e));
+
+    if (isDischarged) {
+      showToast(`สำนวนคดีดำ ${caseItem.blackCaseNo} จำหน่ายคดีออกจากสารบบชั่วคราวแล้ว (ไม่ต้องคุมอุทธรณ์)`);
+    } else {
+      showToast(`🟢 จำเลยสำนวนคดีดำ ${caseItem.blackCaseNo} ถูกจับกุมตัวแล้ว — กลับมาคุมอุทธรณ์ตามเดิมเรียบร้อย`);
+    }
+
+    const currentToken = token || (await getAccessToken());
+    if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
+      try {
+        await updateAppealCaseInSheet(currentToken, sheetConfig.spreadsheetId, updatedCase);
+      } catch (err) {
+        console.error('Failed to update Google Sheet', err);
+      }
+    }
   };
 
   // Record Judgment for case transitioning from pending hearings to appeal tracking
@@ -2034,7 +2119,8 @@ export default function App() {
             onOpenCourtPetition={(caseItem) => setSelectedCaseForCourtPetition({ caseItem })}
             onQuickChangeRequisitionStatus={handleQuickChangeRequisitionStatus}
             onQuickChangePleaStatus={handleQuickChangePleaStatus}
-            onOpenSubmitToDuty={(caseItem) => setSelectedCaseForSubmitDuty(caseItem)}
+            onOpenSubmitToDuty={handleToggleSubmitToDuty}
+            onToggleTemporaryDischarge={handleToggleTemporaryDischarge}
             onToast={showToast}
           />
         )}
@@ -2079,7 +2165,8 @@ export default function App() {
               setMonthlySummaryInitialMonth(yearMonth);
               setActiveTab('monthly_prosecutor');
             }}
-            onOpenSubmitToDuty={(caseItem) => setSelectedCaseForSubmitDuty(caseItem)}
+            onOpenSubmitToDuty={handleToggleSubmitToDuty}
+            onToggleTemporaryDischarge={handleToggleTemporaryDischarge}
             onToast={showToast}
           />
         )}
@@ -2131,7 +2218,7 @@ export default function App() {
               setSelectedCaseForEdit(caseItem);
               setIsEditCaseOpen(true);
             }}
-            onOpenSubmitToDuty={(caseItem) => setSelectedCaseForSubmitDuty(caseItem)}
+            onOpenSubmitToDuty={handleToggleSubmitToDuty}
             onToast={showToast}
           />
         )}

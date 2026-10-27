@@ -24,7 +24,8 @@ import {
   Sliders,
   Sparkles,
   Loader2,
-  Users
+  Users,
+  Send
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, CaseAppointment, MonthlyDutyRoster, CaseCompletionReason } from '../types/appeal';
 import { calculateAppealDeadline, calculateSeveredDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
@@ -94,6 +95,15 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   // สถานะยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน)
   const [isUnspecifiedStage, setIsUnspecifiedStage] = useState<boolean>(false);
 
+  // สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี
+  const [isTemporarilyDischarged, setIsTemporarilyDischarged] = useState<boolean>(false);
+  const [temporaryDischargeDate, setTemporaryDischargeDate] = useState<string>('');
+  const [temporaryDischargeReason, setTemporaryDischargeReason] = useState<string>('จำเลยหลบหนี / ออกหมายจับ');
+  const [arrestWarrantNo, setArrestWarrantNo] = useState<string>('');
+  const [arrestWarrantDate, setArrestWarrantDate] = useState<string>('');
+  const [recapturedDate, setRecapturedDate] = useState<string>('');
+  const [temporaryDischargeNotes, setTemporaryDischargeNotes] = useState<string>('');
+
   // Case Status: Has Judgment vs. Pending Hearings / Rights Protection / Denied Plea
   const [hasJudgment, setHasJudgment] = useState<boolean>(false);
   const [defendantPlea, setDefendantPlea] = useState<'denied' | 'confessed' | 'pending'>('denied');
@@ -126,6 +136,12 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   const [isRequisitionCase, setIsRequisitionCase] = useState(false);
   const [requisitionDate, setRequisitionDate] = useState('');
   const [requisitionNotes, setRequisitionNotes] = useState('');
+
+  // สถานะเสนอเวรชี้
+  const [isSubmittedToDuty, setIsSubmittedToDuty] = useState(false);
+  const [submittedToDutyDate, setSubmittedToDutyDate] = useState('');
+  const [submittedToDutyOfficer, setSubmittedToDutyOfficer] = useState('');
+  const [submittedToDutyNotes, setSubmittedToDutyNotes] = useState('');
 
   // Primary Court Appointment (เช่น นัดคุ้มครองสิทธิ)
   const [appointmentType, setAppointmentType] = useState<CourtAppointmentType>('rights_protection');
@@ -198,6 +214,14 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       const unspecified = isCaseUnspecifiedStage(caseItem);
       setIsUnspecifiedStage(unspecified);
 
+      setIsTemporarilyDischarged(Boolean(caseItem.isTemporarilyDischarged));
+      setTemporaryDischargeDate(caseItem.temporaryDischargeDate || (caseItem.isTemporarilyDischarged ? getTodayString() : ''));
+      setTemporaryDischargeReason(caseItem.temporaryDischargeReason || 'จำเลยหลบหนี / ออกหมายจับ');
+      setArrestWarrantNo(caseItem.arrestWarrantNo || '');
+      setArrestWarrantDate(caseItem.arrestWarrantDate || '');
+      setRecapturedDate(caseItem.recapturedDate || '');
+      setTemporaryDischargeNotes(caseItem.temporaryDischargeNotes || '');
+
       const caseHasJudgment = isJudgmentRecorded(caseItem);
       setHasJudgment(caseHasJudgment);
       setDefendantPlea(caseItem.defendantPlea || (caseHasJudgment ? 'confessed' : (isReq ? 'pending' : (unspecified ? 'pending' : 'denied'))));
@@ -223,6 +247,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setCompletedDate(caseItem.completedDate || (caseItem.isCompleted ? getTodayString() : ''));
       setCompletionReason(caseItem.completionReason || 'appealed');
       setIsNoAppealConfirmed(Boolean(caseItem.isNoAppealConfirmed));
+
+      setIsSubmittedToDuty(Boolean(caseItem.isSubmittedToDuty));
+      setSubmittedToDutyDate(caseItem.submittedToDutyDate || (caseItem.isSubmittedToDuty ? getTodayString() : ''));
+      setSubmittedToDutyOfficer(caseItem.submittedToDutyOfficer || caseItem.prosecutorName || '');
+      setSubmittedToDutyNotes(caseItem.submittedToDutyNotes || '');
 
       setAppointmentType(caseItem.appointmentType || (caseHasJudgment ? 'none' : (isReq ? 'requisition' : 'rights_protection')));
       setAppointmentTypeName(caseItem.appointmentTypeName || '');
@@ -370,8 +399,10 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       plaintiff: plaintiff?.trim() || caseItem.plaintiff || 'พนักงานอัยการ',
       defendant: defendant.trim(),
       caseType,
-      isUnspecifiedStage,
-      courtStageStatus: isUnspecifiedStage
+      isUnspecifiedStage: isTemporarilyDischarged ? false : isUnspecifiedStage,
+      courtStageStatus: isTemporarilyDischarged
+        ? 'temporarily_discharged'
+        : isUnspecifiedStage
         ? 'unspecified'
         : (effectiveHasJudgment || defendantPlea === 'confessed')
           ? 'confessed'
@@ -455,10 +486,17 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       subsequentAppointments: (hasJudgment || defendantPlea === 'confessed')
         ? subsequentAppointments.filter((a) => a.type !== 'rights_protection')
         : (subsequentAppointments.length > 0 ? subsequentAppointments : undefined),
-      isSubmittedToDuty: caseItem.isSubmittedToDuty,
-      submittedToDutyDate: caseItem.submittedToDutyDate,
-      submittedToDutyOfficer: caseItem.submittedToDutyOfficer,
-      submittedToDutyNotes: caseItem.submittedToDutyNotes,
+      isSubmittedToDuty: isSubmittedToDuty,
+      submittedToDutyDate: isSubmittedToDuty ? (submittedToDutyDate || getTodayString()) : undefined,
+      submittedToDutyOfficer: isSubmittedToDuty ? (submittedToDutyOfficer.trim() || prosecutorName.trim() || undefined) : undefined,
+      submittedToDutyNotes: isSubmittedToDuty ? (submittedToDutyNotes.trim() || undefined) : undefined,
+      isTemporarilyDischarged,
+      temporaryDischargeDate: isTemporarilyDischarged ? (temporaryDischargeDate || getTodayString()) : undefined,
+      temporaryDischargeReason: isTemporarilyDischarged ? (temporaryDischargeReason.trim() || undefined) : undefined,
+      arrestWarrantNo: isTemporarilyDischarged ? (arrestWarrantNo.trim() || undefined) : undefined,
+      arrestWarrantDate: isTemporarilyDischarged ? (arrestWarrantDate || undefined) : undefined,
+      recapturedDate: !isTemporarilyDischarged && recapturedDate ? recapturedDate : undefined,
+      temporaryDischargeNotes: isTemporarilyDischarged ? (temporaryDischargeNotes.trim() || undefined) : undefined,
       updatedAt: new Date().toISOString(),
     };
 
@@ -514,11 +552,12 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               </label>
               <span className="text-[10px] text-slate-500">เลือกผลการพิจารณาหรือคุมสำนวน</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-1.5">
               {/* Option 0: ยังไม่เลือกสถานะสำนวน */}
               <button
                 type="button"
                 onClick={() => {
+                  setIsTemporarilyDischarged(false);
                   setIsUnspecifiedStage(true);
                   setIsSeveredCase(false);
                   setHasJudgment(false);
@@ -528,16 +567,16 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   setAppointmentDate('');
                 }}
                 className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
-                  isUnspecifiedStage
+                  !isTemporarilyDischarged && isUnspecifiedStage
                     ? 'border-rose-500 bg-rose-100/90 text-rose-950 font-bold shadow-2xs ring-1 ring-rose-400'
                     : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                 }`}
                 title="คุมสำนวนที่จะฟ้องในวันไว้ก่อน (แถบสีแดงเตือน)"
               >
                 <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
-                  isUnspecifiedStage ? 'border-rose-600 bg-rose-600 text-white' : 'border-slate-300'
+                  !isTemporarilyDischarged && isUnspecifiedStage ? 'border-rose-600 bg-rose-600 text-white' : 'border-slate-300'
                 }`}>
-                  {isUnspecifiedStage && <Check className="w-2.5 h-2.5" />}
+                  {!isTemporarilyDischarged && isUnspecifiedStage && <Check className="w-2.5 h-2.5" />}
                 </div>
                 <div className="truncate">
                   <span className="font-bold block leading-tight truncate">🚨 ยังไม่เลือกสถานะ</span>
@@ -548,6 +587,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsTemporarilyDischarged(false);
                   setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setDefendantPlea('confessed');
@@ -562,18 +602,18 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
-                  !isUnspecifiedStage && !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
+                  !isTemporarilyDischarged && !isUnspecifiedStage && !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
                     ? 'border-yellow-500 bg-yellow-100 text-yellow-950 font-bold shadow-2xs ring-1 ring-yellow-400'
                     : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                 }`}
                 title="จำเลยรับสารภาพ (กรอกวันที่พิพากษาได้เลย คำพิพากษากรอกทีหลังได้)"
               >
                 <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
-                  !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
+                  !isTemporarilyDischarged && !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed'
                     ? 'border-yellow-600 bg-yellow-500 text-yellow-950'
                     : 'border-slate-300'
                 }`}>
-                  {!isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed' && (
+                  {!isTemporarilyDischarged && !isSeveredCase && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'confessed' && (
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
                   )}
                 </div>
@@ -586,6 +626,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsTemporarilyDischarged(false);
                   setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setHasJudgment(false);
@@ -596,18 +637,18 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
-                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                  !isTemporarilyDischarged && !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
                     ? 'border-orange-500 bg-orange-100 text-orange-950 font-bold shadow-2xs ring-1 ring-orange-400'
                     : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                 }`}
                 title="จำเลยให้การปฏิเสธ (นัดคุ้มครองสิทธิ/สืบพยาน)"
               >
                 <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
-                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+                  !isTemporarilyDischarged && !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection')
                     ? 'border-orange-600 bg-orange-500 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
+                  {!isTemporarilyDischarged && !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && (defendantPlea === 'denied' || appointmentType === 'rights_protection') && (
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
                   )}
                 </div>
@@ -620,6 +661,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsTemporarilyDischarged(false);
                   setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setHasJudgment(false);
@@ -633,18 +675,18 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
-                  !isUnspecifiedStage && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
+                  !isTemporarilyDischarged && !isUnspecifiedStage && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
                     ? 'border-emerald-500 bg-emerald-100 text-emerald-950 font-bold shadow-2xs ring-1 ring-emerald-400'
                     : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                 }`}
                 title="ยังไม่ทราบคำให้การ • แจ้งเตือนวันเบิกฟ้อง"
               >
                 <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
-                  !isUnspecifiedStage && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
+                  !isTemporarilyDischarged && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition')
                     ? 'border-emerald-600 bg-emerald-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!isUnspecifiedStage && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition') && (
+                  {!isTemporarilyDischarged && !isSeveredCase && (isRequisitionCase || appointmentType === 'requisition') && (
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
                   )}
                 </div>
@@ -657,6 +699,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsTemporarilyDischarged(false);
                   setIsUnspecifiedStage(false);
                   setIsSeveredCase(false);
                   setHasJudgment(false);
@@ -667,18 +710,18 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
-                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                  !isTemporarilyDischarged && !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
                     ? 'border-sky-500 bg-sky-100 text-sky-950 font-bold shadow-2xs ring-1 ring-sky-400'
                     : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                 }`}
                 title="ยังไม่ทราบคำให้การ • นัดพร้อม / นัดไกล่เกลี่ย / รอผล"
               >
                 <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
-                  !isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
+                  !isTemporarilyDischarged && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection'
                     ? 'border-sky-600 bg-sky-600 text-white'
                     : 'border-slate-300'
                 }`}>
-                  {!isUnspecifiedStage && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection' && (
+                  {!isTemporarilyDischarged && !isSeveredCase && !hasJudgment && !isRequisitionCase && appointmentType !== 'requisition' && defendantPlea === 'pending' && appointmentType !== 'rights_protection' && (
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
                   )}
                 </div>
@@ -691,6 +734,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsTemporarilyDischarged(false);
                   setIsUnspecifiedStage(false);
                   setIsSeveredCase(true);
                   setHasJudgment(false);
@@ -701,22 +745,163 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   }
                 }}
                 className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
-                  !isUnspecifiedStage && isSeveredCase
+                  !isTemporarilyDischarged && !isUnspecifiedStage && isSeveredCase
                     ? 'border-purple-500 bg-purple-100 text-purple-950 font-bold shadow-2xs ring-1 ring-purple-400'
                     : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                 }`}
                 title="ศาลสั่งแยกฟ้อง • เชื่อมโยง ส.1 / ส.4"
               >
                 <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
-                  !isUnspecifiedStage && isSeveredCase ? 'border-purple-600 bg-purple-600 text-white' : 'border-slate-300'
+                  !isTemporarilyDischarged && !isUnspecifiedStage && isSeveredCase ? 'border-purple-600 bg-purple-600 text-white' : 'border-slate-300'
                 }`}>
-                  {!isUnspecifiedStage && isSeveredCase && <Check className="w-2.5 h-2.5" />}
+                  {!isTemporarilyDischarged && !isSeveredCase && <Check className="w-2.5 h-2.5" />}
                 </div>
                 <div className="truncate">
                   <span className="font-bold block leading-tight truncate">✂️ ศาลแยกฟ้อง</span>
                 </div>
               </button>
+
+              {/* Option 6: สำนวนจำหน่ายคดีชั่วคราว (จำเลยหลบหนี) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTemporarilyDischarged(true);
+                  setIsUnspecifiedStage(false);
+                  if (!temporaryDischargeDate) {
+                    setTemporaryDischargeDate(getTodayString());
+                  }
+                  if (!temporaryDischargeReason) {
+                    setTemporaryDischargeReason('จำเลยหลบหนี / ออกหมายจับ');
+                  }
+                }}
+                className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
+                  isTemporarilyDischarged
+                    ? 'border-slate-600 bg-slate-200 text-slate-950 font-bold shadow-2xs ring-1 ring-slate-500'
+                    : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
+                }`}
+                title="ศาลสั่งจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี (ไม่ต้องคุมสำนวนอุทธรณ์)"
+              >
+                <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
+                  isTemporarilyDischarged ? 'border-slate-700 bg-slate-700 text-white' : 'border-slate-300'
+                }`}>
+                  {isTemporarilyDischarged && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                </div>
+                <div className="truncate">
+                  <span className="font-bold block leading-tight truncate">⏸️ จำหน่ายชั่วคราว</span>
+                </div>
+              </button>
             </div>
+          </div>
+
+          {/* หัวข้อตัวเลือก: สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี */}
+          <div className={`p-3.5 rounded-xl border transition ${
+            isTemporarilyDischarged
+              ? 'bg-slate-100/95 border-slate-400 ring-2 ring-slate-400/30 shadow-xs'
+              : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <label className="flex items-start sm:items-center gap-2.5 cursor-pointer flex-1">
+                <input
+                  type="checkbox"
+                  checked={isTemporarilyDischarged}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsTemporarilyDischarged(checked);
+                    if (checked) {
+                      setIsUnspecifiedStage(false);
+                      if (!temporaryDischargeDate) setTemporaryDischargeDate(getTodayString());
+                      if (!temporaryDischargeReason) setTemporaryDischargeReason('จำเลยหลบหนี / ออกหมายจับ');
+                    }
+                  }}
+                  className="w-4 h-4 mt-0.5 sm:mt-0 text-slate-700 rounded border-slate-400 focus:ring-slate-500 cursor-pointer shrink-0"
+                />
+                <div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm">⏸️</span>
+                    <span className="text-xs font-bold text-slate-900 font-['Prompt']">
+                      สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี
+                    </span>
+                    <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded-full border border-slate-300">
+                      ไม่ต้องคุมสำนวนอุทธรณ์
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    หากติ๊กตัวเลือกนี้ ระบบจะพักการคุมระยะเวลาอุทธรณ์และไม่แจ้งเตือน แต่ยังสามารถกรอกหรือแก้ไขคำพิพากษาได้ตามปกติ เมื่อจับกุมตัวจำเลยได้แล้ว สามารถติ๊กออกหรือกดปุ่มเพื่อกลับมาคุมอุทธรณ์เหมือนเดิมได้
+                  </p>
+                </div>
+              </label>
+              {isTemporarilyDischarged && (
+                <span className="text-[11px] font-bold text-slate-800 bg-slate-200 px-2 py-0.5 rounded-full border border-slate-300 shrink-0 self-start sm:self-auto">
+                  ⏸️ พักการคุมอุทธรณ์ชั่วคราว
+                </span>
+              )}
+            </div>
+
+            {/* ข้อมูลเพิ่มเติมเมื่อจำหน่ายคดีชั่วคราว */}
+            {isTemporarilyDischarged && (
+              <div className="mt-3 pt-3 border-t border-slate-300/80 space-y-3 animate-in fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      วันที่สั่งจำหน่ายคดีชั่วคราว
+                    </label>
+                    <input
+                      type="date"
+                      value={temporaryDischargeDate}
+                      onChange={(e) => setTemporaryDischargeDate(e.target.value)}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-900 focus:ring-1 focus:ring-slate-500 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      หมายจับเลขที่ / รายละเอียดหมายจับ
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น หมายจับที่ จ.123/2569"
+                      value={arrestWarrantNo}
+                      onChange={(e) => setArrestWarrantNo(e.target.value)}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-900 focus:ring-1 focus:ring-slate-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      เหตุผลการจำหน่ายคดี
+                    </label>
+                    <input
+                      type="text"
+                      value={temporaryDischargeReason}
+                      onChange={(e) => setTemporaryDischargeReason(e.target.value)}
+                      placeholder="จำเลยหลบหนี / ออกหมายจับ"
+                      className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-900 focus:ring-1 focus:ring-slate-500"
+                    />
+                  </div>
+                </div>
+
+                {/* แถบกดยืนยันจับกุมตัวจำเลยได้แล้วเพื่อกลับมาคุมอุทธรณ์ */}
+                <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                  <div className="text-xs text-emerald-950">
+                    <span className="font-bold flex items-center gap-1">
+                      <span>🟢 จับตัวจำเลยได้แล้วใช่หรือไม่?</span>
+                    </span>
+                    <p className="text-[11px] text-emerald-800 mt-0.5">
+                      หากจับกุมตัวจำเลยมาได้แล้ว กดปุ่มนี้เพื่อยกเลิกการพัก และกลับมาเริ่มนับระยะเวลาคุมอุทธรณ์ตามปกติ
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTemporarilyDischarged(false);
+                      setRecapturedDate(getTodayString());
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>จับตัวได้แล้ว / กลับมาคุมอุทธรณ์เหมือนเดิม</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ข้อมูลสำนวนที่ศาลสั่งแยกฟ้อง (เชื่อมโยง ส.1 และ ส.4) */}
@@ -1102,6 +1287,83 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 className="flex-1 text-[11px] border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-slate-300 font-normal"
               />
             </div>
+          </div>
+
+          {/* สถานะการเสนอเวรชี้ (สามารถติ๊กเสนอ หรือแก้ไขข้อมูล/ยกเลิกได้) */}
+          <div className={`p-3 rounded-xl border transition ${
+            isSubmittedToDuty
+              ? 'bg-blue-50/80 border-blue-300'
+              : 'bg-slate-50/60 border-slate-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isSubmittedToDuty}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsSubmittedToDuty(checked);
+                    if (checked) {
+                      if (!submittedToDutyDate) setSubmittedToDutyDate(getTodayString());
+                      if (!submittedToDutyOfficer) setSubmittedToDutyOfficer(prosecutorName || '');
+                    }
+                  }}
+                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 font-['Prompt']">
+                  <Send className="w-3.5 h-3.5 text-blue-600" />
+                  <span>สำนวนนี้เสนอเวรชี้แล้ว</span>
+                  {isSubmittedToDuty && (
+                    <span className="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                      เสนอแล้ว
+                    </span>
+                  )}
+                </span>
+              </label>
+              <span className="text-[10px] text-slate-500 hidden sm:inline">
+                (สำนวนยังคงคุมระยะเวลาอุทธรณ์ตามปกติ)
+              </span>
+            </div>
+
+            {isSubmittedToDuty && (
+              <div className="mt-2.5 pt-2.5 border-t border-blue-200/80 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                    วันที่เสนอเวรชี้
+                  </label>
+                  <input
+                    type="date"
+                    value={submittedToDutyDate}
+                    onChange={(e) => setSubmittedToDutyDate(e.target.value)}
+                    className="w-full text-xs border border-blue-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                    ชื่ออัยการเวรชี้ที่เสนอ
+                  </label>
+                  <input
+                    type="text"
+                    value={submittedToDutyOfficer}
+                    onChange={(e) => setSubmittedToDutyOfficer(e.target.value)}
+                    placeholder="ชื่ออัยการเวรชี้ (หรือดึงจากเวรชี้ข้างต้น)"
+                    className="w-full text-xs border border-blue-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                    หมายเหตุการเสนอเวรชี้ (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    value={submittedToDutyNotes}
+                    onChange={(e) => setSubmittedToDutyNotes(e.target.value)}
+                    placeholder="เช่น เสนอพร้อมสำนวนฟ้อง, ตรวจสอบคำให้การ"
+                    className="w-full text-xs border border-blue-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ช่องกรอกจำเลย (ลบช่องโจทก์ออกตามที่ผู้ใช้ร้องขอ เนื่องจากเป็นพนักงานอัยการอยู่แล้วทุกสำนวน) */}

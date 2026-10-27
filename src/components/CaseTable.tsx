@@ -37,6 +37,7 @@ import {
   getAppointmentBadgeStyle,
   isCaseConfessed,
   isCaseDenied,
+  isCaseRequisition,
   getRequisitionStatus,
   isJudgmentRecorded,
   shouldAlertMissingJudgment,
@@ -44,12 +45,116 @@ import {
   getRequisitionAlertInfo,
   isCaseUnspecifiedStage,
   getMissingJudgmentAlertInfo,
+  isCaseTemporarilyDischarged,
 } from '../utils/appointmentUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCaseUtils';
 import { getCaseCardStyle } from './DailyFilingByDateView';
 import { LinkedCasesModal } from './LinkedCasesModal';
 import { buildLinkedCasesMap, caseMatchesWithLinkedSearch, baseCaseMatcher } from '../utils/linkedCaseUtils';
+
+export interface CaseStatusBadgeProps {
+  caseItem: AppealCase;
+  size?: 'xs' | 'sm' | 'md';
+  className?: string;
+  showIcon?: boolean;
+}
+
+/**
+ * Color-coded status badges for 'Confessed', 'Denied', 'Requisition', and 'Temporarily Discharged'
+ * matching the visual styles used in the sidebar and daily procedure filters.
+ */
+export const CaseStatusBadge: React.FC<CaseStatusBadgeProps> = ({
+  caseItem,
+  size = 'xs',
+  className = '',
+  showIcon = true,
+}) => {
+  const isDischarged = isCaseTemporarilyDischarged(caseItem);
+  const isReq = isCaseRequisition(caseItem);
+  const isDenied = isCaseDenied(caseItem);
+  const isConfessed = isCaseConfessed(caseItem);
+  const isUnspecified = isCaseUnspecifiedStage(caseItem);
+
+  const paddingClass = size === 'md' ? 'px-2.5 py-1 text-xs' : size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-1.5 py-0.5 text-[10px]';
+  const dotSize = size === 'md' ? 'w-2 h-2' : 'w-1.5 h-1.5';
+
+  if (isDischarged) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 font-bold text-slate-800 bg-slate-200 border border-slate-400 rounded-md shadow-2xs ${paddingClass} ${className}`}
+        title={`สำนวนจำหน่ายคดีชั่วคราว (จำเลยหลบหนี)${caseItem.temporaryDischargeDate ? ` เมื่อ ${formatThaiDate(caseItem.temporaryDischargeDate)}` : ''} - ไม่ต้องคุมอุทธรณ์`}
+      >
+        <span className={`${dotSize} rounded-full bg-slate-600 shrink-0`}></span>
+        {showIcon && <span>⏸️</span>}
+        <span>จำหน่ายชั่วคราว (จำเลยหลบหนี)</span>
+      </span>
+    );
+  }
+
+  if (isUnspecified) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 font-bold text-rose-950 bg-rose-100 border border-rose-300 rounded-md shadow-2xs animate-pulse ${paddingClass} ${className}`}
+        title="ยังไม่ได้เลือกสถานะสำนวน (เตือนแถบสีแดง)"
+      >
+        <span className={`${dotSize} rounded-full bg-rose-600 shrink-0`}></span>
+        {showIcon && <span>🚨</span>}
+        <span>ยังไม่เลือกสถานะ</span>
+      </span>
+    );
+  }
+
+  if (isConfessed) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 font-bold text-yellow-950 bg-yellow-100 border border-yellow-300 rounded-md shadow-2xs ${paddingClass} ${className}`}
+        title="จำเลยรับสารภาพ (แถวสีเหลือง)"
+      >
+        <span className={`${dotSize} rounded-full bg-yellow-500 shrink-0`}></span>
+        {showIcon && <span>🟡</span>}
+        <span>จำเลยรับสารภาพ</span>
+      </span>
+    );
+  }
+
+  if (isDenied) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 font-bold text-orange-950 bg-orange-100 border border-orange-300 rounded-md shadow-2xs ${paddingClass} ${className}`}
+        title="จำเลยให้การปฏิเสธ / มีนัดต่อ (แถวสีส้ม)"
+      >
+        <span className={`${dotSize} rounded-full bg-orange-500 shrink-0`}></span>
+        {showIcon && <span>🟠</span>}
+        <span>จำเลยปฏิเสธ</span>
+      </span>
+    );
+  }
+
+  if (isReq) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 font-bold text-emerald-950 bg-emerald-100 border border-emerald-300 rounded-md shadow-2xs ${paddingClass} ${className}`}
+        title={`สำนวนเบิกฟ้อง ${caseItem.requisitionDate || caseItem.appointmentDate ? formatThaiDate(caseItem.requisitionDate || caseItem.appointmentDate) : ''} (แถวสีเขียว)`}
+      >
+        <span className={`${dotSize} rounded-full bg-emerald-500 shrink-0`}></span>
+        {showIcon && <span>🟢</span>}
+        <span>สำนวนเบิกฟ้อง</span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 font-semibold text-sky-950 bg-sky-100 border border-sky-300 rounded-md shadow-2xs ${paddingClass} ${className}`}
+      title="มีนัดอื่นๆ / รอนัดพิจารณา (แถวสีฟ้า)"
+    >
+      <span className={`${dotSize} rounded-full bg-sky-500 shrink-0`}></span>
+      {showIcon && <span>🔵</span>}
+      <span>มีนัดอื่นๆ</span>
+    </span>
+  );
+};
 
 interface CaseTableProps {
   cases: AppealCase[];
@@ -71,8 +176,9 @@ interface CaseTableProps {
   onDeleteCase: (id: string) => void;
   onAddNewCase: () => void;
   onOpenFileLabel?: (caseItem: AppealCase) => void;
-  onOpenCourtPetition?: (caseItem: AppealCase) => void;
+  onOpenCourtPetition?: (caseItem: AppealCase, deadline?: string, count?: number) => void;
   onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
+  onToggleTemporaryDischarge?: (caseItem: AppealCase, isDischarged: boolean, recapturedDate?: string) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -100,6 +206,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onOpenFileLabel,
   onOpenCourtPetition,
   onOpenSubmitToDuty,
+  onToggleTemporaryDischarge,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -145,8 +252,14 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       if (statusFilter === 'active') {
         return !c.isCompleted && getAppealUrgency(c) === 'normal';
       }
+      if (statusFilter === 'confessed') {
+        return isCaseConfessed(c);
+      }
+      if (statusFilter === 'denied') {
+        return isCaseDenied(c);
+      }
       if (statusFilter === 'requisition') {
-        return !c.isCompleted && (c.isRequisitionCase || c.appointmentType === 'requisition');
+        return !c.isCompleted && isCaseRequisition(c);
       }
       if (statusFilter === 'pending_trial') {
         return !c.isCompleted && !isJudgmentRecorded(c);
@@ -163,6 +276,9 @@ export const CaseTable: React.FC<CaseTableProps> = ({
           Boolean(c.hasPartialDenial) ||
           Boolean(c.hasPendingSeveredFiling)
         );
+      }
+      if (statusFilter === 'temporarily_discharged') {
+        return isCaseTemporarilyDischarged(c);
       }
       if (statusFilter === 'completed') {
         return c.isCompleted;
@@ -250,16 +366,60 @@ export const CaseTable: React.FC<CaseTableProps> = ({
               )
             </button>
             <button
+              onClick={() => setStatusFilter('confessed')}
+              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                statusFilter === 'confessed'
+                  ? 'bg-yellow-400 text-yellow-950 font-bold shadow-xs'
+                  : 'text-yellow-900 hover:bg-yellow-50'
+              }`}
+            >
+              <span>🟡 จำเลยรับสารภาพ</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  statusFilter === 'confessed'
+                    ? 'bg-yellow-500 text-yellow-950'
+                    : 'bg-yellow-100 text-yellow-900 border border-yellow-300'
+                }`}
+              >
+                {cases.filter((c) => isCaseConfessed(c)).length}
+              </span>
+            </button>
+            <button
+              onClick={() => setStatusFilter('denied')}
+              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                statusFilter === 'denied'
+                  ? 'bg-orange-500 text-white font-bold shadow-xs'
+                  : 'text-orange-900 hover:bg-orange-50'
+              }`}
+            >
+              <span>🟠 จำเลยปฏิเสธ</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  statusFilter === 'denied'
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-orange-100 text-orange-950 border border-orange-300'
+                }`}
+              >
+                {cases.filter((c) => isCaseDenied(c)).length}
+              </span>
+            </button>
+            <button
               onClick={() => setStatusFilter('requisition')}
               className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
                 statusFilter === 'requisition'
-                  ? 'bg-orange-600 text-white font-bold shadow-xs'
-                  : 'text-orange-700 hover:bg-orange-50'
+                  ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                  : 'text-emerald-900 hover:bg-emerald-50'
               }`}
             >
-              <span>🚚 สำนวนเบิกฟ้อง</span>
-              <span className={`text-[11px] px-1.5 py-0.2 rounded-full ${statusFilter === 'requisition' ? 'bg-orange-700 text-white' : 'bg-orange-100 text-orange-800'}`}>
-                {cases.filter((c) => !c.isCompleted && (c.isRequisitionCase || c.appointmentType === 'requisition')).length}
+              <span>🟢 สำนวนเบิกฟ้อง</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  statusFilter === 'requisition'
+                    ? 'bg-emerald-700 text-white'
+                    : 'bg-emerald-100 text-emerald-950 border border-emerald-300'
+                }`}
+              >
+                {cases.filter((c) => !c.isCompleted && isCaseRequisition(c)).length}
               </span>
               {cases.filter((c) => getRequisitionAlertInfo(c).isAlertDue).length > 0 && (
                 <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-pulse" title="ครบกำหนดเตือน 5 วัน">
@@ -330,6 +490,26 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                 </button>
               );
             })()}
+            <button
+              onClick={() => setStatusFilter('temporarily_discharged')}
+              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                statusFilter === 'temporarily_discharged'
+                  ? 'bg-slate-700 text-white font-bold shadow-xs'
+                  : 'text-slate-700 hover:bg-slate-200'
+              }`}
+              title="สำนวนจำหน่ายคดีออกจากสารบบชั่วคราวเนื่องจากจำเลยหลบหนี (ไม่ต้องคุมอุทธรณ์)"
+            >
+              <span>⏸️ จำหน่ายชั่วคราว</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  statusFilter === 'temporarily_discharged'
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-slate-200 text-slate-800 border border-slate-300'
+                }`}
+              >
+                {cases.filter((c) => isCaseTemporarilyDischarged(c)).length}
+              </span>
+            </button>
             <button
               onClick={() => setStatusFilter('completed')}
               className={`px-3 py-1.5 rounded-lg transition ${
@@ -557,11 +737,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                         <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
                           {caseItem.caseType}
                         </span>
-                        {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') && (
-                          <span className="text-[10px] font-semibold text-orange-800 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded shadow-2xs" title={`สำนวนเบิกฟ้อง ${caseItem.requisitionDate || caseItem.appointmentDate || ''}`}>
-                            🚚 เบิกฟ้อง
-                          </span>
-                        )}
+                        <CaseStatusBadge caseItem={caseItem} size="xs" />
                         {caseItem.isSeveredCase && (
                           <span
                             className="text-[10px] font-bold text-purple-900 bg-purple-100 border border-purple-300 px-1.5 py-0.5 rounded shadow-2xs flex items-center gap-0.5"
@@ -717,6 +893,15 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             <span className="text-slate-700 truncate">{caseItem.prosecutorName}</span>
                           </div>
                         )}
+                        {caseItem.isSubmittedToDuty && (
+                          <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-900 bg-blue-100 border border-blue-300 px-2 py-0.5 rounded-md shadow-2xs max-w-full">
+                            <Send className="w-3 h-3 text-blue-700 shrink-0" />
+                            <span className="truncate">📤 สำนวนนี้เสนอเวรชี้แล้ว{caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}</span>
+                            {caseItem.submittedToDutyDate && (
+                              <span className="text-[10px] text-blue-700 font-normal shrink-0">({formatThaiDate(caseItem.submittedToDutyDate, { short: true })})</span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Court Appointment Badge (คดีที่จำเลยรับสารภาพจะไม่แสดงนัดคุ้มครองสิทธิ) */}
@@ -767,11 +952,12 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     <td className="py-2.5 px-2 whitespace-nowrap">
                       {isJudgmentRecorded(caseItem) ? (
                         <div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300 shadow-2xs">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                               <span>⚖️ {formatThaiDate(caseItem.judgmentDate!, { short: true })}</span>
                             </span>
+                            <CaseStatusBadge caseItem={caseItem} size="xs" />
                             {canEdit && onRecordJudgment && (
                               <button
                                 type="button"
@@ -978,7 +1164,21 @@ export const CaseTable: React.FC<CaseTableProps> = ({
 
                     {/* Appeal Deadline (1 month) */}
                     <td className="py-2.5 px-2 whitespace-nowrap">
-                      {caseItem.appealDeadline || caseItem.extendedDeadline ? (
+                      {isCaseTemporarilyDischarged(caseItem) ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 bg-slate-200 border border-slate-400 px-2 py-0.5 rounded-md shadow-2xs">
+                            <span>⏸️ จำหน่ายคดีชั่วคราว</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 block">
+                            (ไม่ต้องคุมอุทธรณ์ระหว่างหลบหนี)
+                          </span>
+                          {caseItem.arrestWarrantNo && (
+                            <span className="text-[10px] text-slate-600 block font-medium">
+                              หมายจับ: {caseItem.arrestWarrantNo}
+                            </span>
+                          )}
+                        </div>
+                      ) : caseItem.appealDeadline || caseItem.extendedDeadline ? (
                         <div
                           onClick={() => !isCompleted && onExtendDeadline(caseItem)}
                           className={`group inline-block text-left rounded-lg p-1.5 -m-1.5 transition ${
@@ -1021,7 +1221,30 @@ export const CaseTable: React.FC<CaseTableProps> = ({
 
                     {/* Urgency / Status Badge */}
                     <td className="py-2.5 px-2 whitespace-nowrap">
-                      {isCompleted ? (
+                      <div className="space-y-1">
+                        <div>
+                          <CaseStatusBadge caseItem={caseItem} size="xs" />
+                        </div>
+                        {isCaseTemporarilyDischarged(caseItem) ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-full">
+                              <span>⏸️ พักการคุมอุทธรณ์</span>
+                            </span>
+                            <div className="text-[10px] text-slate-500">
+                              {caseItem.temporaryDischargeDate ? `จำหน่ายชั่วคราว: ${formatThaiDate(caseItem.temporaryDischargeDate, { short: true })}` : 'จำเลยหลบหนี'}
+                            </div>
+                            {canEdit && onToggleTemporaryDischarge && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleTemporaryDischarge(caseItem, false)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-2 py-0.5 rounded-md shadow-2xs transition cursor-pointer active:scale-95"
+                                title="คลิกเมื่อจับกุมตัวจำเลยได้แล้ว เพื่อกลับมาคุมอุทธรณ์ตามปกติเหมือนเดิมทันที"
+                              >
+                                <span>🟢 จับตัวได้แล้ว / คุมอุทธรณ์ต่อ</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : isCompleted ? (
                         <div className="space-y-0.5">
                           {isKunchartCompletedPendingNoAppealAlert(caseItem) ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-900 bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-full animate-pulse shadow-2xs">
@@ -1075,14 +1298,15 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                       {caseItem.isSubmittedToDuty && (
                         <div className="mt-1">
                           <span
-                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full"
-                            title={`เสนอเวรชี้แล้ว: ${caseItem.submittedToDutyOfficer || ''} (ยังคุมอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)`}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-950 bg-blue-100 border border-blue-300 px-2 py-0.5 rounded-full shadow-2xs"
+                            title={`สำนวนนี้เสนอเวรชี้แล้ว: ${caseItem.submittedToDutyOfficer || 'ระบุแล้ว'} (ยังคุมอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)`}
                           >
-                            <Send className="w-2.5 h-2.5 text-blue-600" />
-                            <span>เสนอเวรชี้{caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}</span>
+                            <Send className="w-2.5 h-2.5 text-blue-700" />
+                            <span>เสนอเวรชี้แล้ว{caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}</span>
                           </span>
                         </div>
                       )}
+                      </div>
                     </td>
 
                     {/* Actions */}
@@ -1176,13 +1400,17 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                                 onClick={() => onOpenSubmitToDuty(caseItem)}
                                 className={`text-[11px] py-1 px-2.5 rounded-lg transition font-medium cursor-pointer flex items-center gap-1 ${
                                   caseItem.isSubmittedToDuty
-                                    ? 'bg-blue-100 hover:bg-blue-200 text-blue-900 border border-blue-300 font-bold shadow-2xs'
+                                    ? 'bg-blue-100 hover:bg-blue-200 text-blue-950 border border-blue-300 font-bold shadow-2xs'
                                     : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
                                 }`}
-                                title="เสนอเวรชี้ (สำนวนยังคงคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)"
+                                title={
+                                  caseItem.isSubmittedToDuty
+                                    ? 'สำนวนนี้เสนอเวรชี้แล้ว - คลิกเพื่อแก้ไขข้อมูลเวรชี้หรือยกเลิก'
+                                    : 'คลิกเพื่อเสนอเวรชี้ทันที (ไม่ต้องกรอกข้อมูล สำนวนยังคุมอุทธรณ์ตามปกติ)'
+                                }
                               >
                                 <Send className="w-3 h-3 text-blue-600" />
-                                <span>{caseItem.isSubmittedToDuty ? 'แก้เวรชี้' : 'เสนอเวรชี้'}</span>
+                                <span>{caseItem.isSubmittedToDuty ? '✓ เสนอเวรชี้แล้ว (แก้ไข)' : 'เสนอเวรชี้'}</span>
                               </button>
                             )}
 

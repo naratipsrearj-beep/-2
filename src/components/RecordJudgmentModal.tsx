@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
-import { isJudgmentRecorded } from '../utils/appointmentUtils';
+import { isJudgmentRecorded, isCaseTemporarilyDischarged } from '../utils/appointmentUtils';
 import { compressImageFile } from '../utils/imageUtils';
 
 interface RecordJudgmentModalProps {
@@ -405,6 +405,26 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Temporary Discharge notice banner */}
+        {caseItem && isCaseTemporarilyDischarged(caseItem) && (
+          <div className="bg-slate-100 border-b border-slate-300 px-5 py-2.5 flex items-center justify-between text-xs text-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="text-base shrink-0">⏸️</span>
+              <div>
+                <span className="font-bold text-slate-900">สำนวนนี้จำหน่ายคดีชั่วคราวเนื่องจากจำเลยหลบหนี</span>
+                <span className="text-slate-600 ml-1">
+                  — พักการคุมอุทธรณ์ชั่วคราว สามารถบันทึกหรือแก้ไขคำพิพากษาและข้อมูลคดีแดงได้ตามปกติ
+                </span>
+                {caseItem.arrestWarrantNo && (
+                  <span className="ml-2 font-medium text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded">
+                    หมายจับเลขที่: {caseItem.arrestWarrantNo}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Optional Paste notification banner */}
         {pasteNotice && (

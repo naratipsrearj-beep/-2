@@ -104,14 +104,16 @@ export const SubmitToDutyModal: React.FC<SubmitToDutyModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dutyOfficer.trim()) {
-      onToast?.('กรุณาระบุหรือเลือกชื่ออัยการเวรชี้');
-      return;
-    }
+    const finalOfficer = dutyOfficer.trim() || caseItem.prosecutorName || '';
 
     try {
       setIsSubmitting(true);
-      await onConfirmSubmitToDuty(caseItem.id, dutyOfficer.trim(), submissionDate, notes.trim());
+      await onConfirmSubmitToDuty(
+        caseItem.id,
+        finalOfficer,
+        submissionDate || getTodayString(),
+        notes.trim()
+      );
       onClose();
     } catch (err) {
       console.error('Error submitting to duty officer:', err);
@@ -218,8 +220,7 @@ export const SubmitToDutyModal: React.FC<SubmitToDutyModalProps> = ({
             <div className="flex items-center justify-between mb-1.5">
               <label className="font-semibold text-slate-800 text-xs flex items-center gap-1.5">
                 <UserCheck className="w-4 h-4 text-blue-600" />
-                <span>ระบุ / เลือกอัยการเวรชี้ที่เสนอ:</span>
-                <span className="text-rose-500">*</span>
+                <span>ระบุ / แก้ไขชื่ออัยการเวรชี้ที่เสนอ (ไม่บังคับ):</span>
               </label>
               {caseItem.prosecutorName && (
                 <span className="text-[11px] text-slate-500">
@@ -278,8 +279,7 @@ export const SubmitToDutyModal: React.FC<SubmitToDutyModalProps> = ({
                 type="text"
                 value={dutyOfficer}
                 onChange={(e) => setDutyOfficer(e.target.value)}
-                placeholder="พิมพ์ชื่อ-สกุล อัยการเวรชี้..."
-                required
+                placeholder="พิมพ์ชื่อ-สกุล อัยการเวรชี้ (หรือเว้นว่างไว้)..."
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
               />
 

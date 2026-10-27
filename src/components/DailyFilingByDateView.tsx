@@ -64,7 +64,8 @@ import {
   isCaseRequisition,
   isPendingRequisitionCase,
   getRequisitionAlertInfo,
-  isCaseUnspecifiedStage
+  isCaseUnspecifiedStage,
+  isCaseTemporarilyDischarged,
 } from '../utils/appointmentUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
@@ -80,11 +81,17 @@ export type DailyProcedureFilter =
   | 'confessed' 
   | 'denied_scheduled' 
   | 'other_scheduled' 
+  | 'temporarily_discharged'
   | 'unknown_pending';
 
 export type DailyCompletionFilter = 'all' | 'incomplete' | 'completed';
 
-export function getCaseProcedureCategory(c: AppealCase): 'unspecified' | 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'unknown_pending' {
+export function getCaseProcedureCategory(c: AppealCase): 'unspecified' | 'confessed' | 'denied_scheduled' | 'other_scheduled' | 'temporarily_discharged' | 'unknown_pending' {
+  // -1. จำหน่ายคดีชั่วคราวเนื่องจากจำเลยหลบหนี (ไม่ต้องคุมสำนวนอุทธรณ์)
+  if (isCaseTemporarilyDischarged(c)) {
+    return 'temporarily_discharged';
+  }
+
   // 0. ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน มีแถบสีแดงเตือน)
   if (isCaseUnspecifiedStage(c)) {
     return 'unspecified';
@@ -120,6 +127,7 @@ export function getProcedureFilterLabel(filter: DailyProcedureFilter): string {
     case 'confessed': return '🟡 จำเลยรับสารภาพ (สีเหลือง)';
     case 'denied_scheduled': return '🟠 จำเลยปฏิเสธ - มีนัดต่อ (สีส้ม)';
     case 'other_scheduled': return 'สำนวนมีนัดอื่นๆ / เบิกฟ้อง';
+    case 'temporarily_discharged': return '⏸️ จำหน่ายคดีชั่วคราว - จำเลยหลบหนี (ไม่ต้องคุมอุทธรณ์)';
     case 'unknown_pending': return 'ยังไม่ทราบผล / รอความคืบหน้า';
     default: return 'ทั้งหมด';
   }
@@ -149,6 +157,17 @@ export function getCaseCardStyle(caseItem: AppealCase): {
       badgeText: 'เสร็จสิ้นแล้ว',
       badgeClass: 'bg-slate-200 text-slate-800 border-slate-300',
       categoryLabel: 'เสร็จสิ้นสำนวน',
+      colorName: 'slate',
+    };
+  }
+
+  // -1. สำนวนจำหน่ายคดีชั่วคราว (จำเลยหลบหนี) -> แถบสีเทาเข้ม/Slate ชัดเจน
+  if (isCaseTemporarilyDischarged(caseItem) || procCat === 'temporarily_discharged') {
+    return {
+      cardClass: 'bg-slate-200/90 border-slate-400 border-l-4 border-l-slate-600 shadow-xs hover:bg-slate-200 text-slate-900',
+      badgeText: '⏸️ จำหน่ายคดีชั่วคราว (จำเลยหลบหนี)',
+      badgeClass: 'bg-slate-300 text-slate-950 border-slate-500 font-bold',
+      categoryLabel: 'จำหน่ายคดีชั่วคราว',
       colorName: 'slate',
     };
   }
@@ -274,7 +293,10 @@ export function caseMatchesDailySearch(c: AppealCase, search: string): boolean {
     c.caseType.toLowerCase().includes(q) ||
     Boolean(c.judgmentOutcome && c.judgmentOutcome.toLowerCase().includes(q)) ||
     Boolean(c.notes && c.notes.toLowerCase().includes(q)) ||
-    Boolean(c.requisitionNotes && c.requisitionNotes.toLowerCase().includes(q))
+    Boolean(c.requisitionNotes && c.requisitionNotes.toLowerCase().includes(q)) ||
+    Boolean(c.arrestWarrantNo && (c.arrestWarrantNo.toLowerCase().includes(q) || c.arrestWarrantNo.toLowerCase().includes(term))) ||
+    Boolean(c.temporaryDischargeReason && (c.temporaryDischargeReason.toLowerCase().includes(q) || c.temporaryDischargeReason.toLowerCase().includes(term))) ||
+    Boolean(c.temporaryDischargeNotes && (c.temporaryDischargeNotes.toLowerCase().includes(q) || c.temporaryDischargeNotes.toLowerCase().includes(term)))
   );
 }
 
@@ -310,6 +332,7 @@ interface DailyFilingByDateViewProps {
   onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
   onMarkSeveredCompleted?: (caseItem: AppealCase, newBlackNo?: string) => void;
   onCreateSeveredCase?: (parentCase: AppealCase) => void;
+  onToggleTemporaryDischarge?: (caseItem: AppealCase, isDischarged: boolean, recapturedDate?: string) => void;
 }
 
 export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
@@ -344,6 +367,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   onOpenSubmitToDuty,
   onMarkSeveredCompleted,
   onCreateSeveredCase,
+  onToggleTemporaryDischarge,
 }) => {
   // วันที่เลือกเริ่มต้น
   const todayStr = getTodayString();
@@ -398,20 +422,11 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   const topSearchInputRef = useRef<HTMLInputElement>(null);
   const [topSearchQuery, setTopSearchQuery] = useState<string>('');
   const [topFilterStatus, setTopFilterStatus] = useState<
-    'all' | 'unrecorded' | 'recorded' | 'confessed' | 'denied' | 'requisition'
+    'all' | 'unrecorded' | 'recorded' | 'confessed' | 'denied' | 'requisition' | 'temporarily_discharged'
   >('all');
+  const [isSearchPanelExplicitlyOpen, setIsSearchPanelExplicitlyOpen] = useState<boolean>(false);
 
-  const handleTopVoiceResult = (result: VoiceSearchResult) => {
-    setTopSearchQuery(result.rawTranscript);
-  };
-  const {
-    isListening: isTopListening,
-    transcript: topTranscript,
-    startListening: startTopListening,
-    stopListening: stopTopListening,
-  } = useVoiceSearch(handleTopVoiceResult);
-
-  const isGlobalSearchActive = Boolean(topSearchQuery.trim() || topFilterStatus !== 'all');
+  const isGlobalSearchActive = Boolean(topSearchQuery.trim() || topFilterStatus !== 'all' || isSearchPanelExplicitlyOpen);
 
   const globalFilteredCases = useMemo(() => {
     if (!isGlobalSearchActive) return [];
@@ -427,6 +442,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       if (topFilterStatus === 'confessed' && !isCaseConfessed(c)) return false;
       if (topFilterStatus === 'denied' && !isCaseDenied(c)) return false;
       if (topFilterStatus === 'requisition' && !isCaseRequisition(c)) return false;
+      if (topFilterStatus === 'temporarily_discharged' && !isCaseTemporarilyDischarged(c)) return false;
       return true;
     });
   }, [cases, topSearchQuery, topFilterStatus, isGlobalSearchActive]);
@@ -438,6 +454,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     const confessed = cases.filter((c) => isCaseConfessed(c)).length;
     const denied = cases.filter((c) => isCaseDenied(c)).length;
     const requisition = cases.filter((c) => isCaseRequisition(c)).length;
+    const temporarilyDischarged = cases.filter((c) => isCaseTemporarilyDischarged(c)).length;
     return {
       total: cases.length,
       unrecorded,
@@ -445,8 +462,82 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       confessed,
       denied,
       requisition,
+      temporarilyDischarged,
     };
   }, [cases]);
+
+  /**
+   * ดำเนินการค้นหาสำนวนคดีทันที:
+   * - หากพบสำนวนเดียว หรือตรงกับเลขคดีดำ/คดีแดงแบบเจาะจง ให้เปิดหน้าต่างแก้ไขข้อมูลสำนวนนั้นทันที
+   * - หากพบหลายสำนวน ให้เปิดแถบผลการค้นหาเพื่อให้ผู้ใช้คลิกสำนวนที่ต้องการแก้ไขได้ทันที
+   */
+  const handleExecuteTopSearch = (forcedQuery?: string) => {
+    const query = (forcedQuery !== undefined ? forcedQuery : topSearchQuery).trim();
+    setIsSearchPanelExplicitlyOpen(true);
+
+    if (!query) {
+      if (onToast) {
+        onToast(`แสดงสำนวนทั้งหมด (${globalFilteredCases.length} สำนวน) — คลิกที่สำนวนเพื่อแก้ไขได้ทันที`);
+      }
+      return;
+    }
+
+    // ค้นหาสำนวนที่ตรงในระบบ
+    const matched = cases.filter((c) => caseMatchesDailySearch(c, query));
+
+    // กรณีพบเพียง 1 สำนวนพอดี -> เปิดหน้าจอแก้ไขสำนวนทันที!
+    if (matched.length === 1 && onEditCase) {
+      onEditCase(matched[0]);
+      if (onToast) {
+        onToast(`พบ 1 สำนวน (คดีดำ ${matched[0].blackCaseNo}) — เปิดเข้าแก้ไขข้อมูลสำนวนทันที`);
+      }
+      return;
+    }
+
+    // กรณีพบมากกว่า 1 สำนวน แต่มีสำนวนที่เลขคดีดำหรือคดีแดงตรงกับที่พิมพ์เป๊ะๆ -> เปิดแก้ไขทันที
+    if (matched.length > 1 && onEditCase) {
+      const cleanQ = query.replace(/^(อ\.|คดีดำ|ดำ|แดง|คดีแดง)/gi, '').trim().toLowerCase();
+      const exactMatch = matched.find((c) => {
+        const cleanBlack = c.blackCaseNo.replace(/^(อ\.|ดำ)/gi, '').trim().toLowerCase();
+        const cleanRed = (c.redCaseNo || '').replace(/^(อ\.|แดง)/gi, '').trim().toLowerCase();
+        return (
+          cleanBlack === cleanQ ||
+          cleanRed === cleanQ ||
+          c.blackCaseNo.toLowerCase() === query.toLowerCase() ||
+          (c.redCaseNo && c.redCaseNo.toLowerCase() === query.toLowerCase())
+        );
+      });
+
+      if (exactMatch) {
+        onEditCase(exactMatch);
+        if (onToast) {
+          onToast(`พบสำนวนคดีดำ ${exactMatch.blackCaseNo} ตรงเป๊ะ — เปิดเข้าแก้ไขข้อมูลทันที`);
+        }
+        return;
+      }
+    }
+
+    if (matched.length > 0) {
+      if (onToast) {
+        onToast(`พบ ${matched.length} สำนวนที่ตรงกับ "${query}" — คลิกเลือกสำนวนเพื่อแก้ไขได้ทันที`);
+      }
+    } else {
+      if (onToast) {
+        onToast(`ไม่พบสำนวนที่ตรงกับ "${query}" ในระบบ`);
+      }
+    }
+  };
+
+  const handleTopVoiceResult = (result: VoiceSearchResult) => {
+    setTopSearchQuery(result.rawTranscript);
+    handleExecuteTopSearch(result.rawTranscript);
+  };
+  const {
+    isListening: isTopListening,
+    transcript: topTranscript,
+    startListening: startTopListening,
+    stopListening: stopTopListening,
+  } = useVoiceSearch(handleTopVoiceResult);
 
   // Group cases by filing date
   const groupedByFilingDate = useMemo(() => {
@@ -549,6 +640,9 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
     const otherScheduledIncomplete = list.filter((c) => getCaseProcedureCategory(c) === 'other_scheduled' && !c.isCompleted).length;
     const unknownPendingIncomplete = list.filter((c) => getCaseProcedureCategory(c) === 'unknown_pending' && !c.isCompleted).length;
 
+    const temporarilyDischarged = list.filter((c) => isCaseTemporarilyDischarged(c)).length;
+    const temporarilyDischargedIncomplete = list.filter((c) => isCaseTemporarilyDischarged(c) && !c.isCompleted).length;
+
     const criminal = list.filter((c) => c.caseType.includes('อาญา')).length;
     const civil = list.filter((c) => !c.caseType.includes('อาญา')).length;
     const withJudgment = list.filter((c) => isJudgmentRecorded(c)).length;
@@ -568,6 +662,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
       deniedScheduled,
       otherScheduled,
       unknownPending,
+      temporarilyDischarged,
+      temporarilyDischargedIncomplete,
       unspecifiedIncomplete,
       confessedIncomplete,
       deniedScheduledIncomplete,
@@ -676,7 +772,11 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
               <button
                 type="button"
-                onClick={() => setTopFilterStatus(topFilterStatus === 'unrecorded' ? 'all' : 'unrecorded')}
+                onClick={() => {
+                  const next = topFilterStatus === 'unrecorded' ? 'all' : 'unrecorded';
+                  setTopFilterStatus(next);
+                  setIsSearchPanelExplicitlyOpen(next !== 'all');
+                }}
                 className={`text-xs px-3 py-1.5 rounded-xl border font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                   topFilterStatus === 'unrecorded'
                     ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md ring-2 ring-amber-300'
@@ -709,12 +809,16 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 ref={topSearchInputRef}
                 type="text"
                 value={isTopListening ? topTranscript : topSearchQuery}
-                onChange={(e) => setTopSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setTopSearchQuery(e.target.value);
+                  if (e.target.value.trim()) {
+                    setIsSearchPanelExplicitlyOpen(true);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    if (!topSearchQuery.trim() && topFilterStatus === 'all') {
-                      setTopFilterStatus('unrecorded');
-                    }
+                    e.preventDefault();
+                    handleExecuteTopSearch();
                   }
                 }}
                 placeholder="🔍 พิมพ์เลขคดีดำ (เช่น 2570, อ.1858), คดีแดง, เลข ส.1, ส.4, จำเลย, หรืออัยการเจ้าของสำนวน..."
@@ -730,9 +834,10 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                     type="button"
                     onClick={() => {
                       setTopSearchQuery('');
+                      setIsSearchPanelExplicitlyOpen(false);
                       topSearchInputRef.current?.focus();
                     }}
-                    className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+                    className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
                     title="ล้างคำค้นหา"
                   >
                     <X className="w-4 h-4" />
@@ -757,13 +862,11 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (!topSearchQuery.trim() && topFilterStatus === 'all') {
-                  setTopFilterStatus('unrecorded');
-                }
+                handleExecuteTopSearch();
                 topSearchInputRef.current?.focus();
               }}
               className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs sm:text-sm font-bold px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 transition shadow-md cursor-pointer shrink-0 active:scale-95"
-              title="ค้นหาสำนวนเพื่อกรอกข้อมูล / บันทึกคำพิพากษา"
+              title="ค้นหาสำนวนเพื่อคลิกเปิดแก้ไขข้อมูลหรือกรอกคำพิพากษาได้ทันที"
             >
               <Search className="w-4 h-4 stroke-[2.5]" />
               <span>ค้นหาสำนวน</span>
@@ -775,8 +878,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             <span className="text-slate-400 text-[11px] font-medium mr-1">กรองด่วน:</span>
             <button
               type="button"
-              onClick={() => { setTopFilterStatus('all'); setTopSearchQuery(''); }}
-              className={`px-2.5 py-1 rounded-lg border transition text-[11px] ${
+              onClick={() => {
+                setTopFilterStatus('all');
+                setTopSearchQuery('');
+                setIsSearchPanelExplicitlyOpen(false);
+              }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] cursor-pointer ${
                 topFilterStatus === 'all' && !topSearchQuery.trim()
                   ? 'bg-white/20 text-white border-white/30 font-semibold'
                   : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
@@ -786,8 +893,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setTopFilterStatus(topFilterStatus === 'unrecorded' ? 'all' : 'unrecorded')}
-              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+              onClick={() => {
+                const next = topFilterStatus === 'unrecorded' ? 'all' : 'unrecorded';
+                setTopFilterStatus(next);
+                setIsSearchPanelExplicitlyOpen(next !== 'all');
+              }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 cursor-pointer ${
                 topFilterStatus === 'unrecorded'
                   ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-xs'
                   : 'bg-amber-500/15 text-amber-300 border-amber-400/30 hover:bg-amber-500/25'
@@ -797,8 +908,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setTopFilterStatus(topFilterStatus === 'recorded' ? 'all' : 'recorded')}
-              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+              onClick={() => {
+                const next = topFilterStatus === 'recorded' ? 'all' : 'recorded';
+                setTopFilterStatus(next);
+                setIsSearchPanelExplicitlyOpen(next !== 'all');
+              }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 cursor-pointer ${
                 topFilterStatus === 'recorded'
                   ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                   : 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30 hover:bg-emerald-500/25'
@@ -808,8 +923,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setTopFilterStatus(topFilterStatus === 'confessed' ? 'all' : 'confessed')}
-              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+              onClick={() => {
+                const next = topFilterStatus === 'confessed' ? 'all' : 'confessed';
+                setTopFilterStatus(next);
+                setIsSearchPanelExplicitlyOpen(next !== 'all');
+              }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 cursor-pointer ${
                 topFilterStatus === 'confessed'
                   ? 'bg-emerald-400 text-slate-950 border-emerald-300 font-bold'
                   : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
@@ -819,8 +938,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setTopFilterStatus(topFilterStatus === 'denied' ? 'all' : 'denied')}
-              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+              onClick={() => {
+                const next = topFilterStatus === 'denied' ? 'all' : 'denied';
+                setTopFilterStatus(next);
+                setIsSearchPanelExplicitlyOpen(next !== 'all');
+              }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 cursor-pointer ${
                 topFilterStatus === 'denied'
                   ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
                   : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
@@ -830,8 +953,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setTopFilterStatus(topFilterStatus === 'requisition' ? 'all' : 'requisition')}
-              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 ${
+              onClick={() => {
+                const next = topFilterStatus === 'requisition' ? 'all' : 'requisition';
+                setTopFilterStatus(next);
+                setIsSearchPanelExplicitlyOpen(next !== 'all');
+              }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 cursor-pointer ${
                 topFilterStatus === 'requisition'
                   ? 'bg-orange-400 text-slate-950 border-orange-300 font-bold'
                   : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
@@ -839,11 +966,30 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
             >
               <span>🚚 เบิกฟ้อง ({allCasesStats.requisition})</span>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = topFilterStatus === 'temporarily_discharged' ? 'all' : 'temporarily_discharged';
+                setTopFilterStatus(next);
+                setIsSearchPanelExplicitlyOpen(next !== 'all');
+              }}
+              className={`px-2.5 py-1 rounded-lg border transition text-[11px] flex items-center gap-1 cursor-pointer ${
+                topFilterStatus === 'temporarily_discharged'
+                  ? 'bg-slate-300 text-slate-950 border-white font-bold'
+                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              <span>⏸️ จำหน่ายชั่วคราว ({allCasesStats.temporarilyDischarged})</span>
+            </button>
 
             {isGlobalSearchActive && (
               <button
                 type="button"
-                onClick={() => { setTopSearchQuery(''); setTopFilterStatus('all'); }}
+                onClick={() => {
+                  setTopSearchQuery('');
+                  setTopFilterStatus('all');
+                  setIsSearchPanelExplicitlyOpen(false);
+                }}
                 className="text-[11px] text-rose-300 hover:text-rose-100 underline underline-offset-2 ml-auto cursor-pointer"
               >
                 ✕ ปิดผลการค้นหา
@@ -855,7 +1001,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
         {/* Dynamic Search Results Panel */}
         {isGlobalSearchActive && (
           <div className="mt-4 pt-4 border-t border-white/15 animate-in fade-in duration-150 space-y-2.5">
-            <div className="flex items-center justify-between text-xs text-indigo-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-indigo-200 gap-1.5">
               <div className="flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                 <span>
@@ -863,8 +1009,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   {topSearchQuery && ` (คำค้น: "${topSearchQuery}")`}
                 </span>
               </div>
-              <span className="text-[11px] text-slate-300 hidden sm:inline">
-                คลิกปุ่ม &quot;+ กรอกคำพิพากษา&quot; หรือ &quot;แก้ไข&quot; เพื่อกรอกข้อมูลได้ทันที
+              <span className="text-[12px] text-amber-300 font-semibold bg-amber-950/40 px-2 py-0.5 rounded-lg border border-amber-400/30">
+                👉 คลิกที่แถวสำนวนคดี หรือกดปุ่ม &quot;✏️ แก้ไขสำนวนนี้&quot; เพื่อเปิดแก้ไขข้อมูลได้ทันที
               </span>
             </div>
 
@@ -885,17 +1031,28 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 )}
               </div>
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[550px] overflow-y-auto pr-1">
                 {globalFilteredCases.map((c) => {
                   const hasJudgment = isJudgmentRecorded(c);
+                  const isDischarged = isCaseTemporarilyDischarged(c);
                   return (
                     <div
                       key={c.id}
-                      className="bg-white text-slate-900 rounded-xl p-3 sm:p-3.5 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-indigo-300 transition"
+                      onClick={() => {
+                        if (canEdit && onEditCase) {
+                          onEditCase(c);
+                        }
+                      }}
+                      className={`bg-white text-slate-900 rounded-xl p-3 sm:p-3.5 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition ${
+                        canEdit && onEditCase
+                          ? 'cursor-pointer hover:border-amber-400 hover:shadow-md hover:bg-amber-50/25 group'
+                          : ''
+                      }`}
+                      title={canEdit && onEditCase ? 'คลิกที่นี่เพื่อเปิดแก้ไขข้อมูลสำนวนคดีนี้ได้ทันที' : undefined}
                     >
                       <div className="space-y-1.5 flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-slate-950 font-['Prompt'] text-sm">
+                          <span className="font-bold text-slate-950 font-['Prompt'] text-sm group-hover:text-amber-700 transition flex items-center gap-1">
                             ดำ {c.blackCaseNo}
                           </span>
                           {c.redCaseNo ? (
@@ -919,6 +1076,10 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                               {c.judgmentDate && (
                                 <span className="text-[11px] text-emerald-800">({formatThaiDate(c.judgmentDate, { short: true })})</span>
                               )}
+                            </span>
+                          ) : isDischarged ? (
+                            <span className="text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 flex items-center gap-1">
+                              <span>⏸️ จำหน่ายชั่วคราว (จำเลยหลบหนี)</span>
                             </span>
                           ) : shouldAlertMissingJudgment(c) ? (
                             <span className="text-xs font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 flex items-center gap-1 shadow-2xs">
@@ -945,6 +1106,13 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                               ส.4: {c.filingNumberS4}
                             </span>
                           )}
+
+                          {canEdit && onEditCase && (
+                            <span className="text-[11px] font-medium text-amber-700 bg-amber-100/70 group-hover:bg-amber-200 px-1.5 py-0.5 rounded transition hidden sm:inline-flex items-center gap-1">
+                              <Edit3 className="w-3 h-3" />
+                              <span>คลิกเพื่อแก้ไข</span>
+                            </span>
+                          )}
                         </div>
 
                         <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -968,10 +1136,28 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
 
                       {/* Action buttons on this matched case */}
                       <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
+                        {canEdit && onEditCase && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditCase(c);
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-600 transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                            title="เปิดหน้าต่างแก้ไขข้อมูลสำนวนคดีนี้ทันที"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>✏️ แก้ไขสำนวนนี้</span>
+                          </button>
+                        )}
+
                         {canEdit && onRecordJudgment && (
                           <button
                             type="button"
-                            onClick={() => onRecordJudgment(c)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRecordJudgment(c);
+                            }}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95 ${
                               hasJudgment
                                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300'
@@ -992,26 +1178,16 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           </button>
                         )}
 
-                        {canEdit && onEditCase && (
-                          <button
-                            type="button"
-                            onClick={() => onEditCase(c)}
-                            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition flex items-center gap-1 cursor-pointer"
-                            title="แก้ไขข้อมูลสำนวนคดีนี้"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>แก้ไข</span>
-                          </button>
-                        )}
-
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             if (c.filingDate) {
                               setSelectedDate(c.filingDate);
                               setViewMode('single_date');
                               setTopSearchQuery('');
                               setTopFilterStatus('all');
+                              setIsSearchPanelExplicitlyOpen(false);
                               if (onToast) onToast(`สลับไปดูวันที่ยื่นฟ้อง ${formatThaiDate(c.filingDate)}`);
                             }
                           }}
@@ -1429,8 +1605,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 </div>
               </div>
 
-              {/* 6 Selectable Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+              {/* 7 Selectable Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
                 {/* 1. ทั้งหมด */}
                 <button
                   type="button"
@@ -1591,7 +1767,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setProcedureFilter(procedureFilter === 'unknown_pending' ? 'all' : 'unknown_pending')}
-                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between col-span-2 sm:col-span-1 ${
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                     procedureFilter === 'unknown_pending'
                       ? 'bg-slate-600/50 border-slate-300 text-white ring-2 ring-slate-300/50 shadow-md'
                       : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
@@ -1614,6 +1790,39 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   {completionFilter === 'all' && statsForSelectedDate.unknownPending > 0 && statsForSelectedDate.unknownPendingIncomplete < statsForSelectedDate.unknownPending && (
                     <span className="text-[10px] text-slate-400 font-medium block mt-1">
                       (ยังไม่เสร็จ {statsForSelectedDate.unknownPendingIncomplete})
+                    </span>
+                  )}
+                </button>
+
+                {/* 7. จำหน่ายชั่วคราว (จำเลยหลบหนี) */}
+                <button
+                  type="button"
+                  onClick={() => setProcedureFilter(procedureFilter === 'temporarily_discharged' ? 'all' : 'temporarily_discharged')}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between col-span-2 sm:col-span-1 ${
+                    procedureFilter === 'temporarily_discharged'
+                      ? 'bg-slate-700/70 border-slate-400 text-white ring-2 ring-slate-400/50 shadow-md'
+                      : statsForSelectedDate.temporarilyDischarged > 0
+                        ? 'bg-slate-800/70 border-slate-500 text-slate-200 ring-1 ring-slate-400/30 hover:bg-slate-700/50'
+                        : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                  }`}
+                  title="คลิกเพื่อกรองสำนวนที่จำหน่ายคดีออกจากสารบบชั่วคราวเนื่องจากจำเลยหลบหนี (ไม่ต้องคุมอุทธรณ์)"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                      <span>จำหน่ายชั่วคราว</span>
+                    </span>
+                    <span className="text-xs">⏸️</span>
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold font-['Prompt'] text-slate-200">
+                      {completionFilter === 'incomplete' ? statsForSelectedDate.temporarilyDischargedIncomplete : statsForSelectedDate.temporarilyDischarged}
+                    </span>
+                    <span className="text-xs text-slate-400">สำนวน</span>
+                  </div>
+                  {completionFilter === 'all' && statsForSelectedDate.temporarilyDischarged > 0 && statsForSelectedDate.temporarilyDischargedIncomplete < statsForSelectedDate.temporarilyDischarged && (
+                    <span className="text-[10px] text-slate-400 font-medium block mt-1">
+                      (ยังไม่เสร็จ {statsForSelectedDate.temporarilyDischargedIncomplete})
                     </span>
                   )}
                 </button>
@@ -2086,6 +2295,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           ) : null}
 
                           {/* สถิติผลการดำเนินคดี Badge */}
+                          {procCat === 'temporarily_discharged' && (
+                            <span className="text-xs font-bold text-slate-900 bg-slate-200 px-2 py-0.5 rounded-md border border-slate-400 flex items-center gap-1 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-600"></span>
+                              <span>⏸️ จำหน่ายคดีชั่วคราว (จำเลยหลบหนี - ไม่ต้องคุมอุทธรณ์)</span>
+                            </span>
+                          )}
                           {procCat === 'unspecified' && (
                             <span className="text-xs font-bold text-rose-950 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-400 flex items-center gap-1 shadow-2xs animate-pulse">
                               <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
@@ -2449,12 +2664,13 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                         )}
 
                         {caseItem.isSubmittedToDuty && (
-                          <div className="flex items-center gap-1.5 text-xs text-blue-900 bg-blue-50/90 border border-blue-200 px-2.5 py-1 rounded-lg w-fit">
-                            <Send className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <div className="flex items-center gap-1.5 text-xs text-blue-950 bg-blue-100/90 border border-blue-300 px-2.5 py-1 rounded-lg w-fit font-medium shadow-2xs">
+                            <Send className="w-3.5 h-3.5 text-blue-700 shrink-0" />
                             <span>
-                              <strong>เสนอเวรชี้แล้ว:</strong> {caseItem.submittedToDutyOfficer || 'ระบุแล้ว'}
-                              {caseItem.submittedToDutyDate ? ` (${formatThaiDate(caseItem.submittedToDutyDate)})` : ''}
-                              <span className="text-[10px] text-blue-700 ml-1 font-normal">(ยังคุมอุทธรณ์อยู่)</span>
+                              <strong className="text-blue-900 font-bold">สำนวนนี้เสนอเวรชี้แล้ว</strong>
+                              {caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}
+                              {caseItem.submittedToDutyDate ? ` (${formatThaiDate(caseItem.submittedToDutyDate, { short: true })})` : ''}
+                              <span className="text-[10px] text-blue-700 ml-1 font-normal">(ยังคงคุมระยะเวลาอุทธรณ์)</span>
                             </span>
                           </div>
                         )}
@@ -2463,7 +2679,33 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                       {/* Right Side: Deadline & Actions */}
                       <div className="flex flex-col sm:items-end gap-2 md:border-l md:border-slate-200/60 md:pl-3.5 flex-shrink-0">
                         {/* Status / Deadline Info */}
-                        {isCompleted ? (
+                        {isCaseTemporarilyDischarged(caseItem) ? (
+                          <div className="text-left sm:text-right space-y-1">
+                            <span className="inline-flex items-center gap-1 text-xs text-slate-800 bg-slate-200 px-2.5 py-1 rounded-lg border border-slate-400 font-bold shadow-2xs">
+                              <span>⏸️ จำหน่ายชั่วคราว (จำเลยหลบหนี)</span>
+                            </span>
+                            <div className="text-[10px] text-slate-500">
+                              {caseItem.temporaryDischargeDate ? `จำหน่ายชั่วคราวเมื่อ ${formatThaiDate(caseItem.temporaryDischargeDate, { short: true })}` : 'ไม่ต้องคุมอุทธรณ์'}
+                            </div>
+                            {caseItem.arrestWarrantNo && (
+                              <div className="text-[10px] text-slate-600 font-medium">
+                                หมายจับ: {caseItem.arrestWarrantNo}
+                              </div>
+                            )}
+                            {canEdit && onToggleTemporaryDischarge && (
+                              <div className="pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => onToggleTemporaryDischarge(caseItem, false)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-2.5 py-1 rounded-lg shadow-2xs transition cursor-pointer active:scale-95"
+                                  title="คลิกเมื่อจับกุมตัวจำเลยได้แล้ว เพื่อกลับมาคุมอุทธรณ์ตามปกติต่อทันที"
+                                >
+                                  <span>🟢 จับตัวได้แล้ว / กลับมาคุมอุทธรณ์</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : isCompleted ? (
                           <div className="text-left sm:text-right">
                             <span className="inline-flex items-center gap-1 text-xs text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300 font-bold shadow-2xs">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -2625,10 +2867,14 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                       ? 'text-blue-950 bg-blue-100 hover:bg-blue-200 border border-blue-300 font-bold'
                                       : 'text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 font-semibold'
                                   }`}
-                                  title="เสนอเวรชี้ (สำนวนจะยังคงถูกคุมระยะเวลาอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)"
+                                  title={
+                                    caseItem.isSubmittedToDuty
+                                      ? 'สำนวนนี้เสนอเวรชี้แล้ว - คลิกเพื่อแก้ไขข้อมูลเวรชี้หรือยกเลิก'
+                                      : 'คลิกเพื่อเสนอเวรชี้ทันที (ไม่ต้องกรอกข้อมูล สำนวนยังคุมอุทธรณ์ตามปกติ)'
+                                  }
                                 >
                                   <Send className="w-3.5 h-3.5 text-blue-600" />
-                                  <span>{caseItem.isSubmittedToDuty ? '✓ แก้เวรชี้' : 'เสนอเวรชี้'}</span>
+                                  <span>{caseItem.isSubmittedToDuty ? '✓ เสนอเวรชี้แล้ว (แก้ไข)' : 'เสนอเวรชี้'}</span>
                                 </button>
                               )}
 
@@ -3123,6 +3369,15 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                   )}
                                 </span>
                               )}
+                              {caseItem.isSubmittedToDuty && (
+                                <span className="text-blue-950 bg-blue-100 border border-blue-300 px-2 py-0.5 rounded font-bold flex items-center gap-1 shadow-2xs" title="สำนวนนี้เสนอเวรชี้แล้ว (ยังคงคุมระยะเวลาอุทธรณ์)">
+                                  <Send className="w-3 h-3 text-blue-700" />
+                                  <span>สำนวนนี้เสนอเวรชี้แล้ว{caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}</span>
+                                  {caseItem.submittedToDutyDate && (
+                                    <span className="text-[10px] text-blue-700 font-normal">({formatThaiDate(caseItem.submittedToDutyDate, { short: true })})</span>
+                                  )}
+                                </span>
+                              )}
                               <span className="text-slate-500">📍 {caseItem.court}</span>
                             </div>
                             <div className="text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -3241,6 +3496,25 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                   <UserCheck className="w-3.5 h-3.5 text-amber-600" />
                                   <span>{caseItem.prosecutorName ? 'เปลี่ยนเวรชี้' : 'เลือกเวรชี้'}</span>
                                 </button>
+                                {onOpenSubmitToDuty && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenSubmitToDuty(caseItem)}
+                                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
+                                      caseItem.isSubmittedToDuty
+                                        ? 'text-blue-950 bg-blue-100 hover:bg-blue-200 border border-blue-300 font-bold'
+                                        : 'text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200'
+                                    }`}
+                                    title={
+                                      caseItem.isSubmittedToDuty
+                                        ? 'สำนวนนี้เสนอเวรชี้แล้ว - คลิกเพื่อแก้ไขข้อมูลเวรชี้หรือยกเลิก'
+                                        : 'คลิกเพื่อเสนอเวรชี้ทันที (ไม่ต้องกรอกข้อมูล สำนวนยังคุมอุทธรณ์ตามปกติ)'
+                                    }
+                                  >
+                                    <Send className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>{caseItem.isSubmittedToDuty ? '✓ เสนอเวรชี้แล้ว (แก้ไข)' : 'เสนอเวรชี้'}</span>
+                                  </button>
+                                )}
                                 {onEditCase && (
                                   <button
                                     type="button"

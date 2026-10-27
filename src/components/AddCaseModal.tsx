@@ -94,6 +94,15 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   // สำนวนที่ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน)
   const [isUnspecifiedStage, setIsUnspecifiedStage] = useState<boolean>(true);
 
+  // สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี
+  const [isTemporarilyDischarged, setIsTemporarilyDischarged] = useState<boolean>(false);
+  const [temporaryDischargeDate, setTemporaryDischargeDate] = useState<string>('');
+  const [temporaryDischargeReason, setTemporaryDischargeReason] = useState<string>('จำเลยหลบหนี / ออกหมายจับ');
+  const [arrestWarrantNo, setArrestWarrantNo] = useState<string>('');
+  const [arrestWarrantDate, setArrestWarrantDate] = useState<string>('');
+  const [recapturedDate, setRecapturedDate] = useState<string>('');
+  const [temporaryDischargeNotes, setTemporaryDischargeNotes] = useState<string>('');
+
   // Case Status: Has Judgment rendered vs. Pending Hearings / Rights Protection / Denied Plea
   const [hasJudgment, setHasJudgment] = useState<boolean>(false);
   const [defendantPlea, setDefendantPlea] = useState<'denied' | 'confessed' | 'pending'>('pending');
@@ -192,6 +201,13 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
         setSeveredFilingDeadline('');
         setIsSeveredFilingCompleted(false);
         setSeveredNewBlackCaseNo('');
+        setIsTemporarilyDischarged(Boolean(initialPrefillCase.isTemporarilyDischarged));
+        setTemporaryDischargeDate(initialPrefillCase.temporaryDischargeDate || '');
+        setTemporaryDischargeReason(initialPrefillCase.temporaryDischargeReason || 'จำเลยหลบหนี / ออกหมายจับ');
+        setArrestWarrantNo(initialPrefillCase.arrestWarrantNo || '');
+        setArrestWarrantDate(initialPrefillCase.arrestWarrantDate || '');
+        setRecapturedDate(initialPrefillCase.recapturedDate || '');
+        setTemporaryDischargeNotes(initialPrefillCase.temporaryDischargeNotes || '');
       } else {
         setBlackCaseNo('');
         setRedCaseNo('');
@@ -216,6 +232,13 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
         setAppointmentCourtRoom('');
         setSubsequentAppointments([]);
         setIsUnspecifiedStage(true); // เริ่มต้น: ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน มีแถบสีแดงเตือน)
+        setIsTemporarilyDischarged(false);
+        setTemporaryDischargeDate('');
+        setTemporaryDischargeReason('จำเลยหลบหนี / ออกหมายจับ');
+        setArrestWarrantNo('');
+        setArrestWarrantDate('');
+        setRecapturedDate('');
+        setTemporaryDischargeNotes('');
         setHasJudgment(false);
         setDefendantPlea('pending');
         setAppointmentType('none');
@@ -375,8 +398,10 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
         plaintiff: plaintiff?.trim() || 'พนักงานอัยการ',
         defendant: defendant.trim(),
         caseType,
-        isUnspecifiedStage,
-        courtStageStatus: isUnspecifiedStage
+        isUnspecifiedStage: isTemporarilyDischarged ? false : isUnspecifiedStage,
+        courtStageStatus: isTemporarilyDischarged
+          ? 'temporarily_discharged'
+          : isUnspecifiedStage
           ? 'unspecified'
           : (defendantPlea === 'confessed' || hasJudgment)
             ? 'confessed'
@@ -445,6 +470,14 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
           : undefined,
         isSeveredFilingCompleted: (hasPartialDenial && hasPendingSeveredFiling) ? isSeveredFilingCompleted : undefined,
         severedNewBlackCaseNo: (hasPartialDenial && hasPendingSeveredFiling && isSeveredFilingCompleted) ? (severedNewBlackCaseNo.trim() || undefined) : undefined,
+
+        isTemporarilyDischarged,
+        temporaryDischargeDate: isTemporarilyDischarged ? (temporaryDischargeDate || getTodayString()) : undefined,
+        temporaryDischargeReason: isTemporarilyDischarged ? (temporaryDischargeReason.trim() || undefined) : undefined,
+        arrestWarrantNo: isTemporarilyDischarged ? (arrestWarrantNo.trim() || undefined) : undefined,
+        arrestWarrantDate: isTemporarilyDischarged ? (arrestWarrantDate || undefined) : undefined,
+        recapturedDate: !isTemporarilyDischarged && recapturedDate ? recapturedDate : undefined,
+        temporaryDischargeNotes: isTemporarilyDischarged ? (temporaryDischargeNotes.trim() || undefined) : undefined,
 
         appointmentType: (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection' ? 'none' : appointmentType,
         appointmentTypeName: appointmentType === 'other' ? appointmentTypeName.trim() : undefined,
@@ -684,6 +717,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsTemporarilyDischarged(false);
                   setIsUnspecifiedStage(false);
                   setIsSeveredCase(true);
                   setHasJudgment(false);
@@ -694,22 +728,163 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   }
                 }}
                 className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
-                  !isUnspecifiedStage && isSeveredCase
+                  !isTemporarilyDischarged && !isUnspecifiedStage && isSeveredCase
                     ? 'border-purple-500 bg-purple-100 text-purple-950 font-bold shadow-2xs ring-1 ring-purple-400'
                     : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                 }`}
                 title="ศาลสั่งแยกฟ้อง • เชื่อมโยง ส.1 / ส.4"
               >
                 <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
-                  !isUnspecifiedStage && isSeveredCase ? 'border-purple-600 bg-purple-600 text-white' : 'border-slate-300'
+                  !isTemporarilyDischarged && !isUnspecifiedStage && isSeveredCase ? 'border-purple-600 bg-purple-600 text-white' : 'border-slate-300'
                 }`}>
-                  {!isUnspecifiedStage && isSeveredCase && <Check className="w-2.5 h-2.5" />}
+                  {!isTemporarilyDischarged && !isUnspecifiedStage && isSeveredCase && <Check className="w-2.5 h-2.5" />}
                 </div>
                 <div className="truncate">
                   <span className="font-bold block leading-tight truncate">✂️ ศาลแยกฟ้อง</span>
                 </div>
               </button>
+
+              {/* Option 6: สำนวนจำหน่ายคดีชั่วคราว (จำเลยหลบหนี) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTemporarilyDischarged(true);
+                  setIsUnspecifiedStage(false);
+                  if (!temporaryDischargeDate) {
+                    setTemporaryDischargeDate(getTodayString());
+                  }
+                  if (!temporaryDischargeReason) {
+                    setTemporaryDischargeReason('จำเลยหลบหนี / ออกหมายจับ');
+                  }
+                }}
+                className={`py-1.5 px-2 rounded-lg border text-left transition flex items-center gap-1.5 cursor-pointer text-xs ${
+                  isTemporarilyDischarged
+                    ? 'border-slate-600 bg-slate-200 text-slate-950 font-bold shadow-2xs ring-1 ring-slate-500'
+                    : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
+                }`}
+                title="ศาลสั่งจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี (ไม่ต้องคุมสำนวนอุทธรณ์)"
+              >
+                <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border shrink-0 ${
+                  isTemporarilyDischarged ? 'border-slate-700 bg-slate-700 text-white' : 'border-slate-300'
+                }`}>
+                  {isTemporarilyDischarged && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                </div>
+                <div className="truncate">
+                  <span className="font-bold block leading-tight truncate">⏸️ จำหน่ายชั่วคราว</span>
+                </div>
+              </button>
             </div>
+          </div>
+
+          {/* หัวข้อตัวเลือก: สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี */}
+          <div className={`p-3.5 rounded-xl border transition ${
+            isTemporarilyDischarged
+              ? 'bg-slate-100/95 border-slate-400 ring-2 ring-slate-400/30 shadow-xs'
+              : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <label className="flex items-start sm:items-center gap-2.5 cursor-pointer flex-1">
+                <input
+                  type="checkbox"
+                  checked={isTemporarilyDischarged}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsTemporarilyDischarged(checked);
+                    if (checked) {
+                      setIsUnspecifiedStage(false);
+                      if (!temporaryDischargeDate) setTemporaryDischargeDate(getTodayString());
+                      if (!temporaryDischargeReason) setTemporaryDischargeReason('จำเลยหลบหนี / ออกหมายจับ');
+                    }
+                  }}
+                  className="w-4 h-4 mt-0.5 sm:mt-0 text-slate-700 rounded border-slate-400 focus:ring-slate-500 cursor-pointer shrink-0"
+                />
+                <div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm">⏸️</span>
+                    <span className="text-xs font-bold text-slate-900 font-['Prompt']">
+                      สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี
+                    </span>
+                    <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded-full border border-slate-300">
+                      ไม่ต้องคุมสำนวนอุทธรณ์
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    หากติ๊กตัวเลือกนี้ ระบบจะพักการคุมระยะเวลาอุทธรณ์และไม่แจ้งเตือน แต่ยังสามารถกรอกหรือแก้ไขคำพิพากษาได้ตามปกติ เมื่อจับกุมตัวจำเลยได้แล้ว สามารถติ๊กออกหรือกดปุ่มเพื่อกลับมาคุมอุทธรณ์เหมือนเดิมได้
+                  </p>
+                </div>
+              </label>
+              {isTemporarilyDischarged && (
+                <span className="text-[11px] font-bold text-slate-800 bg-slate-200 px-2 py-0.5 rounded-full border border-slate-300 shrink-0 self-start sm:self-auto">
+                  ⏸️ พักการคุมอุทธรณ์ชั่วคราว
+                </span>
+              )}
+            </div>
+
+            {/* ข้อมูลเพิ่มเติมเมื่อจำหน่ายคดีชั่วคราว */}
+            {isTemporarilyDischarged && (
+              <div className="mt-3 pt-3 border-t border-slate-300/80 space-y-3 animate-in fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      วันที่สั่งจำหน่ายคดีชั่วคราว
+                    </label>
+                    <input
+                      type="date"
+                      value={temporaryDischargeDate}
+                      onChange={(e) => setTemporaryDischargeDate(e.target.value)}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-900 focus:ring-1 focus:ring-slate-500 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      หมายจับเลขที่ / รายละเอียดหมายจับ
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น หมายจับที่ จ.123/2569"
+                      value={arrestWarrantNo}
+                      onChange={(e) => setArrestWarrantNo(e.target.value)}
+                      className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-900 focus:ring-1 focus:ring-slate-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      เหตุผลการจำหน่ายคดี
+                    </label>
+                    <input
+                      type="text"
+                      value={temporaryDischargeReason}
+                      onChange={(e) => setTemporaryDischargeReason(e.target.value)}
+                      placeholder="จำเลยหลบหนี / ออกหมายจับ"
+                      className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-900 focus:ring-1 focus:ring-slate-500"
+                    />
+                  </div>
+                </div>
+
+                {/* แถบกดยืนยันจับกุมตัวจำเลยได้แล้วเพื่อกลับมาคุมอุทธรณ์ */}
+                <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                  <div className="text-xs text-emerald-950">
+                    <span className="font-bold flex items-center gap-1">
+                      <span>🟢 จับตัวจำเลยได้แล้วใช่หรือไม่?</span>
+                    </span>
+                    <p className="text-[11px] text-emerald-800 mt-0.5">
+                      หากจับกุมตัวจำเลยมาได้แล้ว กดปุ่มนี้เพื่อยกเลิกการพัก และกลับมาเริ่มนับระยะเวลาคุมอุทธรณ์ตามปกติ
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTemporarilyDischarged(false);
+                      setRecapturedDate(getTodayString());
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>จับตัวได้แล้ว / กลับมาคุมอุทธรณ์เหมือนเดิม</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ข้อมูลสำนวนที่ศาลสั่งแยกฟ้อง (เชื่อมโยง ส.1 และ ส.4) */}

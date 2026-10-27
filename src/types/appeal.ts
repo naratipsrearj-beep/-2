@@ -1,4 +1,4 @@
-export type AppealUrgency = 'overdue' | 'critical' | 'warning' | 'normal' | 'completed' | 'pending_trial';
+export type AppealUrgency = 'overdue' | 'critical' | 'warning' | 'normal' | 'completed' | 'pending_trial' | 'temporarily_discharged';
 
 export type CaseCompletionReason = 
   | 'appealed'        // ยื่นอุทธรณ์แล้ว
@@ -47,7 +47,7 @@ export interface AppealCase {
   defendantPlea?: 'denied' | 'confessed' | 'pending'; // คำให้การจำเลย: ปฏิเสธ / รับสารภาพ / รอนัด
   
   // สถานะสำนวนในการพิจารณาของศาล (รองรับกรณีคุมสำนวนที่จะฟ้องในวันไว้ก่อนโดยยังไม่เลือกสถานะ)
-  courtStageStatus?: 'unspecified' | 'confessed' | 'rights_protection' | 'requisition' | 'other' | 'severed';
+  courtStageStatus?: 'unspecified' | 'confessed' | 'rights_protection' | 'requisition' | 'other' | 'severed' | 'temporarily_discharged';
   isUnspecifiedStage?: boolean; // จริง = ยังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน มีแถบสีแดงเตือน)
 
   judgmentDate?: string;       // วันที่พิพากษา (YYYY-MM-DD) (ไม่บังคับหากมีนัด/จำเลยปฏิเสธ)
@@ -70,6 +70,15 @@ export interface AppealCase {
   submittedToDutyDate?: string;       // วันที่เสนอเวรชี้ (YYYY-MM-DD)
   submittedToDutyOfficer?: string;    // ชื่ออัยการเวรชี้ที่เสนอ
   submittedToDutyNotes?: string;      // หมายเหตุการเสนอเวรชี้
+  
+  // สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี (ไม่ต้องคุมสำนวนอุทธรณ์ระหว่างหลบหนี)
+  isTemporarilyDischarged?: boolean;            // จำหน่ายคดีชั่วคราว (เนื่องจากจำเลยหลบหนี)
+  temporaryDischargeDate?: string;             // วันที่สั่งจำหน่ายคดีชั่วคราว (YYYY-MM-DD)
+  temporaryDischargeReason?: string;           // เหตุผลการจำหน่ายคดี (ค่าเริ่มต้น: จำเลยหลบหนี / ออกหมายจับ)
+  arrestWarrantNo?: string;                    // หมายจับเลขที่ / รายละเอียดหมายจับ
+  arrestWarrantDate?: string;                  // วันที่ออกหมายจับ (YYYY-MM-DD)
+  recapturedDate?: string;                     // วันที่จับกุมตัวจำเลยได้ (เมื่อกลับมาคุมอุทธรณ์)
+  temporaryDischargeNotes?: string;            // หมายเหตุเพิ่มเติม
   
   // สำนวนเบิกฟ้อง และวันนัดเบิกฟ้อง
   isRequisitionCase?: boolean;        // เป็นสำนวนเบิกฟ้องหรือไม่
