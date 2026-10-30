@@ -100,6 +100,44 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
     }));
   };
 
+  const handleExpandAll = () => {
+    const next: Record<string, boolean> = {};
+    result.prosecutors.forEach((p) => {
+      next[p.prosecutorName] = true;
+    });
+    setExpandedProsecutors(next);
+  };
+
+  const handleCollapseAll = () => {
+    const next: Record<string, boolean> = {};
+    result.prosecutors.forEach((p) => {
+      next[p.prosecutorName] = false;
+    });
+    setExpandedProsecutors(next);
+  };
+
+  const prosecutorNamesList = useMemo(() => {
+    return result.prosecutors.map((p) => p.prosecutorName);
+  }, [result.prosecutors]);
+
+  const currentProsecutorIndex = prosecutorNamesList.indexOf(selectedProsecutorFilter);
+
+  const handlePrevProsecutor = () => {
+    if (currentProsecutorIndex > 0) {
+      setSelectedProsecutorFilter(prosecutorNamesList[currentProsecutorIndex - 1]);
+    } else {
+      setSelectedProsecutorFilter(prosecutorNamesList[prosecutorNamesList.length - 1]);
+    }
+  };
+
+  const handleNextProsecutor = () => {
+    if (currentProsecutorIndex < prosecutorNamesList.length - 1) {
+      setSelectedProsecutorFilter(prosecutorNamesList[currentProsecutorIndex + 1]);
+    } else {
+      setSelectedProsecutorFilter(prosecutorNamesList[0]);
+    }
+  };
+
   // คัดกรองข้อมูลตาม search query และ filter
   const filteredProsecutors = useMemo(() => {
     return result.prosecutors
@@ -637,33 +675,264 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
           </p>
         </div>
       ) : viewMode === 'by_prosecutor' ? (
-        /* ================== VIEW 1: BY PROSECUTOR ================== */
+        /* ================== VIEW 1: BY PROSECUTOR (แยกรายอัยการ) ================== */
         <div className="space-y-4">
+          {/* Prosecutor Quick Selection Bar & Directory (แถบเลือกดูแยกตามอัยการ) */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold shadow-2xs">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 font-['Prompt']">
+                    เลือกดูแยกตามอัยการเจ้าของสำนวน
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    คลิกเลือกอัยการเพื่อโฟกัสดูตารางนัดเฉพาะท่าน หรือเลือกดูอัยการทุกท่าน
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Actions: All vs Expand/Collapse */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {selectedProsecutorFilter === 'all' ? (
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={handleExpandAll}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                      title="ขยายทุกรายชื่ออัยการเพื่อดูรายละเอียดทั้งหมด"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                      <span>ขยายทุกท่าน</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCollapseAll}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                      title="ยุบทุกรายชื่อเพื่อดูเฉพาะแถบสรุป"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                      <span>ยุบทุกท่าน</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProsecutorFilter('all')}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
+                  >
+                    <span>✕ แสดงอัยการทั้งหมด ({result.prosecutors.length} ท่าน)</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Prosecutor Chips Carousel */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+              <button
+                type="button"
+                onClick={() => setSelectedProsecutorFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 shrink-0 border ${
+                  selectedProsecutorFilter === 'all'
+                    ? 'bg-blue-900 text-white border-blue-900 shadow-sm ring-2 ring-blue-300'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>อัยการทั้งหมด ({result.prosecutors.length} ท่าน)</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                  selectedProsecutorFilter === 'all' ? 'bg-amber-400 text-slate-950' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {result.totalAppointments} นัด
+                </span>
+              </button>
+
+              {result.prosecutors.map((p) => {
+                const isSelected = selectedProsecutorFilter === p.prosecutorName;
+                const initials = p.prosecutorName.replace(/นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ดร\./g, '').trim().slice(0, 2) || 'อย';
+                const hasIncomplete = p.countsByStatus && p.countsByStatus.incomplete > 0;
+
+                return (
+                  <button
+                    key={p.prosecutorName}
+                    type="button"
+                    onClick={() => {
+                      setSelectedProsecutorFilter(p.prosecutorName);
+                      setViewMode('by_prosecutor');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-2 shrink-0 border ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-blue-700 to-indigo-800 text-white border-blue-800 shadow-md ring-2 ring-blue-400'
+                        : 'bg-white hover:bg-blue-50/50 text-slate-800 border-slate-200 hover:border-blue-300 shadow-2xs'
+                    }`}
+                    title={`คลิกเพื่อดูวันนัดของ ${p.prosecutorName} (${p.totalAppointments} สำนวน)`}
+                  >
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                      isSelected ? 'bg-white text-blue-900' : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {initials}
+                    </div>
+                    <span className="font-['Prompt']">{p.prosecutorName}</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${
+                      isSelected
+                        ? 'bg-amber-400 text-slate-950'
+                        : hasIncomplete
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      {p.totalAppointments} นัด
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Focused Single Prosecutor Banner (เมื่อเลือกดูเฉพาะอัยการท่านนั้น) */}
+          {selectedProsecutorFilter !== 'all' && filteredProsecutors.length > 0 && (() => {
+            const p = filteredProsecutors[0];
+            const initials = p.prosecutorName.replace(/นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ดร\./g, '').trim().slice(0, 2) || 'อย';
+
+            return (
+              <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 border border-blue-800/60 shadow-lg relative overflow-hidden animate-in fade-in duration-200">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 text-white text-lg font-bold flex items-center justify-center shrink-0 shadow-md ring-4 ring-white/10 font-['Prompt']">
+                      {initials}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-lg sm:text-xl font-bold font-['Prompt'] text-white">
+                          {p.prosecutorName}
+                        </h2>
+                        <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs px-2.5 py-0.5 rounded-full font-medium">
+                          👔 อัยการเจ้าของสำนวน
+                        </span>
+                      </div>
+                      <p className="text-xs text-blue-200/90 mt-1">
+                        ตารางนัดพิจารณาประจำเดือน{result.monthLabel} • มีนัดทั้งหมด <strong className="text-white font-bold">{p.uniqueDatesCount} วัน</strong> ({p.totalAppointments} สำนวน)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Navigation & Controls */}
+                  <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handlePrevProsecutor}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                      title="ไปที่อัยการท่านก่อนหน้า"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>ท่านก่อนหน้า</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextProsecutor}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                      title="ไปที่อัยการท่านถัดไป"
+                    >
+                      <span>ท่านถัดไป</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProsecutorFilter('all')}
+                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition flex items-center gap-1 cursor-pointer shadow-md"
+                    >
+                      <span>✕ แสดงทุกท่าน</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Prosecutor Stat Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mt-4 pt-4 border-t border-white/15">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+                    <div className="text-[11px] text-indigo-300 font-medium">🛡️ คุ้มครองสิทธิ</div>
+                    <div className="text-lg font-bold text-white mt-0.5">{p.countsByCategory.rights_protection} นัด</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+                    <div className="text-[11px] text-purple-300 font-medium">🔍 สืบเสาะ</div>
+                    <div className="text-lg font-bold text-white mt-0.5">{p.countsByCategory.investigation} นัด</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+                    <div className="text-[11px] text-amber-300 font-medium">📝 สืบประกอบ</div>
+                    <div className="text-lg font-bold text-white mt-0.5">{p.countsByCategory.witness_confessed} นัด</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+                    <div className="text-[11px] text-amber-400 font-medium">⏳ ยังไม่เสร็จสิ้น</div>
+                    <div className="text-lg font-bold text-amber-300 mt-0.5">{p.countsByStatus?.incomplete ?? 0} สำนวน</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+                    <div className="text-[11px] text-emerald-400 font-medium">✅ เสร็จสิ้นแล้ว</div>
+                    <div className="text-lg font-bold text-emerald-300 mt-0.5">{p.countsByStatus?.completed ?? 0} สำนวน</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+                    <div className="text-[11px] text-blue-300 font-medium">📋 เสนอเวรชี้</div>
+                    <div className="text-lg font-bold text-blue-300 mt-0.5">{p.countsByStatus?.submittedToDuty ?? 0} สำนวน</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Main Prosecutor Schedule Cards */}
           {filteredProsecutors.length === 0 ? (
-            <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
-              ไม่พบข้อมูลอัยการตามเงื่อนไขการค้นหา/ตัวกรอง
+            <div className="bg-white p-10 rounded-2xl border border-slate-200 text-center space-y-2">
+              <Search className="w-8 h-8 text-slate-400 mx-auto" />
+              <p className="text-sm font-semibold text-slate-700">ไม่พบข้อมูลอัยการตามเงื่อนไขการค้นหา/ตัวกรอง</p>
+              <p className="text-xs text-slate-500">ลองล้างคำค้นหาหรือเลือกดูอัยการทุกท่าน</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedProsecutorFilter('all');
+                  setSearchQuery('');
+                  setSelectedCategory('all');
+                  setStatusFilter('all');
+                }}
+                className="mt-2 px-3 py-1.5 bg-blue-50 text-blue-700 font-bold text-xs rounded-xl border border-blue-200 hover:bg-blue-100 transition cursor-pointer"
+              >
+                ล้างตัวกรองทั้งหมด
+              </button>
             </div>
           ) : (
             filteredProsecutors.map((p) => {
               const isExpanded = expandedProsecutors[p.prosecutorName] !== false;
+              const isSingleFocused = selectedProsecutorFilter === p.prosecutorName;
+              const initials = p.prosecutorName.replace(/นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ดร\./g, '').trim().slice(0, 2) || 'อย';
+
+              // Date previews for this prosecutor (e.g. 5, 10, 17, 24 พ.ย.)
+              const datePreviewList = p.dateSchedules
+                .slice(0, 5)
+                .map((ds) => ds.thaiDateLabel.replace(/\d{4}/g, '').trim());
 
               return (
                 <div
                   key={p.prosecutorName}
-                  className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition"
+                  className={`bg-white rounded-2xl border shadow-xs overflow-hidden transition ${
+                    isSingleFocused
+                      ? 'border-blue-400 ring-2 ring-blue-100'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
                 >
                   {/* Prosecutor Card Header */}
                   <div
                     onClick={() => toggleProsecutorExpand(p.prosecutorName)}
-                    className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-slate-100/70 transition"
+                    className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-white to-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-slate-100/60 transition"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 shadow-xs">
-                        {p.prosecutorName.replace(/นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ดร\./g, '').trim().slice(0, 2) || 'อย'}
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 text-white font-bold flex items-center justify-center shrink-0 shadow-sm font-['Prompt']">
+                        {initials}
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-base font-bold text-slate-900">{p.prosecutorName}</h3>
+                          <h3 className="text-base font-bold text-slate-900 font-['Prompt']">
+                            {p.prosecutorName}
+                          </h3>
                           <span className="text-xs text-slate-500 font-medium">
                             (อัยการเจ้าของสำนวน)
                           </span>
@@ -672,15 +941,20 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                           <span className="text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md font-semibold border border-blue-200">
                             📅 มีนัด {p.uniqueDatesCount} วันในเดือนนี้
                           </span>
-                          <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md font-medium">
-                            รวมทั้งหมด {p.totalAppointments} สำนวน
+                          <span className="text-xs text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md font-medium">
+                            รวมทั้งหมด <strong>{p.totalAppointments}</strong> สำนวน
                           </span>
+                          {datePreviewList.length > 0 && (
+                            <span className="text-[11px] text-slate-500 hidden md:inline">
+                              (วันนัด: {datePreviewList.join(', ')}{p.dateSchedules.length > 5 ? ' ...' : ''})
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Category Badges for Prosecutor & Toggle Arrow */}
-                    <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                    {/* Category Badges for Prosecutor, Focus Button & Toggle Arrow */}
+                    <div className="flex items-center gap-2 self-start sm:self-center shrink-0 flex-wrap">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {p.countsByCategory.rights_protection > 0 && (
                           <span className="text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1">
@@ -702,6 +976,21 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                         )}
                       </div>
 
+                      {/* Focus Button */}
+                      {!isSingleFocused && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedProsecutorFilter(p.prosecutorName);
+                          }}
+                          className="px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition cursor-pointer shadow-2xs"
+                          title="ดูตารางนัดเฉพาะอัยการท่านนี้"
+                        >
+                          🎯 โฟกัสเฉพาะท่านนี้
+                        </button>
+                      )}
+
                       <div className="text-slate-400 p-1">
                         {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                       </div>
@@ -710,34 +999,34 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
 
                   {/* Prosecutor Dates List */}
                   {isExpanded && (
-                    <div className="p-4 sm:p-5 space-y-4 bg-slate-50/50">
+                    <div className="p-4 sm:p-5 space-y-4 bg-slate-50/60">
                       {p.dateSchedules.map((ds) => {
                         const isToday = ds.date === todayStr;
 
                         return (
                           <div
                             key={ds.date}
-                            className={`rounded-xl border transition ${
+                            className={`rounded-2xl border transition ${
                               isToday
-                                ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/30'
+                                ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/30 shadow-xs'
                                 : 'bg-white border-slate-200 shadow-2xs'
                             }`}
                           >
-                            {/* Date Strip */}
-                            <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-200 rounded-t-xl flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                                <span className="text-xs sm:text-sm font-bold text-slate-800">
+                            {/* Date Header Strip */}
+                            <div className="px-4 py-3 bg-gradient-to-r from-slate-100/90 to-slate-50 border-b border-slate-200 rounded-t-2xl flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2.5">
+                                <span className={`w-3 h-3 rounded-full ${isToday ? 'bg-amber-500 animate-pulse' : 'bg-blue-600'}`} />
+                                <span className="text-xs sm:text-sm font-bold text-slate-900 font-['Prompt']">
                                   {ds.thaiDateLabel} ({ds.dayOfWeekThai})
                                 </span>
                                 {isToday && (
-                                  <span className="bg-amber-500 text-slate-950 font-bold text-[10px] px-2 py-0.5 rounded-full shadow-2xs">
-                                    ★ วันนี้
+                                  <span className="bg-amber-500 text-slate-950 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full shadow-2xs">
+                                    ★ นัดวันนี้
                                   </span>
                                 )}
                               </div>
 
-                              <span className="text-xs font-semibold text-slate-600 bg-white px-2.5 py-0.5 rounded-md border border-slate-200">
+                              <span className="text-xs font-bold text-slate-700 bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-2xs">
                                 {ds.appointments.length} สำนวน
                               </span>
                             </div>
@@ -747,17 +1036,17 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                               {ds.appointments.map((a) => {
                                 const categoryBadge =
                                   a.category === 'rights_protection' ? (
-                                    <span className="text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                    <span className="text-xs font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
                                       <span>🛡️</span>
                                       <span>นัดคุ้มครองสิทธิ</span>
                                     </span>
                                   ) : a.category === 'investigation' ? (
-                                    <span className="text-xs font-bold bg-purple-100 text-purple-800 border border-purple-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                    <span className="text-xs font-bold bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
                                       <span>🔍</span>
                                       <span>นัดสืบเสาะ</span>
                                     </span>
                                   ) : (
-                                    <span className="text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                    <span className="text-xs font-bold bg-amber-100 text-amber-950 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
                                       <span>📝</span>
                                       <span>นัดสืบประกอบรับสารภาพ</span>
                                     </span>
@@ -766,26 +1055,27 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                                 return (
                                   <div
                                     key={a.uniqueKey}
-                                    className="py-2.5 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-center justify-between gap-3 group"
+                                    onClick={() => onSelectCase && onSelectCase(a.caseItem)}
+                                    className="py-3.5 first:pt-1 last:pb-1 flex flex-col md:flex-row md:items-center justify-between gap-3 group hover:bg-blue-50/20 p-2.5 rounded-xl transition cursor-pointer"
                                   >
-                                    <div className="space-y-1">
+                                    <div className="space-y-1.5 flex-1 min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
                                         {categoryBadge}
 
                                         {/* Time & Court Room */}
-                                        <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1">
+                                        <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1 border border-slate-200">
                                           <Clock className="w-3 h-3 text-slate-500" />
                                           {a.appointmentTime || '09:00 น.'}
                                         </span>
 
                                         {a.courtRoom && (
-                                          <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                                          <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                                             🏛️ {a.courtRoom}
                                           </span>
                                         )}
 
                                         {a.isSubsequent && (
-                                          <span className="text-[10px] font-medium bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">
+                                          <span className="text-[10px] font-medium bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
                                             (นัดลำดับที่ {a.orderIndex})
                                           </span>
                                         )}
@@ -793,15 +1083,15 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
 
                                       {/* Case Details */}
                                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs pt-0.5">
-                                        <span className="font-bold text-slate-900 text-sm">
+                                        <span className="font-bold text-slate-950 text-sm font-['Prompt'] group-hover:text-blue-700 transition">
                                           คดีดำ {a.blackCaseNo}
                                         </span>
                                         {a.redCaseNo && a.redCaseNo !== '-' && (
-                                          <span className="font-semibold text-rose-700">
+                                          <span className="font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
                                             คดีแดง {a.redCaseNo}
                                           </span>
                                         )}
-                                        <span className="text-slate-600">
+                                        <span className="text-slate-800">
                                           <strong>จำเลย:</strong> {a.defendant}
                                         </span>
                                         <span className="text-slate-500 text-[11px]">
@@ -812,13 +1102,13 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                                       {/* Status Badges */}
                                       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                                         {a.isCompleted ? (
-                                          <span className="text-[11px] font-bold text-emerald-950 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs">
-                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                          <span className="text-[11px] font-bold text-emerald-950 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs">
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                             <span>เสร็จสิ้นแล้ว{a.completedDate ? ` (${formatThaiDate(a.completedDate, { short: true })})` : ''}</span>
-                                            <span className="text-[10px] text-emerald-700 font-semibold">• ดูประวัตินัด</span>
+                                            <span className="text-[10px] text-emerald-800 font-semibold">• ดูประวัตินัด</span>
                                           </span>
                                         ) : (
-                                          <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                          <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                                             ⏳ ยังไม่เสร็จสิ้น (คุมอุทธรณ์)
                                           </span>
                                         )}
@@ -834,7 +1124,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
 
                                       {/* Notes if any */}
                                       {a.notes && (
-                                        <div className="text-[11px] text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-200 inline-block">
+                                        <div className="text-[11px] text-slate-600 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200 inline-block">
                                           <strong>หมายเหตุ:</strong> {a.notes}
                                         </div>
                                       )}
@@ -845,8 +1135,11 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                                       {onOpenSubmitToDuty && (
                                         <button
                                           type="button"
-                                          onClick={() => onOpenSubmitToDuty(a.caseItem)}
-                                          className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition flex items-center gap-1 cursor-pointer active:scale-95 ${
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenSubmitToDuty(a.caseItem);
+                                          }}
+                                          className={`text-xs font-semibold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs ${
                                             a.isSubmittedToDuty
                                               ? 'bg-blue-100 text-blue-900 border-blue-300 font-bold hover:bg-blue-200'
                                               : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200'
@@ -860,8 +1153,12 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                                       {onSelectCase && (
                                         <button
                                           type="button"
-                                          onClick={() => onSelectCase(a.caseItem)}
-                                          className="text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition flex items-center gap-1 cursor-pointer"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onSelectCase(a.caseItem);
+                                          }}
+                                          className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 px-3.5 py-1.5 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                          title="เปิดดูรายละเอียดสำนวนคดีนี้"
                                         >
                                           <Eye className="w-3.5 h-3.5" />
                                           <span>เปิดดูสำนวน</span>

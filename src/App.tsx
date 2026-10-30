@@ -156,9 +156,10 @@ export default function App() {
 
   // RBAC Roles: Admin (naratipsrearj@gmail.com / Admin PIN) | Editor | Appeal Officer | Viewer
   const isPinAdmin = Boolean((user as AppAuthUser)?.isPinAdmin);
+  const isPinAppealOfficer = Boolean((user as AppAuthUser)?.isPinAppealOfficer);
   const userRole = React.useMemo(
-    () => getUserRole(user?.email, projectSettings, isPinAdmin),
-    [user?.email, projectSettings, isPinAdmin]
+    () => getUserRole(user?.email, projectSettings, isPinAdmin, isPinAppealOfficer),
+    [user?.email, projectSettings, isPinAdmin, isPinAppealOfficer]
   );
   const canEdit = React.useMemo(() => canUserEdit(userRole), [userRole]);
   const canComplete = React.useMemo(() => canUserComplete(userRole), [userRole]);
@@ -457,9 +458,13 @@ export default function App() {
 
   const handlePinLogin = (pin: string) => {
     try {
-      const adminUser = loginWithAdminPin(pin, projectSettings.adminPin || DEFAULT_ADMIN_PIN);
-      setUser(adminUser);
-      showToast('เข้าสู่ระบบในสถานะแอดมินเรียบร้อยแล้ว');
+      const pinUser = loginWithAdminPin(pin, projectSettings.adminPin || DEFAULT_ADMIN_PIN);
+      setUser(pinUser);
+      if (pinUser.isPinAppealOfficer || pin.trim() === '000111') {
+        showToast('เข้าสู่ระบบสำเร็จในฐานะ: เจ้าหน้าที่คุมอุทธรณ์ (มีอำนาจในการกดเสร็จสิ้น และตรวจดูสำนวนในระบบ)');
+      } else {
+        showToast('เข้าสู่ระบบในสถานะแอดมินเรียบร้อยแล้ว (มีสิทธิ์แก้ไขข้อมูลทั้งหมด)');
+      }
     } catch (err: any) {
       showToast(err.message || 'รหัส PIN ไม่ถูกต้อง');
     }

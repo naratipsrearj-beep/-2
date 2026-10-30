@@ -99,13 +99,19 @@ export async function testFirestoreConnection() {
 /**
  * Check user role
  */
+export const APPEAL_OFFICER_PIN = '000111';
+
 export function getUserRole(
   email: string | null | undefined,
   settings: ProjectSettings = DEFAULT_SETTINGS,
-  isPinAdmin?: boolean
+  isPinAdmin?: boolean,
+  isPinAppealOfficer?: boolean
 ): UserRole {
   if (isPinAdmin) {
     return 'admin';
+  }
+  if (isPinAppealOfficer) {
+    return 'appeal_officer';
   }
   if (!email) return 'viewer';
   const cleanEmail = email.toLowerCase().trim();

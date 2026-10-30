@@ -61,6 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
   }).format(new Date());
 
   const isPinAdmin = Boolean((user as AppAuthUser)?.isPinAdmin);
+  const isPinAppealOfficer = Boolean((user as AppAuthUser)?.isPinAppealOfficer);
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-md">
@@ -218,15 +219,15 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Viewer: Unlock Admin via PIN */}
+            {/* Viewer: Unlock via PIN */}
             {role === 'viewer' && onOpenAdminPinLogin && (
               <button
                 onClick={onOpenAdminPinLogin}
                 className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
-                title="เข้าสู่ระบบในสถานะแอดมินด้วยรหัสผ่าน PIN"
+                title="เข้าสู่ระบบด้วยรหัส PIN (สำหรับเจ้าหน้าที่คุมอุทธรณ์ และผู้ดูแลระบบ)"
               >
                 <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span>ปลดล็อคแอดมิน (PIN)</span>
+                <span>เข้าสู่ระบบด้วย PIN</span>
               </button>
             )}
 
@@ -253,7 +254,7 @@ export const Header: React.FC<HeaderProps> = ({
                   />
                 ) : (
                   <div className="w-6 h-6 rounded-full bg-amber-600 flex items-center justify-center font-bold text-white text-[10px]">
-                    {isPinAdmin ? '👑' : user.email ? user.email.charAt(0).toUpperCase() : 'U'}
+                    {isPinAdmin ? '👑' : isPinAppealOfficer ? '⚖️' : user.email ? user.email.charAt(0).toUpperCase() : 'U'}
                   </div>
                 )}
                 <div className="hidden sm:block text-left">
@@ -272,7 +273,7 @@ export const Header: React.FC<HeaderProps> = ({
                       </span>
                     ) : role === 'appeal_officer' ? (
                       <span className="text-purple-300 flex items-center gap-0.5">
-                        <span>⚖️ จนท.คุมอุทธรณ์ (กดเสร็จสิ้นได้)</span>
+                        <span>⚖️ จนท.คุมอุทธรณ์ {isPinAppealOfficer ? '(PIN)' : ''}</span>
                       </span>
                     ) : (
                       <span className="text-blue-300 flex items-center gap-0.5">

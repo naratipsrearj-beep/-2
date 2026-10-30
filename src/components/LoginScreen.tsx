@@ -39,7 +39,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const clean = pinInput.trim();
     const expected = (adminPin || DEFAULT_ADMIN_PIN).trim();
 
-    if (clean === expected || clean === '951753') {
+    if (clean === '000111' || clean === expected || clean === '951753') {
       onPinLogin(clean);
     } else {
       setPinError('รหัสผ่าน PIN ไม่ถูกต้อง โปรดตรวจสอบรหัสผ่านอีกครั้ง');
@@ -79,11 +79,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <KeyRound className="w-4 h-4" />
               </div>
               <span className="text-xs sm:text-sm font-bold text-white font-['Prompt']">
-                เข้าสู่ระบบด้วยรหัสผ่าน PIN (แอดมิน)
+                เข้าสู่ระบบด้วยรหัสผ่าน PIN
               </span>
             </div>
-            <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
-              สถานะแอดมิน
+            <span className="text-[10px] bg-purple-500/20 text-purple-300 font-bold px-2 py-0.5 rounded-full border border-purple-500/30">
+              จนท.คุมอุทธรณ์ / แอดมิน
             </span>
           </div>
 
@@ -91,7 +91,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <div>
               <div className="flex items-center justify-between text-xs text-slate-300 mb-1.5">
                 <label className="font-semibold flex items-center gap-1">
-                  <span>กรอกรหัสผ่าน PIN แอดมิน</span>
+                  <span>กรอกรหัสผ่าน PIN</span>
                 </label>
               </div>
 
@@ -101,18 +101,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   inputMode="numeric"
                   maxLength={12}
                   required
-                  placeholder="กรอกรหัส PIN (เฉพาะแอดมิน)"
+                  placeholder="กรอกรหัสผ่าน PIN (เฉพาะผู้มีรหัส)"
                   value={pinInput}
                   onChange={(e) => {
                     setPinInput(e.target.value);
                     if (pinError) setPinError(null);
                   }}
-                  className="w-full bg-slate-950/90 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-base tracking-widest font-mono focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
+                  className="w-full bg-slate-950/90 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-base tracking-widest font-mono focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition placeholder:text-slate-600 placeholder:text-sm placeholder:tracking-normal"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 rounded-md transition"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 rounded-md transition cursor-pointer"
                 >
                   {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -132,14 +132,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold py-2.5 px-4 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 text-xs sm:text-sm disabled:opacity-50 cursor-pointer active:scale-[0.99]"
             >
               <KeyRound className="w-4 h-4" />
-              <span>เข้าสู่ระบบสถานะแอดมิน (Admin Login)</span>
+              <span>ยืนยันรหัส PIN เพื่อเข้าสู่ระบบ</span>
               <ArrowRight className="w-4 h-4 ml-0.5" />
             </button>
           </form>
 
-          <p className="text-[11px] text-slate-400 mt-2.5 text-center leading-relaxed">
-            ระบบความปลอดภัยเฉพาะผู้ดูแลระบบ (Admin) เพื่อเข้าจัดการข้อมูลและซิงค์แบบเรียลไทม์
-          </p>
+          <div className="text-[11px] text-slate-400 mt-2.5 space-y-1.5 leading-relaxed bg-slate-900/50 p-2.5 rounded-xl border border-slate-700/50">
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span className="font-semibold">ระบบเข้าสู่ระบบด้วยรหัส PIN เฉพาะเจ้าหน้าที่:</span>
+            </div>
+            <div className="pl-5 text-[11px] space-y-0.5 text-slate-400">
+              <div>• <span className="text-purple-300 font-medium">เจ้าหน้าที่คุมอุทธรณ์:</span> เข้าใช้งานเพื่อกดเสร็จสิ้นและตรวจดูสำนวนในระบบ</div>
+              <div>• <span className="text-amber-300 font-medium">ผู้ดูแลระบบ (Admin):</span> เข้าใช้งานเพื่อแก้ไขข้อมูลและจัดการระบบทั้งหมด</div>
+            </div>
+          </div>
         </div>
 
         {/* Divider */}

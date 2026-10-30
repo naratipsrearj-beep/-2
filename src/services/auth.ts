@@ -65,9 +65,12 @@ export interface AppAuthUser {
   displayName: string | null;
   photoURL?: string | null;
   isPinAdmin?: boolean;
+  isPinAppealOfficer?: boolean;
+  role?: 'admin' | 'appeal_officer';
 }
 
 export const DEFAULT_ADMIN_PIN = '951753';
+export const APPEAL_OFFICER_PIN = '000111';
 export const PIN_SESSION_KEY = 'appeal_app_admin_pin_session';
 
 export const getSavedPinAdminSession = (): AppAuthUser | null => {
@@ -75,7 +78,7 @@ export const getSavedPinAdminSession = (): AppAuthUser | null => {
     const raw = localStorage.getItem(PIN_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && parsed.isPinAdmin) {
+    if (parsed && (parsed.isPinAdmin || parsed.isPinAppealOfficer)) {
       return parsed;
     }
   } catch (err) {
@@ -104,18 +107,36 @@ export const loginWithAdminPin = (inputPin: string, expectedPin: string = DEFAUL
   const cleanInput = (inputPin || '').trim();
   const cleanExpected = (expectedPin || DEFAULT_ADMIN_PIN).trim();
 
-  // Accept 951753 or configured PIN
+  // 1. PIN สำหรับเจ้าหน้าที่คุมอุทธรณ์: 000111 (มีอำนาจในการกดเสร็จสิ้น และตรวจดูสำนวนในเว็ปแอ๊พนี้ได้เท่านั้น)
+  if (cleanInput === APPEAL_OFFICER_PIN || cleanInput === '000111') {
+    const officerUser: AppAuthUser = {
+      uid: 'officer-pin-' + Date.now(),
+      email: 'appeal_officer@local',
+      displayName: 'เจ้าหน้าที่คุมอุทธรณ์ (PIN)',
+      photoURL: null,
+      isPinAdmin: false,
+      isPinAppealOfficer: true,
+      role: 'appeal_officer'
+    };
+    savePinAdminSession(officerUser);
+    return officerUser;
+  }
+
+  // 2. PIN สำหรับผู้ดูแลระบบ: 951753 หรือรหัสที่ตั้งไว้
   if (cleanInput === cleanExpected || cleanInput === '951753') {
     const adminUser: AppAuthUser = {
       uid: 'admin-pin-' + Date.now(),
       email: 'naratipsrearj@gmail.com',
       displayName: 'ผู้ดูแลระบบ (Admin PIN)',
       photoURL: null,
-      isPinAdmin: true
+      isPinAdmin: true,
+      isPinAppealOfficer: false,
+      role: 'admin'
     };
     savePinAdminSession(adminUser);
     return adminUser;
   }
+
   throw new Error('รหัสผ่าน PIN ไม่ถูกต้อง โปรดตรวจสอบรหัสผ่านอีกครั้ง');
 };
 
