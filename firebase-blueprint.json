@@ -129,6 +129,25 @@
         "note": { "type": "string" }
       },
       "required": ["id", "email", "status"]
+    },
+    "activity_log": {
+      "title": "ActivityLog",
+      "description": "บันทึกประวัติการกระทำสำคัญในระบบเพื่อความโปร่งใสและตรวจสอบย้อนหลังได้",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "actionType": { "type": "string" },
+        "actionLabel": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "targetId": { "type": "string" },
+        "targetTitle": { "type": "string" },
+        "details": { "type": "string" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["id", "timestamp", "actionType", "actionLabel", "actorName", "details"]
     }
   },
   "firestore": {
@@ -151,6 +170,10 @@
     "/permission_requests/{requestId}": {
       "schema": "permission_request",
       "description": "คำขอสิทธิ์แก้ไขข้อมูลส่งถึงแอดมิน"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "activity_log",
+      "description": "บันทึกประวัติกิจกรรมและการกระทำสำคัญในระบบ (Activity Log & Audit Trail)"
     }
   }
 }

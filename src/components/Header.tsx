@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
 import { AppAuthUser } from '../services/auth';
 
@@ -9,6 +9,7 @@ interface HeaderProps {
   token: string | null;
   role?: 'admin' | 'editor' | 'appeal_officer' | 'viewer';
   pendingRequestsCount?: number;
+  activityLogsCount?: number;
   sheetConfig: SheetConfig | null;
   todayDutyOfficer?: string;
   onOpenDutyRoster?: () => void;
@@ -24,6 +25,7 @@ interface HeaderProps {
   isPushingLocal?: boolean;
   onDownloadBackup?: () => void;
   onOpenBackupViewer?: () => void;
+  onOpenActivityLog?: () => void;
   connectionStatus?: 'connected' | 'error' | 'connecting';
   firebaseProjectId?: string;
   onOpenRulesGuide?: () => void;
@@ -33,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   role = 'viewer',
   pendingRequestsCount = 0,
+  activityLogsCount = 0,
   sheetConfig,
   todayDutyOfficer,
   onOpenDutyRoster,
@@ -48,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   isPushingLocal = false,
   onDownloadBackup,
   onOpenBackupViewer,
+  onOpenActivityLog,
   connectionStatus = 'connected',
   firebaseProjectId = 'nrt555',
   onOpenRulesGuide,
@@ -216,6 +220,25 @@ export const Header: React.FC<HeaderProps> = ({
                 <Eye className="w-3.5 h-3.5 text-blue-300" />
                 <span className="hidden sm:inline">ดูข้อมูลสำรอง</span>
                 <span className="sm:hidden">ดูข้อมูล</span>
+              </button>
+            )}
+
+            {/* Admin: Activity Log / ประวัติกิจกรรม (เฉพาะแอดมินเท่านั้น) */}
+            {role === 'admin' && onOpenActivityLog && (
+              <button
+                type="button"
+                onClick={onOpenActivityLog}
+                className="flex items-center gap-1.5 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer relative"
+                title="เปิดดูบันทึกประวัติกิจกรรมและการกระทำสำคัญในระบบ (สำหรับผู้ดูแลระบบ Admin เท่านั้น)"
+              >
+                <History className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden sm:inline">ประวัติกิจกรรม</span>
+                <span className="sm:hidden">กิจกรรม</span>
+                {activityLogsCount > 0 && (
+                  <span className="bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full font-mono">
+                    {activityLogsCount > 99 ? '99+' : activityLogsCount}
+                  </span>
+                )}
               </button>
             )}
 

@@ -27,7 +27,8 @@ import {
   Shield,
   Image as ImageIcon,
   Send,
-  Eye
+  Eye,
+  History
 } from 'lucide-react';
 import { AppealCase, CaseAppointment } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
@@ -179,6 +180,7 @@ interface CaseTableProps {
   onOpenCourtPetition?: (caseItem: AppealCase, deadline?: string, count?: number) => void;
   onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
   onToggleTemporaryDischarge?: (caseItem: AppealCase, isDischarged: boolean, recapturedDate?: string) => void;
+  onOpenActivityLog?: (blackCaseNo?: string) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -207,6 +209,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onOpenCourtPetition,
   onOpenSubmitToDuty,
   onToggleTemporaryDischarge,
+  onOpenActivityLog,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -1485,16 +1488,26 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                             {onEditCase && (
                               <button
                                 onClick={() => onEditCase(caseItem)}
-                                className="p-1.5 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-lg transition"
+                                className="p-1.5 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-lg transition cursor-pointer"
                                 title="แก้ไข / เพิ่มเติมข้อมูลสำนวนคดี"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                             )}
 
+                            {onOpenActivityLog && (
+                              <button
+                                onClick={() => onOpenActivityLog(caseItem.blackCaseNo)}
+                                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                title={`เปิดดูบันทึกประวัติการทำงาน (เฉพาะผู้ดูแลระบบ) ของสำนวน ${caseItem.blackCaseNo}`}
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
                             <button
                               onClick={() => onDeleteCase(caseItem.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
                               title="ลบสำนวน"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

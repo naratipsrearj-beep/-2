@@ -13,7 +13,7 @@ import {
   deleteField
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AppealCase, MonthlyDutyRoster, DailyJudgmentFollowUp } from '../types/appeal';
+import { AppealCase, MonthlyDutyRoster, DailyJudgmentFollowUp, ActivityLog } from '../types/appeal';
 
 // Initialize Firebase App & Firestore singleton
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -269,6 +269,65 @@ export function subscribeToProjectSettings(
       if (onError) onError(err);
     }
   );
+}
+
+/**
+ * Real-time subscription to activity logs collection (ประวัติการทำงาน)
+ */
+export function subscribeToActivityLogs(
+  onData: (logs: ActivityLog[]) => void,
+  onError?: (err: Error) => void
+) {
+  const logsCol = collection(db, 'activity_logs');
+  return onSnapshot(
+    logsCol,
+    (snapshot) => {
+      const list: ActivityLog[] = [];
+      snapshot.forEach((d) => {
+        list.push({
+          id: d.id,
+          ...d.data(),
+        } as ActivityLog);
+      });
+      // Sort descending by timestamp (latest first)
+      list.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+      onData(list);
+    },
+    (err) => {
+      console.warn('Firestore activity logs snapshot error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Save activity log to Firestore
+ */
+export async function saveActivityLogToFirestore(log: ActivityLog): Promise<void> {
+  const docRef = doc(db, 'activity_logs', log.id);
+  const cleanData = JSON.parse(JSON.stringify(log));
+  await setDoc(docRef, cleanData, { merge: true });
+}
+
+/**
+ * Record a critical activity in Firestore
+ */
+export async function recordCriticalActivity(
+  action: Omit<ActivityLog, 'id' | 'timestamp'> & { id?: string; timestamp?: string }
+): Promise<ActivityLog> {
+  const newLog: ActivityLog = {
+    id: action.id || `act_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+    timestamp: action.timestamp || new Date().toISOString(),
+    ...action,
+  };
+
+  try {
+    await saveActivityLogToFirestore(newLog);
+  } catch (err) {
+    console.warn('Failed to save activity log to Firestore:', err);
+  }
+
+  return newLog;
 }
 
 /**
@@ -643,7 +702,8 @@ export async function removeAllowedAppealOfficer(
 export async function seedInitialFirestoreDataIfEmpty(
   initialCases: AppealCase[],
   initialRosters: MonthlyDutyRoster[],
-  initialFollowUps?: DailyJudgmentFollowUp[]
+  initialFollowUps?: DailyJudgmentFollowUp[],
+  initialActivityLogs?: ActivityLog[]
 ): Promise<boolean> {
   try {
     const casesSnap = await getDocs(collection(db, 'cases'));
@@ -671,6 +731,17 @@ export async function seedInitialFirestoreDataIfEmpty(
           await saveFollowUpToFirestore(f);
         }
         console.log('Seeded initial follow-ups to Firestore');
+        didSeed = true;
+      }
+    }
+
+    if (initialActivityLogs && initialActivityLogs.length > 0) {
+      const logsSnap = await getDocs(collection(db, 'activity_logs'));
+      if (logsSnap.empty) {
+        for (const log of initialActivityLogs) {
+          await saveActivityLogToFirestore(log);
+        }
+        console.log('Seeded initial activity logs to Firestore');
         didSeed = true;
       }
     }

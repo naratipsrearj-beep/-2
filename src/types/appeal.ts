@@ -214,3 +214,49 @@ export interface MonthlyDutyRoster {
   duties: DailyDutyRecord[];   // ข้อมูลเวรชี้แต่ละวัน
   notes?: string;              // ข้อกำหนดทั่วไปหรือคำแนะนำจากตารางเวร
 }
+
+// ==================== บันทึกประวัติการทำงาน (Activity Log & Audit Trail) ====================
+export type ActivityActionType =
+  | 'case_completed'          // กดเสร็จสิ้นสำนวน
+  | 'case_completion_undone'  // ยกเลิกเสร็จสิ้นสำนวน
+  | 'deadline_extended'       // ขยายระยะเวลาอุทธรณ์
+  | 'deadline_reverted'       // ยกเลิกการขยายเวลาอุทธรณ์
+  | 'permission_changed'      // เปลี่ยนแปลงสิทธิ์ผู้ใช้งาน (เพิ่ม/ถอดถอนผู้ร่วมแก้ไข หรือ จนท.คุมอุทธรณ์)
+  | 'permission_approved'     // อนุมัติคำขอสิทธิ์แก้ไข
+  | 'permission_rejected'     // ปฏิเสธคำขอสิทธิ์แก้ไข
+  | 'admin_pin_changed'       // เปลี่ยนแปลงรหัสผ่าน PIN ผู้ดูแลระบบ
+  | 'case_created'            // เพิ่มสำนวนคดีใหม่
+  | 'case_updated'            // แก้ไขข้อมูลสำนวนคดี
+  | 'case_deleted'            // ลบสำนวนคดี
+  | 'duty_submitted'          // เสนอเวรชี้
+  | 'duty_cancelled'          // ยกเลิกการเสนอเวรชี้
+  | 'judgment_recorded'       // บันทึกคำพิพากษา
+  | 'judgment_verified'       // ตรวจทานคำพิพากษา
+  | 'roster_uploaded'         // อัปโหลดตารางเวรชี้
+  | 'other';
+
+export interface ActivityLog {
+  id: string;
+  timestamp: string;          // ISO string e.g. "2026-10-29T14:32:00.000Z"
+  actionType: ActivityActionType;
+  actionLabel: string;        // ภาษาไทย เช่น "กดเสร็จสิ้นสำนวน", "ขยายระยะเวลาอุทธรณ์"
+  actorName: string;          // เช่น "ผู้ดูแลระบบ (Admin PIN)", "naratipsrearj@gmail.com", "จนท.คุมอุทธรณ์ (PIN)"
+  actorEmail?: string;
+  actorRole: 'admin' | 'editor' | 'appeal_officer' | 'viewer';
+  targetId?: string;          // เช่น case id หรือ permission request id
+  targetTitle?: string;       // เช่น "คดีดำ อ.1840/2569", "somchai@law.go.th"
+  details: string;            // รายละเอียดของสิ่งที่ดำเนินการ
+  metadata?: {
+    blackCaseNo?: string;
+    redCaseNo?: string;
+    court?: string;
+    prosecutorName?: string;
+    previousValue?: string;
+    newValue?: string;
+    reason?: string;
+    extensionCount?: number;
+    completionReason?: string;
+    [key: string]: any;
+  };
+}
+

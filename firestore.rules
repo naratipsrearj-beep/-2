@@ -32,6 +32,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Activity logs collection: tracks critical actions performed in the system
+    match /activity_logs/{logId} {
+      allow read, write: if true;
+    }
+
     // Default deny all other paths
     match /{document=**} {
       allow read, write: if false;

@@ -1,9 +1,10 @@
-import { AppealCase, DailyJudgmentFollowUp, SheetConfig, MonthlyDutyRoster } from '../types/appeal';
+import { AppealCase, DailyJudgmentFollowUp, SheetConfig, MonthlyDutyRoster, ActivityLog } from '../types/appeal';
 
 const STORAGE_KEY_CASES = 'appeal_tracker_cases_v2';
 const STORAGE_KEY_FOLLOWUPS = 'appeal_tracker_followups_v2';
 const STORAGE_KEY_SHEET_CONFIG = 'appeal_tracker_sheet_config_v2';
 const STORAGE_KEY_DUTY_ROSTERS = 'appeal_tracker_duty_rosters_v2';
+const STORAGE_KEY_ACTIVITY_LOGS = 'appeal_tracker_activity_logs_v1';
 
 // Purge legacy v1 cache to prevent resurrecting deleted cases
 try {
@@ -584,3 +585,101 @@ function getInitialSampleFollowUps(): DailyJudgmentFollowUp[] {
     }
   ];
 }
+
+export function getSavedActivityLogs(): ActivityLog[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ACTIVITY_LOGS);
+    if (raw !== null) {
+      const parsed: ActivityLog[] = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to parse saved activity logs', e);
+  }
+  const samples = getInitialSampleActivityLogs();
+  saveActivityLogs(samples);
+  return samples;
+}
+
+export function saveActivityLogs(logs: ActivityLog[]) {
+  try {
+    // Keep max 500 recent logs in local storage
+    const trimmed = logs.slice(0, 500);
+    localStorage.setItem(STORAGE_KEY_ACTIVITY_LOGS, JSON.stringify(trimmed));
+  } catch (err) {
+    console.warn('Failed to save activity logs to localStorage:', err);
+  }
+}
+
+export function getInitialSampleActivityLogs(): ActivityLog[] {
+  return [
+    {
+      id: 'log_init_1',
+      timestamp: '2026-10-29T09:15:00.000Z',
+      actionType: 'case_completed',
+      actionLabel: 'กดเสร็จสิ้นสำนวน',
+      actorName: 'เจ้าหน้าที่คุมอุทธรณ์ (PIN)',
+      actorRole: 'appeal_officer',
+      targetId: 'case_sample_6',
+      targetTitle: 'คดีดำ อ.1840/2569',
+      details: 'บันทึกเสร็จสิ้นสำนวน: มีคำสั่งไม่อุทธรณ์ / ยุติ (อ.ชญาณี)',
+      metadata: {
+        blackCaseNo: 'อ.1840/2569',
+        prosecutorName: 'อ.ชญาณี',
+        court: 'ศาลจังหวัดเพชรบุรี',
+        reason: 'no_appeal',
+        completionReason: 'มีคำสั่งไม่อุทธรณ์ / ยุติ',
+      },
+    },
+    {
+      id: 'log_init_2',
+      timestamp: '2026-10-28T14:40:00.000Z',
+      actionType: 'deadline_extended',
+      actionLabel: 'ขยายระยะเวลาอุทธรณ์',
+      actorName: 'ผู้ดูแลระบบ (Admin PIN)',
+      actorRole: 'admin',
+      targetId: 'case_sample_4',
+      targetTitle: 'คดีดำ อ.789/2569',
+      details: 'ขยายระยะเวลาอุทธรณ์ครั้งที่ 1 ถึง 15 พ.ย. 2569 (เหตุผล: รอคัดสำเนาคำพิพากษาฉบับเต็ม)',
+      metadata: {
+        blackCaseNo: 'อ.789/2569',
+        court: 'ศาลอาญาคดีทุจริตและประพฤติมิชอบ',
+        previousValue: '2026-10-15',
+        newValue: '2026-11-15',
+        extensionCount: 1,
+        reason: 'รอคัดสำเนาคำพิพากษาฉบับเต็ม',
+      },
+    },
+    {
+      id: 'log_init_3',
+      timestamp: '2026-10-27T11:05:00.000Z',
+      actionType: 'permission_changed',
+      actionLabel: 'เปลี่ยนแปลงสิทธิ์ผู้ใช้งาน',
+      actorName: 'naratipsrearj@gmail.com',
+      actorRole: 'admin',
+      targetTitle: 'เจ้าหน้าที่คุมอุทธรณ์',
+      details: 'เปิดใช้งานการล็อกอินด้วยรหัส PIN สำหรับเจ้าหน้าที่คุมอุทธรณ์ (สิทธิ์กดเสร็จสิ้นและตรวจดูสำนวน)',
+      metadata: {
+        role: 'appeal_officer',
+      },
+    },
+    {
+      id: 'log_init_4',
+      timestamp: '2026-10-25T16:20:00.000Z',
+      actionType: 'duty_submitted',
+      actionLabel: 'เสนอเวรชี้',
+      actorName: 'ผู้ดูแลระบบ (Admin PIN)',
+      actorRole: 'admin',
+      targetId: 'case_sample_1',
+      targetTitle: 'คดีดำ อ.452/2569',
+      details: 'เสนอสำนวนให้อัยการเวรชี้ตรวจสอบ (อัยการเวรชี้ 1)',
+      metadata: {
+        blackCaseNo: 'อ.452/2569',
+        prosecutorName: 'นายธนพล บุญเจริญ',
+      },
+    },
+  ];
+}
+

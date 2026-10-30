@@ -23,7 +23,7 @@ import {
   BarChart3
 } from 'lucide-react';
 
-import { AppealCase, DailyJudgmentFollowUp, SheetConfig, CaseCompletionReason, MonthlyDutyRoster, DailyDutyRecord } from './types/appeal';
+import { AppealCase, DailyJudgmentFollowUp, SheetConfig, CaseCompletionReason, MonthlyDutyRoster, DailyDutyRecord, ActivityLog, ActivityActionType } from './types/appeal';
 import { initAuth, googleSignIn, logout, getAccessToken, AppAuthUser, loginWithAdminPin, getSavedPinAdminSession, clearPinAdminSession } from './services/auth';
 import {
   fetchAppealCases,
@@ -43,6 +43,8 @@ import {
   saveSheetConfig,
   getSavedDutyRosters,
   saveDutyRosters,
+  getSavedActivityLogs,
+  saveActivityLogs,
 } from './services/storageService';
 import { getTodayDuty } from './services/dutyService';
 import {
@@ -60,6 +62,9 @@ import {
   subscribeToFollowUps,
   subscribeToProjectSettings,
   subscribeToPermissionRequests,
+  subscribeToActivityLogs,
+  saveActivityLogToFirestore,
+  recordCriticalActivity,
   saveCaseToFirestore,
   saveCasesBatchToFirestore,
   deleteCaseFromFirestore,
@@ -115,6 +120,7 @@ import { downloadApplicationJsonBackup } from './utils/backupUtils';
 import { BackupViewerModal } from './components/BackupViewerModal';
 import { MonthlyProsecutorHearingScheduleView } from './components/MonthlyProsecutorHearingScheduleView';
 import { SubmitToDutyModal } from './components/SubmitToDutyModal';
+import { ActivityLogModal } from './components/ActivityLogModal';
 
 export default function App() {
   // Auth & Roles state
@@ -216,6 +222,69 @@ export default function App() {
   });
   const [isSheetModalOpen, setIsSheetModalOpen] = useState(false);
 
+  // Activity Log (ประวัติการทำงานและตรวจสอบความรับผิดชอบ)
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => getSavedActivityLogs());
+  const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
+  const [activityLogCaseFilter, setActivityLogCaseFilter] = useState<string | undefined>();
+
+  // Log critical activity for accountability and audit trail
+  const logAction = async (
+    actionType: ActivityActionType,
+    actionLabel: string,
+    targetTitle: string,
+    details: string,
+    metadata?: Record<string, any>,
+    targetId?: string
+  ) => {
+    let actorName = 'ผู้ใช้งานทั่วไป';
+    let actorRole: 'admin' | 'editor' | 'appeal_officer' | 'viewer' = 'viewer';
+    let actorEmail: string | undefined;
+
+    if (isPinAdmin) {
+      actorName = 'ผู้ดูแลระบบ (Admin PIN)';
+      actorRole = 'admin';
+    } else if (isPinAppealOfficer) {
+      actorName = 'เจ้าหน้าที่คุมอุทธรณ์ (PIN)';
+      actorRole = 'appeal_officer';
+    } else if (user) {
+      actorName = user.displayName || user.email || 'ผู้ใช้งาน';
+      actorEmail = user.email || undefined;
+      actorRole = userRole;
+    }
+
+    try {
+      const newLog = await recordCriticalActivity({
+        actionType,
+        actionLabel,
+        actorName,
+        actorEmail,
+        actorRole,
+        targetId,
+        targetTitle,
+        details,
+        metadata,
+      });
+
+      setActivityLogs((prev) => {
+        const updated = [newLog, ...prev.filter((l) => l.id !== newLog.id)];
+        saveActivityLogs(updated);
+        return updated;
+      });
+    } catch (err) {
+      console.warn('logAction error:', err);
+    }
+  };
+
+  // Open Activity Log modal (Accessible strictly by Admin only)
+  const handleOpenActivityLog = (caseNumber?: string) => {
+    if (userRole !== 'admin') {
+      showToast('เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถดูประวัติกิจกรรมได้');
+      return;
+    }
+    setActivityLogCaseFilter(caseNumber);
+    setIsActivityLogOpen(true);
+  };
+
   // Confirmation dialog state (Workspace skill requirement for destructive/mutating operations)
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -286,7 +355,8 @@ export default function App() {
     seedInitialFirestoreDataIfEmpty(
       getSavedCases(),
       getSavedDutyRosters(),
-      getSavedFollowUps()
+      getSavedFollowUps(),
+      getSavedActivityLogs()
     ).catch((e) => console.warn('First-boot seed error:', e));
 
     // 1. Real-time subscribe to all cases (all clients sync instantly)
@@ -380,12 +450,33 @@ export default function App() {
       );
     }
 
+    // 6. Real-time subscribe to activity logs (ประวัติการทำงาน)
+    const unsubLogs = subscribeToActivityLogs(
+      (remoteLogs) => {
+        if (remoteLogs && remoteLogs.length > 0) {
+          setActivityLogs(remoteLogs);
+          saveActivityLogs(remoteLogs);
+        } else {
+          const localLogs = getSavedActivityLogs();
+          if (localLogs.length > 0) {
+            for (const log of localLogs) {
+              saveActivityLogToFirestore(log).catch((e) =>
+                console.warn('Auto-seed activity log to Firestore failed:', e)
+              );
+            }
+          }
+        }
+      },
+      (err) => console.warn('Real-time activity logs sync error:', err)
+    );
+
     return () => {
       unsubCases();
       unsubRosters();
       unsubFollowUps();
       unsubSettings();
       if (unsubRequests) unsubRequests();
+      unsubLogs();
     };
   }, [user]);
 
@@ -393,6 +484,12 @@ export default function App() {
   useEffect(() => {
     saveCases(cases);
   }, [cases]);
+
+  useEffect(() => {
+    if (activityLogs.length > 0) {
+      saveActivityLogs(activityLogs);
+    }
+  }, [activityLogs]);
 
   useEffect(() => {
     if (followUps.length > 0) {
@@ -494,7 +591,13 @@ export default function App() {
     try {
       const updated = await updateAdminPin(newPin, projectSettings, user.displayName || user.email || 'admin');
       setProjectSettings(updated);
-      showToast(`อัปเดตรหัส PIN แอดมินเป็น "${newPin}" สำเร็จ`);
+      logAction(
+        'admin_pin_changed',
+        'เปลี่ยนรหัส PIN ผู้ดูแลระบบ',
+        'Admin PIN',
+        'ทำการเปลี่ยนรหัสผ่าน PIN ผู้ดูแลระบบ'
+      );
+      showToast(`อัปเดตรหัส PIN แอดมินสำเร็จ`);
     } catch (err: any) {
       console.error('Update PIN failed', err);
       showToast('บันทึกรหัส PIN ไม่สำเร็จ: ' + err.message);
@@ -538,6 +641,17 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await approveEditPermission(requestId, userEmail, projectSettings, user.email, role);
+      logAction(
+        'permission_approved',
+        'อนุมัติคำขอสิทธิ์',
+        userEmail,
+        `อนุมัติคำขอสิทธิ์เข้าใช้งานในบทบาท ${role === 'appeal_officer' ? 'เจ้าหน้าที่คุมอุทธรณ์ (ดูสำนวนและกดเสร็จสิ้นเท่านั้น)' : 'ผู้ร่วมแก้ไข'} ให้แก่ ${userEmail}`,
+        {
+          userEmail,
+          approvedRole: role,
+          requestId,
+        }
+      );
       showToast(
         role === 'appeal_officer'
           ? `อนุมัติสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ให้ "${userEmail}" เรียบร้อยแล้ว (ดูสำนวนและกดเสร็จสิ้นเท่านั้น)`
@@ -555,6 +669,13 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await rejectEditPermission(requestId);
+      logAction(
+        'permission_rejected',
+        'ปฏิเสธคำขอสิทธิ์',
+        `คำขอ ${requestId}`,
+        'ปฏิเสธคำขอสิทธิ์เข้าใช้งานระบบ',
+        { requestId }
+      );
       showToast('ปฏิเสธคำขอสิทธิ์เรียบร้อยแล้ว');
     } catch (err: any) {
       console.error('Reject failed:', err);
@@ -569,6 +690,13 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await addAllowedEditor(email, projectSettings, user.email);
+      logAction(
+        'permission_changed',
+        'เพิ่มสิทธิ์ผู้ร่วมแก้ไข',
+        email,
+        `เพิ่มสิทธิ์ผู้ร่วมแก้ไข (Editor) ให้แก่ ${email}`,
+        { email, grantedRole: 'editor' }
+      );
       showToast(`เพิ่มสิทธิ์ผู้ร่วมแก้ไขให้ "${email}" สำเร็จ`);
     } catch (err: any) {
       console.error('Add editor failed:', err);
@@ -583,6 +711,13 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await removeAllowedEditor(email, projectSettings, user.email);
+      logAction(
+        'permission_changed',
+        'เพิกถอนสิทธิ์ผู้ร่วมแก้ไข',
+        email,
+        `เพิกถอนสิทธิ์ผู้ร่วมแก้ไขของ ${email}`,
+        { email, removedRole: 'editor' }
+      );
       showToast(`เพิกถอนสิทธิ์ผู้ร่วมแก้ไขของ "${email}" เรียบร้อยแล้ว`);
     } catch (err: any) {
       console.error('Remove editor failed:', err);
@@ -597,6 +732,13 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await addAllowedAppealOfficer(email, projectSettings, user.email);
+      logAction(
+        'permission_changed',
+        'เพิ่มสิทธิ์จนท.คุมอุทธรณ์',
+        email,
+        `แต่งตั้งสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ให้แก่ ${email} (มีอำนาจกดเสร็จสิ้นและตรวจดูสำนวน)`,
+        { email, grantedRole: 'appeal_officer' }
+      );
       showToast(`เพิ่มสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ให้ "${email}" เรียบร้อยแล้ว (ดูสำนวนและกดเสร็จสิ้นเท่านั้น)`);
     } catch (err: any) {
       console.error('Add appeal officer failed:', err);
@@ -611,6 +753,13 @@ export default function App() {
     setIsProcessingPermissions(true);
     try {
       await removeAllowedAppealOfficer(email, projectSettings, user.email);
+      logAction(
+        'permission_changed',
+        'เพิกถอนสิทธิ์จนท.คุมอุทธรณ์',
+        email,
+        `เพิกถอนสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ของ ${email}`,
+        { email, removedRole: 'appeal_officer' }
+      );
       showToast(`เพิกถอนสิทธิ์เจ้าหน้าที่คุมอุทธรณ์ของ "${email}" เรียบร้อยแล้ว`);
     } catch (err: any) {
       console.error('Remove appeal officer failed:', err);
@@ -728,6 +877,20 @@ export default function App() {
     saveCaseToFirestore(newCase).catch((e) => console.warn('Firestore save case error:', e));
     showToast(`เพิ่มสำนวนดำ ${newCase.blackCaseNo} ครบกำหนด 1 เดือนเรียบร้อยแล้ว`);
 
+    logAction(
+      'case_created',
+      'เพิ่มสำนวนคดีใหม่',
+      `คดีดำ ${newCase.blackCaseNo}`,
+      `เพิ่มสำนวนคดีดำ ${newCase.blackCaseNo} เข้าสู่ระบบ (ศาล: ${newCase.court}, อัยการ: ${newCase.responsiblePerson || '-'})`,
+      {
+        blackCaseNo: newCase.blackCaseNo,
+        redCaseNo: newCase.redCaseNo,
+        court: newCase.court,
+        prosecutorName: newCase.responsiblePerson,
+      },
+      newId
+    );
+
     // Synchronize to Google Sheets if connected
     const currentToken = token || (await getAccessToken());
     if (sheetConfig && currentToken) {
@@ -784,6 +947,34 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore update case error:', e));
 
+    const reasonLabel =
+      reason === 'appealed'
+        ? 'ยื่นอุทธรณ์แล้ว'
+        : reason === 'no_appeal'
+        ? 'มีคำสั่งไม่อุทธรณ์ / ยุติ'
+        : reason === 'finalized'
+        ? 'คดีถึงที่สุดแล้ว'
+        : reason === 'settled'
+        ? 'คู่ความตกลงยอมความกันได้'
+        : 'อื่นๆ';
+
+    logAction(
+      'case_completed',
+      'กดเสร็จสิ้นสำนวน',
+      `คดีดำ ${targetCase.blackCaseNo}`,
+      `บันทึกเสร็จสิ้นสำนวน: ${reasonLabel}${notes ? ` (หมายเหตุ: ${notes})` : ''}`,
+      {
+        blackCaseNo: targetCase.blackCaseNo,
+        redCaseNo: targetCase.redCaseNo,
+        court: targetCase.court,
+        prosecutorName: targetCase.prosecutorName || targetCase.responsiblePerson,
+        reason,
+        completionReason: reasonLabel,
+        completedDate,
+      },
+      caseId
+    );
+
     showToast(`สำนวน ${targetCase.blackCaseNo} บันทึกเสร็จสิ้นแล้ว${isNoAppealConfirmed ? ' (ยืนยันไม่อุทธรณ์แล้ว)' : ''}`);
 
     // Update in Google Sheet if connected
@@ -814,6 +1005,19 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore no appeal confirm error:', e));
 
+    logAction(
+      'case_completed',
+      'ยืนยันไม่อุทธรณ์',
+      `คดีดำ ${targetCase.blackCaseNo}`,
+      `ยืนยันสำนวนไม่อุทธรณ์แล้ว (หยุดการแจ้งเตือน)`,
+      {
+        blackCaseNo: targetCase.blackCaseNo,
+        prosecutorName: targetCase.prosecutorName || targetCase.responsiblePerson,
+        court: targetCase.court,
+      },
+      caseId
+    );
+
     showToast(`ยืนยันสำนวน ${targetCase.blackCaseNo} ไม่อุทธรณ์แล้ว (หยุดการแจ้งเตือนเรียบร้อย)`);
 
     const currentToken = token || (await getAccessToken());
@@ -843,6 +1047,20 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore reopen error:', e));
+
+    logAction(
+      'case_completion_undone',
+      'ยกเลิกเสร็จสิ้นสำนวน',
+      `คดีดำ ${targetCase.blackCaseNo}`,
+      `เปิดสำนวนใหม่และเริ่มการติดตามแจ้งเตือนอีกครั้ง`,
+      {
+        blackCaseNo: targetCase.blackCaseNo,
+        redCaseNo: targetCase.redCaseNo,
+        court: targetCase.court,
+      },
+      caseId
+    );
+
     showToast(`เปิดสำนวน ${targetCase.blackCaseNo} ใหม่ (เริ่มการติดตามและแจ้งเตือนอีกครั้ง)`);
 
     const currentToken = token || (await getAccessToken());
@@ -880,6 +1098,18 @@ export default function App() {
       setCases(newCases);
       saveCases(newCases);
       saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore submit to duty error:', e));
+
+      logAction(
+        'duty_submitted',
+        'เสนอเวรชี้',
+        `คดีดำ ${caseItem.blackCaseNo}`,
+        `เสนอสำนวนให้อัยการเวรชี้ (${dutyOfficer || 'เวรชี้'})`,
+        {
+          blackCaseNo: caseItem.blackCaseNo,
+          dutyOfficer,
+        },
+        caseItem.id
+      );
 
       showToast(`สำนวน ${caseItem.blackCaseNo} เสนอเวรชี้แล้ว เรียบร้อย`);
 
@@ -922,6 +1152,20 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore submit to duty error:', e));
 
+    logAction(
+      'duty_submitted',
+      'เสนอเวรชี้',
+      `คดีดำ ${targetCase.blackCaseNo}`,
+      `เสนอสำนวนให้อัยการเวรชี้ (${dutyOfficer}) วันที่ ${formatThaiDate(submissionDate)}${notes ? ` (หมายเหตุ: ${notes})` : ''}`,
+      {
+        blackCaseNo: targetCase.blackCaseNo,
+        dutyOfficer,
+        submissionDate,
+        notes,
+      },
+      caseId
+    );
+
     showToast(`สำนวน ${targetCase.blackCaseNo} เสนอเวรชี้ (${dutyOfficer}) แล้ว (ยังคงคุมระยะเวลาอุทธรณ์ตามปกติ)`);
 
     const currentToken = token || (await getAccessToken());
@@ -952,6 +1196,17 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore cancel submit to duty error:', e));
+
+    logAction(
+      'duty_cancelled',
+      'ยกเลิกเสนอเวรชี้',
+      `คดีดำ ${targetCase.blackCaseNo}`,
+      `ยกเลิกสถานะเสนอเวรชี้สำหรับสำนวน ${targetCase.blackCaseNo}`,
+      {
+        blackCaseNo: targetCase.blackCaseNo,
+      },
+      caseId
+    );
 
     showToast(`ยกเลิกสถานะเสนอเวรชี้สำหรับสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
 
@@ -985,6 +1240,20 @@ export default function App() {
       };
       delete updatedCase.extendedDeadline;
       delete updatedCase.extensionCount;
+
+      logAction(
+        'deadline_reverted',
+        'ยกเลิกการขยายเวลา',
+        `คดีดำ ${targetCase.blackCaseNo}`,
+        `ยกเลิกการขยายเวลาอุทธรณ์ คืนค่าวันครบกำหนดเดิม (${formatThaiDate(targetCase.appealDeadline || '')})`,
+        {
+          blackCaseNo: targetCase.blackCaseNo,
+          court: targetCase.court,
+          previousValue: targetCase.extendedDeadline,
+        },
+        caseId
+      );
+
       showToast(`ยกเลิกการขยายเวลาสำนวน ${targetCase.blackCaseNo} คืนค่าวันครบกำหนดเดิมเรียบร้อยแล้ว`);
     } else {
       updatedCase = {
@@ -994,6 +1263,23 @@ export default function App() {
         notes: notes ? `${targetCase.notes || ''} | ${notes}` : targetCase.notes,
         updatedAt: new Date().toISOString(),
       };
+
+      logAction(
+        'deadline_extended',
+        'ขยายระยะเวลาอุทธรณ์',
+        `คดีดำ ${targetCase.blackCaseNo}`,
+        `ขยายระยะเวลาอุทธรณ์ครั้งที่ ${extensionCount} เป็น ${formatThaiDate(newDeadline)}${notes ? ` (เหตุผล: ${notes})` : ''}`,
+        {
+          blackCaseNo: targetCase.blackCaseNo,
+          court: targetCase.court,
+          previousValue: targetCase.extendedDeadline || targetCase.appealDeadline,
+          newValue: newDeadline,
+          extensionCount,
+          reason: notes,
+        },
+        caseId
+      );
+
       showToast(`บันทึกวันขยายเวลาอุทธรณ์สำนวน ${targetCase.blackCaseNo} เป็น ${formatThaiDate(newDeadline)} (ครั้งที่ ${extensionCount}) เรียบร้อยแล้ว`);
     }
 
@@ -1032,6 +1318,20 @@ export default function App() {
         setCases(remaining);
         saveCases(remaining);
         deleteCaseFromFirestore(caseId).catch((e) => console.warn('Firestore delete error:', e));
+
+        logAction(
+          'case_deleted',
+          'ลบสำนวนคดี',
+          `คดีดำ ${targetCase.blackCaseNo}`,
+          `ลบสำนวนคดีดำ ${targetCase.blackCaseNo} ออกจากระบบ`,
+          {
+            blackCaseNo: targetCase.blackCaseNo,
+            redCaseNo: targetCase.redCaseNo,
+            court: targetCase.court,
+          },
+          caseId
+        );
+
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         showToast(`ลบสำนวน ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
       },
@@ -1076,6 +1376,18 @@ export default function App() {
     const targetCase = updated.find((c) => c.id === caseId);
     if (targetCase) {
       saveCaseToFirestore(targetCase).catch((e) => console.warn('Firestore judgment save error:', e));
+      logAction(
+        'judgment_recorded',
+        'บันทึกคำพิพากษา',
+        `คดีดำ ${targetCase.blackCaseNo}`,
+        `บันทึกคำพิพากษาฉบับเต็มของสำนวนคดีดำ ${targetCase.blackCaseNo}`,
+        {
+          blackCaseNo: targetCase.blackCaseNo,
+          court: targetCase.court,
+          prosecutorName: targetCase.prosecutorName || targetCase.responsiblePerson,
+        },
+        caseId
+      );
     }
     showToast('บันทึกคำพิพากษาและเชื่อมโยง Google Docs เรียบร้อยแล้ว');
   };
@@ -1229,6 +1541,21 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore update case error:', e));
+
+    logAction(
+      'case_updated',
+      'แก้ไขข้อมูลสำนวน',
+      `คดีดำ ${updatedCase.blackCaseNo}`,
+      `แก้ไขข้อมูลสำนวนคดีดำ ${updatedCase.blackCaseNo} (อัยการ: ${updatedCase.prosecutorName || updatedCase.responsiblePerson || '-'}, ศาล: ${updatedCase.court})`,
+      {
+        blackCaseNo: updatedCase.blackCaseNo,
+        redCaseNo: updatedCase.redCaseNo,
+        court: updatedCase.court,
+        prosecutorName: updatedCase.prosecutorName || updatedCase.responsiblePerson,
+      },
+      updatedCase.id
+    );
+
     showToast(`บันทึกการแก้ไขข้อมูลสำนวน ${updatedCase.blackCaseNo} เรียบร้อยแล้ว`);
 
     // Update in Google Sheet if connected
@@ -1734,6 +2061,15 @@ export default function App() {
     setActiveDutyRosterId(newRoster.id);
     setActiveTab('duty_roster');
     saveDutyRosterToFirestore(newRoster).catch((e) => console.warn('Firestore roster save error:', e));
+
+    logAction(
+      'roster_uploaded',
+      'อัปโหลดตารางเวรชี้',
+      newRoster.monthNameThai,
+      `อัปโหลดตารางเวรชี้ประจำเดือน ${newRoster.monthNameThai} (${newRoster.totalDays} วัน)`,
+      { monthYear: newRoster.monthYear, totalDays: newRoster.totalDays }
+    );
+
     showToast(`เพิ่มตารางเวรชี้ "${newRoster.monthNameThai}" เรียบร้อยแล้ว`);
   };
 
@@ -1853,6 +2189,8 @@ export default function App() {
         isPushingLocal={isPushingLocal}
         onDownloadBackup={userRole === 'admin' ? handleDownloadJsonBackup : undefined}
         onOpenBackupViewer={() => setIsBackupViewerOpen(true)}
+        onOpenActivityLog={userRole === 'admin' ? () => handleOpenActivityLog() : undefined}
+        activityLogsCount={userRole === 'admin' ? activityLogs.length : 0}
         connectionStatus={connectionStatus}
         firebaseProjectId={FIREBASE_PROJECT_ID}
         onOpenRulesGuide={() => setIsRulesGuideOpen(true)}
@@ -2126,6 +2464,7 @@ export default function App() {
             onQuickChangePleaStatus={handleQuickChangePleaStatus}
             onOpenSubmitToDuty={handleToggleSubmitToDuty}
             onToggleTemporaryDischarge={handleToggleTemporaryDischarge}
+            onOpenActivityLog={userRole === 'admin' ? handleOpenActivityLog : undefined}
             onToast={showToast}
           />
         )}
@@ -2427,6 +2766,23 @@ export default function App() {
         userEmail={user?.email || (isPinAdmin ? 'Admin (PIN)' : undefined)}
         onToast={showToast}
       />
+
+      {/* Activity Log (ประวัติการทำงาน) Modal - เข้าดูได้เฉพาะแอดมินเท่านั้น */}
+      {userRole === 'admin' && (
+        <ActivityLogModal
+          isOpen={isActivityLogOpen}
+          onClose={() => setIsActivityLogOpen(false)}
+          logs={activityLogs}
+          initialCaseFilter={activityLogCaseFilter}
+          onSelectCase={(caseNumber) => {
+            setGlobalVoiceQuery(caseNumber);
+            setActiveTab('all');
+          }}
+          onRefresh={() => {
+            showToast('รีเฟรชประวัติกิจกรรมเรียบร้อย');
+          }}
+        />
+      )}
 
       {/* Admin PIN Login Modal (Quick Unlock for Viewers or Guests) */}
       <AdminLoginModal
