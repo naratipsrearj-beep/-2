@@ -28,7 +28,8 @@ import {
   Image as ImageIcon,
   Send,
   Eye,
-  History
+  History,
+  RotateCcw
 } from 'lucide-react';
 import { AppealCase, CaseAppointment } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
@@ -45,6 +46,7 @@ import {
   isPendingRequisitionCase,
   getRequisitionAlertInfo,
   isCaseUnspecifiedStage,
+  getUnspecifiedStageAlertInfo,
   getMissingJudgmentAlertInfo,
   isCaseTemporarilyDischarged,
 } from '../utils/appointmentUtils';
@@ -94,14 +96,15 @@ export const CaseStatusBadge: React.FC<CaseStatusBadgeProps> = ({
   }
 
   if (isUnspecified) {
+    const unspecifiedAlert = getUnspecifiedStageAlertInfo(caseItem);
     return (
       <span
         className={`inline-flex items-center gap-1.5 font-bold text-rose-950 bg-rose-100 border border-rose-300 rounded-md shadow-2xs animate-pulse ${paddingClass} ${className}`}
-        title="ยังไม่ได้เลือกสถานะสำนวน (เตือนแถบสีแดง)"
+        title={`ยังไม่ได้เลือกสถานะสำนวน (เตือนทุกๆ 5 วัน ให้ตรวจสอบว่าจำเลยให้การอย่างไร สถานะไหน)${unspecifiedAlert.isAlertDue ? ` - 🔔 เตือนรอบที่ ${unspecifiedAlert.cycle} (ครบ ${unspecifiedAlert.daysElapsed} วัน)` : ` (ฟ้องมา ${unspecifiedAlert.daysElapsed} วัน)`}`}
       >
         <span className={`${dotSize} rounded-full bg-rose-600 shrink-0`}></span>
         {showIcon && <span>🚨</span>}
-        <span>ยังไม่เลือกสถานะ</span>
+        <span>{unspecifiedAlert.isAlertDue ? `ยังไม่เลือกสถานะ (เตือนรอบ ${unspecifiedAlert.cycle})` : 'ยังไม่เลือกสถานะ'}</span>
       </span>
     );
   }
@@ -181,6 +184,7 @@ interface CaseTableProps {
   onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
   onToggleTemporaryDischarge?: (caseItem: AppealCase, isDischarged: boolean, recapturedDate?: string) => void;
   onOpenActivityLog?: (blackCaseNo?: string) => void;
+  onOpenCaseRevisions?: (caseId: string, blackCaseNo: string) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -210,6 +214,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onOpenSubmitToDuty,
   onToggleTemporaryDischarge,
   onOpenActivityLog,
+  onOpenCaseRevisions,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -282,6 +287,9 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       }
       if (statusFilter === 'temporarily_discharged') {
         return isCaseTemporarilyDischarged(c);
+      }
+      if (statusFilter === 'unspecified') {
+        return isCaseUnspecifiedStage(c) && !c.isCompleted && !isCaseTemporarilyDischarged(c);
       }
       if (statusFilter === 'completed') {
         return c.isCompleted;
@@ -493,6 +501,41 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                 </button>
               );
             })()}
+            {(() => {
+              const unspecifiedCases = cases.filter((c) => isCaseUnspecifiedStage(c) && !c.isCompleted && !isCaseTemporarilyDischarged(c));
+              const unspecifiedAlertCount = cases.filter((c) => getUnspecifiedStageAlertInfo(c).isAlertDue).length;
+              if (unspecifiedCases.length === 0) return null;
+
+              return (
+                <button
+                  onClick={() => setStatusFilter('unspecified')}
+                  className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                    statusFilter === 'unspecified'
+                      ? 'bg-rose-600 text-white font-bold shadow-xs'
+                      : 'text-rose-900 hover:bg-rose-50'
+                  }`}
+                >
+                  <span>🚨 ยังไม่เลือกสถานะ</span>
+                  <span
+                    className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                      statusFilter === 'unspecified'
+                        ? 'bg-rose-800 text-white'
+                        : 'bg-rose-100 text-rose-950 border border-rose-300'
+                    }`}
+                  >
+                    {unspecifiedCases.length}
+                  </span>
+                  {unspecifiedAlertCount > 0 && (
+                    <span
+                      className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-pulse"
+                      title="ถึงรอบแจ้งเตือน 5 วัน เพื่อตรวจสอบคำให้การจำเลย"
+                    >
+                      เตือน 5 วัน ({unspecifiedAlertCount})
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
             <button
               onClick={() => setStatusFilter('temporarily_discharged')}
               className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
@@ -637,17 +680,17 @@ export const CaseTable: React.FC<CaseTableProps> = ({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs table-auto">
+      {/* Table Container */}
+      <div className="overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-2xs">
+        <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-600 font-medium text-[11px]">
-              <th className="py-2.5 px-2 w-8 text-center">#</th>
-              <th className="py-2.5 px-2 whitespace-nowrap">วันที่ฟ้อง</th>
-              <th className="py-2.5 px-2">เลขคดีดำ / แดง</th>
-              <th className="py-2.5 px-2">ศาล & คู่ความ</th>
-              <th className="py-2.5 px-2 whitespace-nowrap">วันที่พิพากษา</th>
-              <th className="py-2.5 px-2 whitespace-nowrap">
+            <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
+              <th className="py-2.5 px-1.5 w-7 text-center">#</th>
+              <th className="py-2.5 px-1.5 w-20 text-center whitespace-nowrap">วันที่ฟ้อง</th>
+              <th className="py-2.5 px-2 w-36">เลขคดีดำ / แดง</th>
+              <th className="py-2.5 px-2 min-w-[170px] max-w-[230px]">ศาล & คู่ความ</th>
+              <th className="py-2.5 px-2 min-w-[145px] max-w-[210px]">ขั้นตอน / คำพิพากษา</th>
+              <th className="py-2.5 px-1.5 w-28 whitespace-nowrap">
                 <button
                   onClick={() => setSortBy(sortBy === 'deadline' ? 'filing' : 'deadline')}
                   className="inline-flex items-center gap-1 text-slate-700 hover:text-amber-600 font-semibold"
@@ -656,8 +699,8 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                   <ArrowUpDown className="w-3 h-3" />
                 </button>
               </th>
-              <th className="py-2.5 px-2 whitespace-nowrap">สถานะ & การเตือน</th>
-              <th className="py-2.5 px-2 text-center min-w-[190px]">การดำเนินการ</th>
+              <th className="py-2.5 px-1.5 w-30 whitespace-nowrap">สถานะ & การเตือน</th>
+              <th className="py-2.5 px-1.5 text-center w-44">การดำเนินการ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -692,20 +735,20 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     }`}
                   >
                     {/* Index */}
-                    <td className="py-2.5 px-2 text-center text-slate-400 font-mono text-[11px]">
+                    <td className="py-2 px-1 text-center text-slate-400 font-mono text-[11px]">
                       {idx + 1}
                     </td>
 
                     {/* Filing Date */}
-                    <td className="py-2.5 px-2 whitespace-nowrap">
+                    <td className="py-2 px-1.5 whitespace-nowrap text-center">
                       <div className="font-medium text-slate-800 text-[11px]">
-                        {formatThaiDate(caseItem.filingDate)}
+                        {formatThaiDate(caseItem.filingDate, { short: true })}
                       </div>
-                      <span className="text-[10px] text-slate-400">วันยื่นฟ้อง</span>
+                      <span className="text-[10px] text-slate-400 block">วันยื่นฟ้อง</span>
                     </td>
 
                     {/* Case Numbers */}
-                    <td className="py-2.5 px-2">
+                    <td className="py-2 px-1.5">
                       <div className="font-bold text-slate-900 font-['Prompt'] text-xs">
                         ดำ {caseItem.blackCaseNo}
                       </div>
@@ -772,7 +815,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                                   ? 'bg-amber-100 text-amber-950 border-amber-300 font-extrabold animate-pulse'
                                   : 'bg-purple-100 text-purple-900 border-purple-300'
                               }`}
-                              title={`กำหนดแยกฟ้องภายใน 7 วัน: ${formatThaiDate(alertInfo.deadlineDate)}`}
+                              title={`กำหนดแยกฟ้อง (ภายใน ${caseItem.severedFilingDaysLimit || 7} วัน): ${formatThaiDate(alertInfo.deadlineDate)}`}
                             >
                               <span>✂️</span>
                               <span>{caseItem.isSeveredFilingCompleted ? 'ยื่นแยกฟ้องแล้ว' : alertInfo.alertBadgeText}</span>
@@ -847,7 +890,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Court & Parties */}
-                    <td className="py-2.5 px-2 max-w-[210px]">
+                    <td className="py-2 px-2 max-w-[220px]">
                       <div className="font-medium text-slate-800 truncate" title={caseItem.court}>
                         📍 {caseItem.court}
                       </div>
@@ -952,7 +995,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Judgment Date */}
-                    <td className="py-2.5 px-2 whitespace-nowrap">
+                    <td className="py-2 px-2 max-w-[210px]">
                       {isJudgmentRecorded(caseItem) ? (
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1011,54 +1054,76 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           )}
                         </div>
                       ) : isCaseUnspecifiedStage(caseItem) ? (
-                        <div className="space-y-1">
-                          <div>
-                            <span className="text-[11px] font-bold text-rose-950 bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs">
-                              <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
-                              <span>🚨 ยังไม่เลือกสถานะสำนวน</span>
-                            </span>
-                            <span className="text-[10px] text-rose-700 block mt-0.5 font-medium">
-                              คุมสำนวนที่จะฟ้องในวันไว้ก่อน
-                            </span>
-                          </div>
-                          {canEdit && (onQuickChangePleaStatus || onQuickChangeRequisitionStatus) && !isCompleted && (
-                            <div className="flex items-center gap-1 pt-1 mt-1 border-t border-rose-200 flex-wrap">
-                              <span className="text-[9px] text-rose-950 font-bold">เลือกสถานะ:</span>
-                              <button
-                                type="button"
-                                onClick={() => onQuickChangePleaStatus ? onQuickChangePleaStatus(caseItem, 'confessed') : onQuickChangeRequisitionStatus?.(caseItem, 'confessed')}
-                                className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-yellow-200 hover:bg-yellow-300 text-yellow-950 border border-yellow-400"
-                                title="เลือกเป็นจำเลยรับสารภาพ (แถวสีเหลือง)"
-                              >
-                                <span>🟡 รับสารภาพ</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onQuickChangePleaStatus ? onQuickChangePleaStatus(caseItem, 'denied') : onQuickChangeRequisitionStatus?.(caseItem, 'denied')}
-                                className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-orange-200 hover:bg-orange-300 text-orange-950 border border-orange-400"
-                                title="เลือกเป็นจำเลยปฏิเสธ (แถวสีส้ม)"
-                              >
-                                <span>🟠 ปฏิเสธ</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onQuickChangePleaStatus?.(caseItem, 'requisition')}
-                                className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-emerald-200 hover:bg-emerald-300 text-emerald-950 border border-emerald-400"
-                                title="เลือกเป็นสำนวนเบิกฟ้อง (แถวสีเขียว)"
-                              >
-                                <span>🟢 เบิกฟ้อง</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onQuickChangePleaStatus?.(caseItem, 'pending')}
-                                className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-sky-200 hover:bg-sky-300 text-sky-950 border border-sky-400"
-                                title="เลือกเป็นมีนัดอื่นๆ / ยังไม่ทราบคำให้การ (แถวสีฟ้า)"
-                              >
-                                <span>🔵 นัดอื่นๆ</span>
-                              </button>
+                        (() => {
+                          const unspecifiedAlert = getUnspecifiedStageAlertInfo(caseItem);
+                          return (
+                            <div className="space-y-1.5">
+                              <div>
+                                <span className="text-[11px] font-bold text-rose-950 bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-md inline-flex items-center gap-1 shadow-2xs">
+                                  <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                                  <span>🚨 ยังไม่เลือกสถานะสำนวน</span>
+                                </span>
+                                <span className="text-[10px] text-rose-700 block mt-0.5 font-medium">
+                                  คุมสำนวนที่จะฟ้องในวันไว้ก่อน
+                                </span>
+                              </div>
+
+                              {/* ป้ายเตือนทุก 5 วัน ให้ตรวจสอบว่ามีจำเลยให้การอย่างไร สถานะไหน */}
+                              <div className="space-y-0.5">
+                                {unspecifiedAlert.isAlertDue ? (
+                                  <div className="inline-flex items-center gap-1 bg-rose-600 text-white font-bold px-2 py-0.5 rounded text-[10px] shadow-2xs animate-pulse">
+                                    <span>🔔 เตือนรอบที่ {unspecifiedAlert.cycle} (ครบ {unspecifiedAlert.daysElapsed} วัน)</span>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1 bg-rose-50 text-rose-800 border border-rose-200 font-medium px-1.5 py-0.5 rounded text-[10px]">
+                                    <span>⏱️ ฟ้องมา {unspecifiedAlert.daysElapsed} วัน (เตือนในอีก {unspecifiedAlert.daysUntilNextAlert} วัน)</span>
+                                  </div>
+                                )}
+                                <span className="text-[9.5px] text-rose-900 block font-semibold leading-tight">
+                                  👉 ตรวจสอบว่าจำเลยให้การอย่างไร สถานะไหน
+                                </span>
+                              </div>
+
+                              {canEdit && (onQuickChangePleaStatus || onQuickChangeRequisitionStatus) && !isCompleted && (
+                                <div className="flex items-center gap-1 pt-1 mt-1 border-t border-rose-200 flex-wrap">
+                                  <span className="text-[9px] text-rose-950 font-bold">เลือกสถานะ:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => onQuickChangePleaStatus ? onQuickChangePleaStatus(caseItem, 'confessed') : onQuickChangeRequisitionStatus?.(caseItem, 'confessed')}
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-yellow-200 hover:bg-yellow-300 text-yellow-950 border border-yellow-400"
+                                    title="เลือกเป็นจำเลยรับสารภาพ (แถวสีเหลือง)"
+                                  >
+                                    <span>🟡 รับสารภาพ</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onQuickChangePleaStatus ? onQuickChangePleaStatus(caseItem, 'denied') : onQuickChangeRequisitionStatus?.(caseItem, 'denied')}
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-orange-200 hover:bg-orange-300 text-orange-950 border border-orange-400"
+                                    title="เลือกเป็นจำเลยปฏิเสธ (แถวสีส้ม)"
+                                  >
+                                    <span>🟠 ปฏิเสธ</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onQuickChangePleaStatus?.(caseItem, 'requisition')}
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-emerald-200 hover:bg-emerald-300 text-emerald-950 border border-emerald-400"
+                                    title="เลือกเป็นสำนวนเบิกฟ้อง (แถวสีเขียว)"
+                                  >
+                                    <span>🟢 เบิกฟ้อง</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onQuickChangePleaStatus?.(caseItem, 'pending')}
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer active:scale-95 flex items-center gap-0.5 bg-sky-200 hover:bg-sky-300 text-sky-950 border border-sky-400"
+                                    title="เลือกเป็นมีนัดอื่นๆ / ยังไม่ทราบคำให้การ (แถวสีฟ้า)"
+                                  >
+                                    <span>🔵 นัดอื่นๆ</span>
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
+                          );
+                        })()
                       ) : (
                         <div className="space-y-1">
                           {(caseItem.isRequisitionCase || caseItem.appointmentType === 'requisition') ? (
@@ -1166,7 +1231,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Appeal Deadline (1 month) */}
-                    <td className="py-2.5 px-2 whitespace-nowrap">
+                    <td className="py-2 px-1.5 whitespace-nowrap">
                       {isCaseTemporarilyDischarged(caseItem) ? (
                         <div className="space-y-0.5">
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 bg-slate-200 border border-slate-400 px-2 py-0.5 rounded-md shadow-2xs">
@@ -1223,7 +1288,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Urgency / Status Badge */}
-                    <td className="py-2.5 px-2 whitespace-nowrap">
+                    <td className="py-2 px-1.5">
                       <div className="space-y-1">
                         <div>
                           <CaseStatusBadge caseItem={caseItem} size="xs" />
@@ -1313,268 +1378,286 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                     </td>
 
                     {/* Actions */}
-                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <td className="py-2 px-1.5 text-center">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
                         {canEdit ? (
                           <>
-                            {/* กรอกคำพิพากษา / แก้ไขคำพิพากษา */}
-                            {onRecordJudgment && (
-                              <button
-                                onClick={() => onRecordJudgment(caseItem)}
-                                className={`text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition font-bold cursor-pointer active:scale-95 ${
-                                  isJudgmentRecorded(caseItem)
-                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
-                                    : shouldAlertMissingJudgment(caseItem)
-                                    ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                                }`}
-                                title={
-                                  isJudgmentRecorded(caseItem)
-                                    ? `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate || '')} - คลิกเพื่อแก้ไขคำพิพากษา`
-                                    : shouldAlertMissingJudgment(caseItem)
-                                    ? 'จำเลยรับสารภาพ กรอกคำพิพากษาเพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'
-                                    : 'กรอกคำพิพากษา (เมื่อศาลมีคำตัดสิน)'
-                                }
-                              >
-                                <Scale className={`w-3 h-3 ${isJudgmentRecorded(caseItem) ? 'text-amber-800' : shouldAlertMissingJudgment(caseItem) ? 'text-white' : 'text-slate-500'}`} />
-                                <span>{isJudgmentRecorded(caseItem) ? 'แก้คำพิพากษา' : shouldAlertMissingJudgment(caseItem) ? '+ กรอกคำพิพากษา' : 'กรอกคำพิพากษา'}</span>
-                              </button>
-                            )}
-
-                            {!isCompleted ? (
-                              <button
-                                onClick={() => onMarkComplete(caseItem)}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer active:scale-95"
-                                title="กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
-                              >
-                                <CheckCircle2 className="w-3 h-3" />
-                                <span>+ วันที่เสร็จ</span>
-                              </button>
-                            ) : (
-                              <>
+                            {/* Tier 1: Primary Action Buttons */}
+                            <div className="flex items-center justify-center gap-1 flex-wrap">
+                              {/* กรอกคำพิพากษา / แก้ไขคำพิพากษา */}
+                              {onRecordJudgment && (
                                 <button
-                                  onClick={() => onMarkComplete(caseItem)}
-                                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[11px] py-1 px-2 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                                  title="แก้ไขวันที่เสร็จสิ้น หรือเปลี่ยนสถานะ"
-                                >
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  <span>{caseItem.completedDate ? `แก้วันเสร็จ (${formatThaiDate(caseItem.completedDate, { short: true })})` : 'แก้วันเสร็จ'}</span>
-                                </button>
-
-                                {/* ปุ่มยืนยันไม่อุทธรณ์ เฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ */}
-                                {isKunchartCase(caseItem) && !caseItem.isNoAppealConfirmed && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (window.confirm(`ยืนยันว่าสำนวน ${caseItem.blackCaseNo} ไม่อุทธรณ์แล้วใช่หรือไม่?\n\nเมื่อยืนยันแล้ว ระบบจะหยุดการแจ้งเตือนสำหรับสำนวนนี้ (เฉพาะ อ.กุลชาติ)`)) {
-                                        onConfirmNoAppeal?.(caseItem.id);
-                                      }
-                                    }}
-                                    className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-[11px] py-1 px-2.5 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 animate-pulse"
-                                    title="กดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว เพื่อหยุดการเตือน (เฉพาะ อ.กุลชาติ)"
-                                  >
-                                    <CheckCircle2 className="w-3 h-3 text-purple-200" />
-                                    <span>✓ ยืนยันไม่อุทธรณ์</span>
-                                  </button>
-                                )}
-                              </>
-                            )}
-
-                            {!isCompleted && (
-                              <button
-                                onClick={() => onExtendDeadline(caseItem)}
-                                className={`text-[11px] py-1 px-2.5 rounded-lg transition font-medium cursor-pointer ${
-                                  caseItem.extendedDeadline
-                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold shadow-2xs'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                }`}
-                                title={
-                                  caseItem.extendedDeadline
-                                    ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
-                                    : 'ขอขยายเวลาอุทธรณ์'
-                                }
-                              >
-                                {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยาย'}
-                              </button>
-                            )}
-
-                            {onOpenSubmitToDuty && (
-                              <button
-                                onClick={() => onOpenSubmitToDuty(caseItem)}
-                                className={`text-[11px] py-1 px-2.5 rounded-lg transition font-medium cursor-pointer flex items-center gap-1 ${
-                                  caseItem.isSubmittedToDuty
-                                    ? 'bg-blue-100 hover:bg-blue-200 text-blue-950 border border-blue-300 font-bold shadow-2xs'
-                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
-                                }`}
-                                title={
-                                  caseItem.isSubmittedToDuty
-                                    ? 'สำนวนนี้เสนอเวรชี้แล้ว - คลิกเพื่อแก้ไขข้อมูลเวรชี้หรือยกเลิก'
-                                    : 'คลิกเพื่อเสนอเวรชี้ทันที (ไม่ต้องกรอกข้อมูล สำนวนยังคุมอุทธรณ์ตามปกติ)'
-                                }
-                              >
-                                <Send className="w-3 h-3 text-blue-600" />
-                                <span>{caseItem.isSubmittedToDuty ? '✓ เสนอเวรชี้แล้ว (แก้ไข)' : 'เสนอเวรชี้'}</span>
-                              </button>
-                            )}
-
-                            {onOpenJudgmentDoc && (
-                              <button
-                                onClick={() => onOpenJudgmentDoc(caseItem)}
-                                className={`p-1.5 rounded-lg transition ${
-                                  caseItem.googleDocUrl
-                                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                                    : 'text-slate-500 hover:text-blue-700 hover:bg-slate-100'
-                                }`}
-                                title={caseItem.googleDocUrl ? 'เปิด/แก้ไขคำพิพากษาใน Google Docs' : 'กรอกคำพิพากษาลง Google Docs'}
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {onOpenAppointmentModal && (() => {
-                              const isConfessed = isCaseConfessed(caseItem);
-                              const hasActiveAppt =
-                                caseItem.appointmentType &&
-                                caseItem.appointmentType !== 'none' &&
-                                !(isConfessed && caseItem.appointmentType === 'rights_protection');
-
-                              return (
-                                <button
-                                  onClick={() => onOpenAppointmentModal(caseItem)}
-                                  className={`p-1.5 rounded-lg transition ${
-                                    hasActiveAppt
-                                      ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 ring-1 ring-indigo-200'
-                                      : 'text-slate-500 hover:text-indigo-700 hover:bg-indigo-50'
+                                  onClick={() => onRecordJudgment(caseItem)}
+                                  className={`text-[10.5px] py-0.5 px-2 rounded-md flex items-center gap-1 transition font-bold cursor-pointer active:scale-95 shrink-0 ${
+                                    isJudgmentRecorded(caseItem)
+                                      ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                                      : shouldAlertMissingJudgment(caseItem)
+                                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                                   }`}
                                   title={
-                                    hasActiveAppt
-                                      ? `นัดศาล: ${getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)} (${caseItem.appointmentDate ? formatThaiDate(caseItem.appointmentDate) : '-'}) - คลิกเพื่อแก้ไข`
-                                      : 'ระบุขั้นตอนนัดของศาล (สืบเสาะ, นัดฟังคำพิพากษา หรืออื่นๆ)'
+                                    isJudgmentRecorded(caseItem)
+                                      ? `คำพิพากษาเมื่อ ${formatThaiDate(caseItem.judgmentDate || '')} - คลิกเพื่อแก้ไขคำพิพากษา`
+                                      : shouldAlertMissingJudgment(caseItem)
+                                      ? 'จำเลยรับสารภาพ กรอกคำพิพากษาเพื่อเริ่มคุมระยะเวลาอุทธรณ์ 1 เดือน'
+                                      : 'กรอกคำพิพากษา (เมื่อศาลมีคำตัดสิน)'
                                   }
                                 >
-                                  <Clock className="w-3.5 h-3.5" />
+                                  <Scale className={`w-3 h-3 ${isJudgmentRecorded(caseItem) ? 'text-amber-800' : shouldAlertMissingJudgment(caseItem) ? 'text-white' : 'text-slate-500'}`} />
+                                  <span>{isJudgmentRecorded(caseItem) ? 'แก้พิพากษา' : shouldAlertMissingJudgment(caseItem) ? '+ พิพากษา' : 'กรอกพิพากษา'}</span>
                                 </button>
-                              );
-                            })()}
+                              )}
 
-                            {onSyncCalendar && (
-                              <button
-                                onClick={() => onSyncCalendar(caseItem)}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
-                                title="บันทึกเตือนลง Google Calendar"
-                              >
-                                <Calendar className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {onSendEmailAlert && (
-                              <button
-                                onClick={() => onSendEmailAlert(caseItem)}
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                                title="ส่งอีเมลแจ้งเตือนคดีนี้ไปยัง Gmail"
-                              >
-                                <Mail className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Copy Case Details & Judgment Dropdown */}
-                            <CopyCaseDropdown
-                              caseItem={caseItem}
-                              onToast={onToast}
-                              onOpenFileLabel={onOpenFileLabel}
-                              onOpenCourtPetition={onOpenCourtPetition}
-                            />
-
-                            {onEditCase && (
-                              <button
-                                onClick={() => onEditCase(caseItem)}
-                                className="p-1.5 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-lg transition cursor-pointer"
-                                title="แก้ไข / เพิ่มเติมข้อมูลสำนวนคดี"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {onOpenActivityLog && (
-                              <button
-                                onClick={() => onOpenActivityLog(caseItem.blackCaseNo)}
-                                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
-                                title={`เปิดดูบันทึกประวัติการทำงาน (เฉพาะผู้ดูแลระบบ) ของสำนวน ${caseItem.blackCaseNo}`}
-                              >
-                                <History className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            <button
-                              onClick={() => onDeleteCase(caseItem.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                              title="ลบสำนวน"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-xs">
-                            {/* Copy Case Details & Judgment Dropdown for viewers */}
-                            <CopyCaseDropdown
-                              caseItem={caseItem}
-                              onToast={onToast}
-                              onOpenFileLabel={onOpenFileLabel}
-                              onOpenCourtPetition={onOpenCourtPetition}
-                            />
-
-                            {/* สิทธิ์เจ้าหน้าที่คุมอุทธรณ์: สามารถดูสำนวนได้ */}
-                            {onEditCase && (
-                              <button
-                                onClick={() => onEditCase(caseItem)}
-                                className="p-1.5 text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50 rounded-lg transition"
-                                title="ดูรายละเอียดสำนวนคดี (อ่านอย่างเดียว)"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* เจ้าหน้าที่คุมอุทธรณ์: สามารถกดได้แค่เสร็จสิ้น แต่ไม่สามารถแก้ไขหรือลบคดีได้ */}
-                            {canComplete && onMarkComplete && (
-                              <>
-                                {!isCompleted ? (
+                              {!isCompleted ? (
+                                <button
+                                  onClick={() => onMarkComplete(caseItem)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[10.5px] py-0.5 px-2 rounded-md flex items-center gap-1 transition shadow-xs cursor-pointer active:scale-95 shrink-0"
+                                  title="กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>+ วันเสร็จ</span>
+                                </button>
+                              ) : (
+                                <>
                                   <button
                                     onClick={() => onMarkComplete(caseItem)}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer active:scale-95"
-                                    title="กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
-                                  >
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>เสร็จสิ้น</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => onMarkComplete(caseItem)}
-                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
-                                    title="แก้ไขวันที่เสร็จสิ้น / เหตุผล หรือเปิดสำนวนใหม่"
+                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[10.5px] py-0.5 px-2 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                                    title="แก้ไขวันที่เสร็จสิ้น หรือเปลี่ยนสถานะ"
                                   >
                                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                    <span>แก้เสร็จ</span>
+                                    <span>{caseItem.completedDate ? `แก้วันเสร็จ (${formatThaiDate(caseItem.completedDate, { short: true })})` : 'แก้วันเสร็จ'}</span>
                                   </button>
-                                )}
-                              </>
-                            )}
 
-                            {onOpenJudgmentDoc && (
+                                  {/* ปุ่มยืนยันไม่อุทธรณ์ เฉพาะกรณีเจ้าของสำนวนเป็น อ.กุลชาติ */}
+                                  {isKunchartCase(caseItem) && !caseItem.isNoAppealConfirmed && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm(`ยืนยันว่าสำนวน ${caseItem.blackCaseNo} ไม่อุทธรณ์แล้วใช่หรือไม่?\n\nเมื่อยืนยันแล้ว ระบบจะหยุดการแจ้งเตือนสำหรับสำนวนนี้ (เฉพาะ อ.กุลชาติ)`)) {
+                                          onConfirmNoAppeal?.(caseItem.id);
+                                        }
+                                      }}
+                                      className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-[10.5px] py-0.5 px-2 rounded-md transition shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 animate-pulse shrink-0"
+                                      title="กดยืนยันว่าสำนวนไม่อุทธรณ์แล้ว เพื่อหยุดการเตือน (เฉพาะ อ.กุลชาติ)"
+                                    >
+                                      <CheckCircle2 className="w-3 h-3 text-purple-200" />
+                                      <span>✓ ไม่อุทธรณ์</span>
+                                    </button>
+                                  )}
+                                </>
+                              )}
+
+                              {!isCompleted && (
+                                <button
+                                  onClick={() => onExtendDeadline(caseItem)}
+                                  className={`text-[10.5px] py-0.5 px-2 rounded-md transition font-medium cursor-pointer shrink-0 ${
+                                    caseItem.extendedDeadline
+                                      ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold shadow-2xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                                  }`}
+                                  title={
+                                    caseItem.extendedDeadline
+                                      ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
+                                      : 'ขอขยายเวลาอุทธรณ์'
+                                  }
+                                >
+                                  {caseItem.extendedDeadline ? 'แก้ขยาย' : 'ขยาย'}
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Tier 2: Secondary Quick Tool Icons */}
+                            <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                              {onOpenSubmitToDuty && (
+                                <button
+                                  onClick={() => onOpenSubmitToDuty(caseItem)}
+                                  className={`p-1 rounded-md transition cursor-pointer shrink-0 ${
+                                    caseItem.isSubmittedToDuty
+                                      ? 'bg-blue-100 hover:bg-blue-200 text-blue-950 border border-blue-300 shadow-2xs'
+                                      : 'text-blue-600 hover:bg-blue-50'
+                                  }`}
+                                  title={
+                                    caseItem.isSubmittedToDuty
+                                      ? `สำนวนนี้เสนอเวรชี้แล้ว: ${caseItem.submittedToDutyOfficer || 'ระบุแล้ว'} (คลิกเพื่อแก้ไข/ยกเลิก)`
+                                      : 'คลิกเพื่อเสนอเวรชี้ทันที'
+                                  }
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {onOpenJudgmentDoc && (
+                                <button
+                                  onClick={() => onOpenJudgmentDoc(caseItem)}
+                                  className={`p-1 rounded-md transition cursor-pointer shrink-0 ${
+                                    caseItem.googleDocUrl
+                                      ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                                      : 'text-slate-500 hover:text-blue-700 hover:bg-slate-100'
+                                  }`}
+                                  title={caseItem.googleDocUrl ? 'เปิด/แก้ไขคำพิพากษาใน Google Docs' : 'กรอกคำพิพากษาลง Google Docs'}
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {onOpenAppointmentModal && (() => {
+                                const isConfessed = isCaseConfessed(caseItem);
+                                const hasActiveAppt =
+                                  caseItem.appointmentType &&
+                                  caseItem.appointmentType !== 'none' &&
+                                  !(isConfessed && caseItem.appointmentType === 'rights_protection');
+
+                                return (
+                                  <button
+                                    onClick={() => onOpenAppointmentModal(caseItem)}
+                                    className={`p-1 rounded-md transition cursor-pointer shrink-0 ${
+                                      hasActiveAppt
+                                        ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 ring-1 ring-indigo-200'
+                                        : 'text-slate-500 hover:text-indigo-700 hover:bg-indigo-50'
+                                    }`}
+                                    title={
+                                      hasActiveAppt
+                                        ? `นัดศาล: ${getAppointmentLabel(caseItem.appointmentType, caseItem.appointmentTypeName)} (${caseItem.appointmentDate ? formatThaiDate(caseItem.appointmentDate) : '-'}) - คลิกเพื่อแก้ไข`
+                                        : 'ระบุขั้นตอนนัดของศาล (สืบเสาะ, นัดฟังคำพิพากษา หรืออื่นๆ)'
+                                    }
+                                  >
+                                    <Clock className="w-3.5 h-3.5" />
+                                  </button>
+                                );
+                              })()}
+
+                              {onSyncCalendar && (
+                                <button
+                                  onClick={() => onSyncCalendar(caseItem)}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded-md transition cursor-pointer shrink-0"
+                                  title="บันทึกเตือนลง Google Calendar"
+                                >
+                                  <Calendar className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {onSendEmailAlert && (
+                                <button
+                                  onClick={() => onSendEmailAlert(caseItem)}
+                                  className="p-1 text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer shrink-0"
+                                  title="ส่งอีเมลแจ้งเตือนคดีนี้ไปยัง Gmail"
+                                >
+                                  <Mail className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Copy Case Details & Judgment Dropdown */}
+                              <CopyCaseDropdown
+                                caseItem={caseItem}
+                                onToast={onToast}
+                                onOpenFileLabel={onOpenFileLabel}
+                                onOpenCourtPetition={onOpenCourtPetition}
+                              />
+
+                              {onEditCase && (
+                                <button
+                                  onClick={() => onEditCase(caseItem)}
+                                  className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-md transition cursor-pointer shrink-0"
+                                  title="แก้ไข / เพิ่มเติมข้อมูลสำนวนคดี"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {onOpenCaseRevisions && (
+                                <button
+                                  onClick={() => onOpenCaseRevisions(caseItem.id, caseItem.blackCaseNo)}
+                                  className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-md transition cursor-pointer shrink-0"
+                                  title={`ย้อนกลับข้อมูลที่กรอกไปแล้ว / ดูประวัติการแก้ไขของสำนวน ${caseItem.blackCaseNo}`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {onOpenActivityLog && (
+                                <button
+                                  onClick={() => onOpenActivityLog(caseItem.blackCaseNo)}
+                                  className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md transition cursor-pointer shrink-0"
+                                  title={`เปิดดูบันทึกประวัติการทำงาน (เฉพาะผู้ดูแลระบบ) ของสำนวน ${caseItem.blackCaseNo}`}
+                                >
+                                  <History className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
                               <button
-                                onClick={() => onOpenJudgmentDoc(caseItem)}
-                                className={`p-1.5 rounded-lg transition ${
-                                  caseItem.googleDocUrl
-                                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                                    : 'text-slate-500 hover:text-blue-700 hover:bg-slate-100'
-                                }`}
-                                title={caseItem.googleDocUrl ? 'เปิดคำพิพากษาใน Google Docs' : 'ดูคำพิพากษา'}
+                                onClick={() => onDeleteCase(caseItem.id)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer shrink-0"
+                                title="ลบสำนวน"
                               >
-                                <FileText className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                            )}
-                            <span className="text-[11px] text-slate-400">
-                              {isCompleted ? 'เสร็จสิ้นแล้ว' : 'กำลังคุม'}
-                            </span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-1">
+                            <div className="flex items-center justify-center gap-1 flex-wrap">
+                              {/* สิทธิ์เจ้าหน้าที่คุมอุทธรณ์: สามารถกดได้แค่เสร็จสิ้น */}
+                              {canComplete && onMarkComplete && (
+                                <>
+                                  {!isCompleted ? (
+                                    <button
+                                      onClick={() => onMarkComplete(caseItem)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[10.5px] py-0.5 px-2 rounded-md flex items-center gap-1 transition shadow-xs cursor-pointer active:scale-95 shrink-0"
+                                      title="กรอกวันที่เสร็จสิ้นสำนวน (ยื่นอุทธรณ์/ยุติ)"
+                                    >
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      <span>เสร็จสิ้น</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => onMarkComplete(caseItem)}
+                                      className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-[10.5px] py-0.5 px-2 rounded-md flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95 shrink-0"
+                                      title="แก้ไขวันที่เสร็จสิ้น / เหตุผล หรือเปิดสำนวนใหม่"
+                                    >
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      <span>แก้เสร็จ</span>
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              <span className="text-[10px] text-slate-400">
+                                {isCompleted ? 'เสร็จสิ้นแล้ว' : 'กำลังคุม'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-center gap-1">
+                              {/* Copy Case Details & Judgment Dropdown for viewers */}
+                              <CopyCaseDropdown
+                                caseItem={caseItem}
+                                onToast={onToast}
+                                onOpenFileLabel={onOpenFileLabel}
+                                onOpenCourtPetition={onOpenCourtPetition}
+                              />
+
+                              {/* สิทธิ์เจ้าหน้าที่คุมอุทธรณ์: สามารถดูสำนวนได้ */}
+                              {onEditCase && (
+                                <button
+                                  onClick={() => onEditCase(caseItem)}
+                                  className="p-1 text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50 rounded-md transition"
+                                  title="ดูรายละเอียดสำนวนคดี (อ่านอย่างเดียว)"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {onOpenJudgmentDoc && (
+                                <button
+                                  onClick={() => onOpenJudgmentDoc(caseItem)}
+                                  className={`p-1 rounded-md transition ${
+                                    caseItem.googleDocUrl
+                                      ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                                      : 'text-slate-500 hover:text-blue-700 hover:bg-slate-100'
+                                  }`}
+                                  title={caseItem.googleDocUrl ? 'เปิดคำพิพากษาใน Google Docs' : 'ดูคำพิพากษา'}
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>

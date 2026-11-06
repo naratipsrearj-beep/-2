@@ -72,10 +72,22 @@ export function formatCaseSummaryForClipboard(c: AppealCase): string {
     );
   }
 
+  const completionReasonText = c.completionReason === 'submitted_appellate'
+    ? 'เสนออัยการศาลสูงแล้ว'
+    : c.completionReason === 'appealed'
+    ? 'ยื่นอุทธรณ์แล้ว'
+    : c.completionReason === 'no_appeal'
+    ? 'มีคำสั่งไม่อุทธรณ์ / ยุติ'
+    : c.completionReason === 'finalized'
+    ? 'คดีถึงที่สุดแล้ว'
+    : c.completionReason === 'settled'
+    ? 'ยอมความ'
+    : (c.completionReason || 'เสร็จสิ้นแล้ว');
+
   lines.push(
     `สถานะสำนวน: ${
       c.isCompleted
-        ? `เสร็จสิ้น (${c.completionReason || 'ยื่นอุทธรณ์แล้ว'})`
+        ? `เสร็จสิ้น (${completionReasonText})`
         : 'อยู่ระหว่างติดตามคุมระยะเวลาอุทธรณ์'
     }`
   );

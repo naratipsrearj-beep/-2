@@ -457,6 +457,7 @@ export async function updateFollowUpInSheet(
 
 function parseCompletionReason(text?: string): CaseCompletionReason | undefined {
   if (!text) return undefined;
+  if (text.includes('ศาลสูง')) return 'submitted_appellate';
   if (text.includes('ยื่นอุทธรณ์')) return 'appealed';
   if (text.includes('ไม่อุทธรณ์') || text.includes('ยุติ')) return 'no_appeal';
   if (text.includes('ที่สุด')) return 'finalized';
@@ -466,6 +467,7 @@ function parseCompletionReason(text?: string): CaseCompletionReason | undefined 
 
 function formatCompletionReason(reason?: CaseCompletionReason): string {
   switch (reason) {
+    case 'submitted_appellate': return 'เสนออัยการศาลสูงแล้ว';
     case 'appealed': return 'ยื่นอุทธรณ์แล้ว';
     case 'no_appeal': return 'มีคำสั่งไม่อุทธรณ์ / ยุติ';
     case 'finalized': return 'คดีถึงที่สุด';

@@ -2,7 +2,14 @@ import React from 'react';
 import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale, Users, Check } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
-import { getRequisitionStatus, isPendingRequisitionCase, getRequisitionAlertInfo, getMissingJudgmentAlertInfo } from '../utils/appointmentUtils';
+import {
+  getRequisitionStatus,
+  isPendingRequisitionCase,
+  getRequisitionAlertInfo,
+  getMissingJudgmentAlertInfo,
+  getUnspecifiedStageAlertInfo,
+  isCaseUnspecifiedStage,
+} from '../utils/appointmentUtils';
 
 interface UrgentAlertBannerProps {
   cases: AppealCase[];
@@ -13,6 +20,7 @@ interface UrgentAlertBannerProps {
   onSendEmailAlert?: (caseItem: AppealCase) => void;
   onSendAllUrgentEmails?: () => void;
   onQuickChangeRequisitionStatus?: (caseItem: AppealCase, newStatus: 'confessed' | 'denied') => void;
+  onQuickChangePleaStatus?: (caseItem: AppealCase, newStatus: 'confessed' | 'denied' | 'pending' | 'requisition') => void;
   onEditCase?: (caseItem: AppealCase) => void;
   onRecordJudgment?: (caseItem: AppealCase) => void;
   onMarkSeveredCompleted?: (caseItem: AppealCase, newBlackNo?: string) => void;
@@ -28,6 +36,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
   onSendEmailAlert,
   onSendAllUrgentEmails,
   onQuickChangeRequisitionStatus,
+  onQuickChangePleaStatus,
   onEditCase,
   onRecordJudgment,
   onMarkSeveredCompleted,
@@ -55,6 +64,16 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
       alertInfo: getMissingJudgmentAlertInfo(c),
     }))
     .filter(({ alertInfo }) => alertInfo.isEligible && alertInfo.isAlertDue)
+    .sort((a, b) => b.alertInfo.daysElapsed - a.alertInfo.daysElapsed);
+
+  // สำนวนที่ยังไม่เลือกสถานะ: แจ้งเตือนทุกๆ 5 วัน เพื่อตรวจสอบว่าจำเลยให้การอย่างไร สถานะไหน
+  const pendingUnspecifiedAlertCases = cases
+    .filter((c) => isCaseUnspecifiedStage(c) && !c.isCompleted && !c.isTemporarilyDischarged)
+    .map((c) => ({
+      caseItem: c,
+      alertInfo: getUnspecifiedStageAlertInfo(c),
+    }))
+    .filter(({ alertInfo }) => alertInfo.isAlertDue)
     .sort((a, b) => b.alertInfo.daysElapsed - a.alertInfo.daysElapsed);
 
   // กรองเฉพาะสำนวนที่ "ยังไม่เสร็จสิ้น" และ "ใกล้ครบกำหนด หรือขาดอุทธรณ์แล้ว" (urgency: overdue, critical, warning)
@@ -88,6 +107,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
   if (
     urgentCases.length === 0 &&
     pendingRequisitionCasesWithAlert.length === 0 &&
+    pendingUnspecifiedAlertCases.length === 0 &&
     kunchartPendingCases.length === 0 &&
     pendingSeveredAlertCases.length === 0 &&
     pendingMissingJudgmentAlertCases.length === 0
@@ -134,14 +154,14 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold text-base sm:text-lg text-white font-['Prompt']">
-                    เตือนต้องแยกฟ้องจำเลยที่ปฏิเสธภายใน 7 วัน: พบ {pendingSeveredAlertCases.length} สำนวน
+                    เตือนต้องแยกฟ้องจำเลยที่ปฏิเสธ (ภายใน 7 หรือ 15 วัน): พบ {pendingSeveredAlertCases.length} สำนวน
                   </h3>
                   <span className="bg-purple-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-xs border border-purple-400/60">
                     ป.วิ.อ. มาตรา 176 วรรคสอง
                   </span>
                 </div>
                 <p className="text-xs text-purple-200 mt-0.5">
-                  คดีที่มีจำเลยหลายคน โดยจำเลยบางคนรับสารภาพและบางคนให้การปฏิเสธ ศาลมีคำสั่งให้พนักงานอัยการแยกฟ้องจำเลยที่ปฏิเสธภายใน 7 วัน
+                  คดีที่มีจำเลยหลายคน โดยจำเลยบางคนรับสารภาพและบางคนให้การปฏิเสธ ศาลมีคำสั่งให้พนักงานอัยการแยกฟ้องจำเลยที่ปฏิเสธภายในกำหนด (7 วัน หรือ 15 วัน)
                 </p>
               </div>
             </div>
@@ -203,7 +223,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       </div>
                       <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-700/40 text-slate-400">
                         <span>ศาลสั่ง: {formatThaiDate(alertInfo.orderDate)}</span>
-                        <span className="text-rose-300 font-semibold">ครบ 7 วัน: {formatThaiDate(alertInfo.deadlineDate)}</span>
+                        <span className="text-rose-300 font-semibold">ครบ {caseItem.severedFilingDaysLimit || 7} วัน: {formatThaiDate(alertInfo.deadlineDate)}</span>
                       </div>
                       <div className="text-[11px] text-slate-400">
                         <span>👔 เจ้าของสำนวน: {caseItem.responsiblePerson || 'รอกำหนด'}</span>
@@ -483,6 +503,152 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                         </button>
                       )}
                     </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 0.9 แจ้งเตือนสำนวนที่ยังไม่เลือกสถานะ (เตือนทุกๆ 5 วัน ให้ตรวจสอบว่ามีจำเลยให้การอย่างไร สถานะไหน) */}
+      {pendingUnspecifiedAlertCases.length > 0 && (
+        <div className="bg-gradient-to-r from-rose-50 via-red-50 to-rose-100/90 border-2 border-rose-400 rounded-2xl p-4 sm:p-5 shadow-sm transition-all animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-rose-200/90 gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-md shadow-rose-500/30 animate-pulse flex-shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-base sm:text-lg text-rose-950 font-['Prompt']">
+                    แจ้งเตือนสำนวนยังไม่เลือกสถานะ: พบ {pendingUnspecifiedAlertCases.length} สำนวนที่ต้องตรวจสอบคำให้การ
+                  </h3>
+                  <span className="bg-rose-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                    เตือนทุก 5 วัน
+                  </span>
+                </div>
+                <p className="text-xs text-rose-800 mt-0.5">
+                  สำนวนที่คุมการฟ้องไว้โดยยังไม่ระบุสถานะ จะได้รับการแจ้งเตือนทุกๆ 5 วัน เพื่อให้ตรวจสอบว่า <strong>จำเลยให้การอย่างไร</strong> (รับสารภาพ / ปฏิเสธ) หรือ <strong>อยู่ในสถานะไหน</strong>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-3.5">
+            {pendingUnspecifiedAlertCases.map(({ caseItem, alertInfo }) => {
+              const changeStatus = (st: 'confessed' | 'denied' | 'requisition') => {
+                if (onQuickChangePleaStatus) {
+                  onQuickChangePleaStatus(caseItem, st);
+                } else if (onQuickChangeRequisitionStatus && (st === 'confessed' || st === 'denied')) {
+                  onQuickChangeRequisitionStatus(caseItem, st);
+                }
+              };
+
+              return (
+                <div
+                  key={caseItem.id}
+                  className="rounded-xl p-3.5 border-2 border-rose-300 bg-white shadow-xs flex flex-col justify-between transition hover:shadow-md"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 text-sm font-['Prompt']">
+                          ดำ {caseItem.blackCaseNo}
+                        </span>
+                        {caseItem.redCaseNo && (
+                          <span className="text-xs text-rose-700 font-semibold bg-rose-100 px-1.5 py-0.5 rounded border border-rose-200">
+                            แดง {caseItem.redCaseNo}
+                          </span>
+                        )}
+                        {caseItem.responsiblePerson && (
+                          <span className="text-[10px] text-indigo-950 bg-indigo-50 font-semibold px-1.5 py-0.5 rounded border border-indigo-200" title={`อัยการเจ้าของสำนวน: ${caseItem.responsiblePerson}`}>
+                            👔 {caseItem.responsiblePerson}
+                          </span>
+                        )}
+                        {caseItem.prosecutorName && (
+                          <span className="text-[10px] text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200" title={`อัยการเวรชี้: ${caseItem.prosecutorName}`}>
+                            ⚖️ {caseItem.prosecutorName}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded-full shrink-0 shadow-2xs">
+                        🚨 รอบที่ {alertInfo.cycle}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-700 space-y-1 mb-2.5">
+                      <div className="font-medium text-slate-800 truncate" title={caseItem.court}>
+                        📍 {caseItem.court}
+                      </div>
+                      <div className="text-slate-600 truncate text-[11px]">
+                        <span className="font-medium text-slate-700">จำเลย:</span> {caseItem.defendant}
+                      </div>
+                      {caseItem.filingDate && (
+                        <div className="text-slate-500 text-[11px]">
+                          📅 วันที่ยื่นฟ้อง: {formatThaiDate(caseItem.filingDate)}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* กล่องข้อความแจ้งเตือน 5 วัน */}
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-[11px] text-rose-950 space-y-1 mb-3">
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="text-rose-900">
+                          {alertInfo.badgeLabel}
+                        </span>
+                        <span className="text-[10px] text-rose-600 font-medium">
+                          {alertInfo.isExactIntervalToday ? '🔥 ครบ 5 วันพอดีวันนี้' : `รอบถัดไปอีก ${alertInfo.daysUntilNextAlert} วัน`}
+                        </span>
+                      </div>
+                      <div className="text-[10.5px] text-rose-800 leading-snug">
+                        ⚠️ <strong>คำแนะนำ:</strong> กรุณาตรวจสอบว่าจำเลยให้การอย่างไร และเลือกสถานะของสำนวนคดี
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Change Status Buttons */}
+                  <div className="pt-2.5 border-t border-slate-100 space-y-1.5">
+                    <div className="text-[10px] font-bold text-slate-600">เลือกสถานะคำให้การทันที:</div>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => changeStatus('confessed')}
+                        className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 border border-yellow-400 font-bold text-[10px] py-1.5 px-1 rounded-lg flex items-center justify-center gap-0.5 transition shadow-2xs cursor-pointer active:scale-95"
+                        title="ระบุว่าจำเลยรับสารภาพ (แถวสีเหลือง)"
+                      >
+                        <span>🟡 รับสารภาพ</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeStatus('denied')}
+                        className="bg-orange-200 hover:bg-orange-300 text-orange-950 border border-orange-400 font-bold text-[10px] py-1.5 px-1 rounded-lg flex items-center justify-center gap-0.5 transition shadow-2xs cursor-pointer active:scale-95"
+                        title="ระบุว่าจำเลยปฏิเสธ (คุ้มครองสิทธิ แถวสีส้ม)"
+                      >
+                        <span>🟠 ปฏิเสธ</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeStatus('requisition')}
+                        className="bg-emerald-200 hover:bg-emerald-300 text-emerald-950 border border-emerald-400 font-bold text-[10px] py-1.5 px-1 rounded-lg flex items-center justify-center gap-0.5 transition shadow-2xs cursor-pointer active:scale-95"
+                        title="ระบุว่าเป็นสำนวนเบิกฟ้อง (แถวสีเขียว)"
+                      >
+                        <span>🟢 เบิกฟ้อง</span>
+                      </button>
+                    </div>
+                    {onEditCase && (
+                      <div className="pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => onEditCase(caseItem)}
+                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
+                          title="เปิดแบบฟอร์มเพื่อแก้ไขรายละเอียดสำนวน"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>เปิดแก้ไขเพื่อระบุรายละเอียดเพิ่มเติม</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

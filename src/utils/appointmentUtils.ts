@@ -535,6 +535,136 @@ export function getRequisitionAlertInfo(
   }
 }
 
+export interface UnspecifiedStageAlertInfo {
+  isPending: boolean;              // เป็นสำนวนที่ยังไม่เลือกสถานะและยังไม่เสร็จสิ้นหรือไม่
+  daysElapsed: number;             // จำนวนวันที่ค้างมาแล้วนับแต่วันที่ฟ้อง
+  isAlertDue: boolean;             // ถึงรอบการแจ้งเตือนแล้วหรือไม่ (daysElapsed >= 5)
+  cycle: number;                   // รอบการเตือน (รอบที่ 1 เมื่อ >= 5, รอบที่ 2 เมื่อ >= 10, ...)
+  isExactIntervalToday: boolean;   // ครบรอบ 5 วันพอดีในวันนี้ (เช่น วันที่ 5, 10, 15, 20...)
+  daysUntilNextAlert: number;      // อีกกี่วันจะถึงรอบเตือนถัดไป (1 - 5)
+  baseDate: string;                // วันที่ใช้อ้างอิงคำนวณ (filingDate / createdAt)
+  alertTitle: string;              // ข้อความหัวเรื่องแจ้งเตือน
+  alertDescription: string;        // รายละเอียด
+  badgeLabel: string;              // ป้ายข้อความย่อ
+  urgencyLevel: 'critical' | 'warning' | 'info' | 'none';
+}
+
+/**
+ * คำนวณรอบการแจ้งเตือนทุกๆ 5 วัน สำหรับสำนวนที่ยังไม่ได้เลือกสถานะ
+ * เพื่อแจ้งเตือนให้ตรวจสอบว่ามีจำเลยให้การอย่างไร สถานะไหน ตามคำขอผู้ใช้
+ */
+export function getUnspecifiedStageAlertInfo(
+  c?: Partial<AppealCase> | null,
+  refDate: Date = new Date()
+): UnspecifiedStageAlertInfo {
+  if (!c || !isCaseUnspecifiedStage(c) || c.isCompleted || c.isTemporarilyDischarged) {
+    return {
+      isPending: false,
+      daysElapsed: 0,
+      isAlertDue: false,
+      cycle: 0,
+      isExactIntervalToday: false,
+      daysUntilNextAlert: 0,
+      baseDate: '',
+      alertTitle: '',
+      alertDescription: '',
+      badgeLabel: '',
+      urgencyLevel: 'none',
+    };
+  }
+
+  // วันที่ตั้งต้นในการคำนวณ: ใช้วันที่ฟ้อง (filingDate) หรือวันที่สร้างสำนวน (createdAt)
+  const baseDate = c.filingDate || (c.createdAt ? c.createdAt.slice(0, 10) : '');
+  
+  if (!baseDate) {
+    return {
+      isPending: true,
+      daysElapsed: 0,
+      isAlertDue: false,
+      cycle: 0,
+      isExactIntervalToday: false,
+      daysUntilNextAlert: 5,
+      baseDate: '',
+      alertTitle: 'สำนวนยังไม่เลือกสถานะ',
+      alertDescription: 'ตรวจสอบว่าจำเลยให้การอย่างไร หรืออยู่ในสถานะไหน',
+      badgeLabel: '🚨 ยังไม่เลือกสถานะ',
+      urgencyLevel: 'info',
+    };
+  }
+
+  try {
+    const [y, m, d] = baseDate.split('-').map(Number);
+    const baseZero = new Date(y, m - 1, d);
+    const todayZero = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+    
+    const diffDays = Math.floor((todayZero.getTime() - baseZero.getTime()) / (1000 * 60 * 60 * 24));
+    const daysElapsed = Math.max(0, diffDays);
+
+    const isAlertDue = daysElapsed >= 5;
+    const cycle = isAlertDue ? Math.floor(daysElapsed / 5) : 0;
+    const isExactIntervalToday = isAlertDue && daysElapsed % 5 === 0;
+    
+    // จำนวนวันจะถึงรอบ 5 วันถัดไป
+    const remainder = daysElapsed % 5;
+    const daysUntilNextAlert = remainder === 0 ? 5 : 5 - remainder;
+
+    let urgencyLevel: 'critical' | 'warning' | 'info' | 'none' = 'info';
+    if (daysElapsed >= 15) {
+      urgencyLevel = 'critical';
+    } else if (daysElapsed >= 5) {
+      urgencyLevel = 'warning';
+    }
+
+    let badgeLabel = '';
+    let alertTitle = '';
+    let alertDescription = '';
+
+    if (isAlertDue) {
+      if (isExactIntervalToday) {
+        badgeLabel = `🚨 เตือนรอบที่ ${cycle} (ครบ ${daysElapsed} วันพอดี)`;
+        alertTitle = `แจ้งเตือนรอบที่ ${cycle}: สำนวนยังไม่เลือกสถานะครบกำหนด ${daysElapsed} วัน`;
+        alertDescription = `โปรดตรวจสอบว่าจำเลยให้การอย่างไร (รับสารภาพ / ปฏิเสธ) หรืออยู่ในสถานะใด (เตือนทุกๆ 5 วัน)`;
+      } else {
+        badgeLabel = `🚨 เตือนรอบที่ ${cycle} (ค้างมา ${daysElapsed} วัน)`;
+        alertTitle = `แจ้งเตือนรอบที่ ${cycle}: สำนวนยังไม่เลือกสถานะค้างมาแล้ว ${daysElapsed} วัน`;
+        alertDescription = `โปรดตรวจสอบว่าจำเลยให้การอย่างไร (รับสารภาพ / ปฏิเสธ) หรืออยู่ในสถานะใด (รอบเตือนถัดไปอีก ${daysUntilNextAlert} วัน)`;
+      }
+    } else {
+      badgeLabel = `⏱️ รอผล ${daysElapsed} วัน (เตือนรอบแรกอีก ${daysUntilNextAlert} วัน)`;
+      alertTitle = `สำนวนยังไม่เลือกสถานะ (ยื่นฟ้องมาแล้ว ${daysElapsed} วัน)`;
+      alertDescription = `ระบบจะแจ้งเตือนทุกๆ 5 วัน เพื่อตรวจสอบว่าจำเลยให้การอย่างไร สถานะไหน`;
+    }
+
+    return {
+      isPending: true,
+      daysElapsed,
+      isAlertDue,
+      cycle,
+      isExactIntervalToday,
+      daysUntilNextAlert,
+      baseDate,
+      alertTitle,
+      alertDescription,
+      badgeLabel,
+      urgencyLevel,
+    };
+  } catch {
+    return {
+      isPending: true,
+      daysElapsed: 0,
+      isAlertDue: false,
+      cycle: 0,
+      isExactIntervalToday: false,
+      daysUntilNextAlert: 5,
+      baseDate,
+      alertTitle: 'สำนวนยังไม่เลือกสถานะ',
+      alertDescription: 'ตรวจสอบว่าจำเลยให้การอย่างไร หรืออยู่ในสถานะไหน',
+      badgeLabel: '🚨 ยังไม่เลือกสถานะ',
+      urgencyLevel: 'info',
+    };
+  }
+}
+
 export interface MissingJudgmentAlertInfo {
   isEligible: boolean;             // เป็นคดีที่มีคำพิพากษาแล้วแต่ยังไม่มีการกรอกข้อมูลวันพิพากษา
   hasJudgmentPronounced: boolean;  // เข้าข่ายมีคำพิพากษาแล้ว

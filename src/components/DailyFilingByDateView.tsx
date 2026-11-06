@@ -65,6 +65,7 @@ import {
   isPendingRequisitionCase,
   getRequisitionAlertInfo,
   isCaseUnspecifiedStage,
+  getUnspecifiedStageAlertInfo,
   isCaseTemporarilyDischarged,
 } from '../utils/appointmentUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
@@ -2140,26 +2141,37 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                     className={`rounded-xl p-3 sm:p-3.5 shadow-2xs hover:shadow-xs transition border ${cardStyle.cardClass}`}
                   >
                     {/* แถบสีแดงเตือน: ยังไม่เลือกสถานะสำนวนในการพิจารณาของศาล (คุมสำนวนที่จะฟ้องในวันไว้ก่อน) */}
-                    {isUnspecified && (
-                      <div className="mb-2.5 bg-gradient-to-r from-rose-600 via-rose-600 to-red-600 text-white rounded-lg p-2.5 shadow-xs border border-rose-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-200 animate-bounce" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-xs font-bold font-['Prompt'] tracking-wide">
-                                ⚠️ ยังไม่เลือกสถานะสำนวนในการพิจารณาของศาล
-                              </span>
-                              <span className="text-[10px] bg-rose-950/60 text-rose-100 px-1.5 py-0.2 rounded border border-rose-400 font-normal">
-                                คุมสำนวนที่จะฟ้องในวันไว้ก่อน
-                              </span>
+                    {isUnspecified && (() => {
+                      const unspecifiedAlert = getUnspecifiedStageAlertInfo(caseItem);
+                      return (
+                        <div className="mb-2.5 bg-gradient-to-r from-rose-600 via-rose-600 to-red-600 text-white rounded-lg p-2.5 shadow-xs border border-rose-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-200 animate-bounce" />
                             </div>
-                            <p className="text-[11px] text-rose-100 leading-tight mt-0.5">
-                              เมื่อทราบผลการพิจารณาของศาลแล้ว กรุณาเลือกสถานะสำนวนด้านล่างนี้
-                            </p>
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold font-['Prompt'] tracking-wide">
+                                  ⚠️ ยังไม่เลือกสถานะสำนวนในการพิจารณาของศาล
+                                </span>
+                                <span className="text-[10px] bg-rose-950/60 text-rose-100 px-1.5 py-0.2 rounded border border-rose-400 font-normal">
+                                  คุมสำนวนที่จะฟ้องในวันไว้ก่อน
+                                </span>
+                                {unspecifiedAlert.isAlertDue ? (
+                                  <span className="text-[10px] bg-amber-400 text-rose-950 px-1.5 py-0.2 rounded font-bold animate-pulse shadow-xs">
+                                    🔔 เตือนรอบที่ {unspecifiedAlert.cycle} (ครบ {unspecifiedAlert.daysElapsed} วัน)
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] bg-rose-900/60 text-rose-200 px-1.5 py-0.2 rounded font-normal">
+                                    เตือนในอีก {unspecifiedAlert.daysUntilNextAlert} วัน
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-rose-100 leading-tight mt-0.5">
+                                แจ้งเตือนทุกๆ 5 วัน: กรุณาตรวจสอบว่ามีจำเลยให้การอย่างไร (รับสารภาพ / ปฏิเสธ) สถานะไหน
+                              </p>
+                            </div>
                           </div>
-                        </div>
 
                         {canEdit && (
                           <div className="flex items-center gap-1 flex-wrap shrink-0">
@@ -2210,7 +2222,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           </div>
                         )}
                       </div>
-                    )}
+                    ); })()}
 
                     <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
                       {/* Case Info */}
@@ -2511,7 +2523,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-purple-200/80 text-purple-900 flex-wrap gap-1.5">
                                   <div>
                                     <span>ศาลสั่ง: <strong>{formatThaiDate(alertInfo.orderDate)}</strong> • </span>
-                                    <span className="font-bold text-rose-700">ครบ 7 วัน: {formatThaiDate(alertInfo.deadlineDate)}</span>
+                                    <span className="font-bold text-rose-700">ครบ {caseItem.severedFilingDaysLimit || 7} วัน: {formatThaiDate(alertInfo.deadlineDate)}</span>
                                   </div>
                                   <div className="flex items-center gap-1.5">
                                     {!caseItem.isSeveredFilingCompleted && onMarkSeveredCompleted && (

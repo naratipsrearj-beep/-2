@@ -1,6 +1,7 @@
 export type AppealUrgency = 'overdue' | 'critical' | 'warning' | 'normal' | 'completed' | 'pending_trial' | 'temporarily_discharged';
 
 export type CaseCompletionReason = 
+  | 'submitted_appellate' // เสนออัยการศาลสูงแล้ว
   | 'appealed'        // ยื่นอุทธรณ์แล้ว
   | 'no_appeal'       // มีคำสั่งไม่อุทธรณ์ / ยุติ
   | 'finalized'       // คดีถึงที่สุดแล้ว
@@ -102,8 +103,9 @@ export interface AppealCase {
   confessedDefendants?: string;     // รายชื่อจำเลยที่รับสารภาพ (เช่น จำเลยที่ 1)
   deniedDefendants?: string;        // รายชื่อจำเลยที่ปฏิเสธ (เช่น จำเลยที่ 2)
   hasPendingSeveredFiling?: boolean; // ศาลมีคำสั่งให้พนักงานอัยการแยกฟ้องจำเลยที่ปฏิเสธ
+  severedFilingDaysLimit?: number;  // กำหนดระยะเวลายื่นแยกฟ้องตามคำสั่งศาล (เช่น 7 วัน หรือ 15 วัน)
   severedFilingOrderDate?: string;  // วันที่ศาลมีคำสั่งให้แยกฟ้อง (YYYY-MM-DD)
-  severedFilingDeadline?: string;   // วันครบกำหนดยื่นแยกฟ้อง 7 วัน (YYYY-MM-DD)
+  severedFilingDeadline?: string;   // วันครบกำหนดยื่นแยกฟ้อง (YYYY-MM-DD)
   isSeveredFilingCompleted?: boolean;// ดำเนินการแยกฟ้องแล้วหรือไม่
   severedNewBlackCaseNo?: string;   // เลขคดีดำของสำนวนที่แยกฟ้องใหม่ (เช่น อ.125/2569)
   severedNewCaseId?: string;        // ID ของสำนวนคดีใหม่ที่แยกฟ้องแล้ว
@@ -228,6 +230,8 @@ export type ActivityActionType =
   | 'case_created'            // เพิ่มสำนวนคดีใหม่
   | 'case_updated'            // แก้ไขข้อมูลสำนวนคดี
   | 'case_deleted'            // ลบสำนวนคดี
+  | 'case_reverted'           // ย้อนกลับข้อมูลสำนวนคดี
+  | 'case_restored'           // กู้คืนสำนวนคดีที่ลบไป
   | 'duty_submitted'          // เสนอเวรชี้
   | 'duty_cancelled'          // ยกเลิกการเสนอเวรชี้
   | 'judgment_recorded'       // บันทึกคำพิพากษา
@@ -258,5 +262,46 @@ export interface ActivityLog {
     completionReason?: string;
     [key: string]: any;
   };
+}
+
+// ==================== ระบบประวัติเวอร์ชันและการย้อนกลับข้อมูล (Case Revision & Rollback) ====================
+export interface CaseFieldDiff {
+  field: string;
+  fieldLabel: string;
+  oldValue: any;
+  newValue: any;
+  oldValueFormatted: string;
+  newValueFormatted: string;
+}
+
+export interface CaseRevision {
+  id: string;
+  caseId: string;
+  blackCaseNo: string;
+  redCaseNo?: string;
+  court?: string;
+  prosecutorName?: string;
+  timestamp: string;          // ISO string
+  editorName: string;         // ผู้ทำการแก้ไข/ย้อนกลับ
+  editorRole: string;
+  editorEmail?: string;
+  actionType: 'edit' | 'judgment' | 'extension' | 'completion' | 'revert' | 'status_change' | 'other';
+  actionTitle: string;        // เช่น "แก้ไขข้อมูลสำนวน", "บันทึกคำพิพากษา", "ย้อนกลับข้อมูล"
+  changeSummary: string;      // สรุปสิ่งที่เปลี่ยนแปลง เช่น "เปลี่ยนวันพิพากษา, แก้ไขชื่ออัยการ"
+  diffs: CaseFieldDiff[];     // รายการฟิลด์ที่มีการเปลี่ยนแปลง
+  snapshotBefore: AppealCase; // ข้อมูลสำนวนก่อนแก้ไข (พร้อมให้กดย้อนกลับ)
+  snapshotAfter: AppealCase;  // ข้อมูลสำนวนหลังแก้ไข
+}
+
+export interface DeletedCaseBackup {
+  id: string;
+  caseId: string;
+  blackCaseNo: string;
+  redCaseNo?: string;
+  court?: string;
+  deletedAt: string;          // ISO string
+  deletedBy: string;
+  deletedRole: string;
+  caseData: AppealCase;       // ข้อมูลสำนวนเต็มที่สามารถกู้คืนกลับมาได้
 }
 

@@ -266,7 +266,7 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500 mt-0.5">
-                    ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง พิมพ์ลงกระดาษตราครุฑ / Google Docs
+                    ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง ดาวน์โหลดไฟล์ Word (.doc) / พิมพ์ลงกระดาษตราครุฑ / Google Docs
                   </div>
                 </div>
               </button>
@@ -474,7 +474,7 @@ export const CopyCaseDropdown: React.FC<CopyCaseDropdownProps> = ({
                   </span>
                 </div>
                 <div className="text-[10px] text-slate-500 mt-0.5">
-                  ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง พิมพ์ลงกระดาษตราครุฑ / Google Docs
+                  ใส่ข้อมูลใน ( ) พร้อมไฮไลท์สีเหลือง ดาวน์โหลดไฟล์ Word (.doc) / พิมพ์ลงกระดาษตราครุฑ / Google Docs
                 </div>
               </div>
             </button>

@@ -25,11 +25,12 @@ import {
   Sparkles,
   Loader2,
   Users,
-  Send
+  Send,
+  RotateCcw
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, CaseAppointment, MonthlyDutyRoster, CaseCompletionReason } from '../types/appeal';
 import { calculateAppealDeadline, calculateSeveredDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
-import { isJudgmentRecorded, isCaseUnspecifiedStage } from '../utils/appointmentUtils';
+import { isJudgmentRecorded, isCaseUnspecifiedStage, getUnspecifiedStageAlertInfo } from '../utils/appointmentUtils';
 import { appointmentTypeOptions } from './CourtAppointmentModal';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate, getAllOfficersGroupedByMonth } from '../services/dutyService';
@@ -45,6 +46,7 @@ interface EditCaseModalProps {
   suggestedDutyOfficer?: string;
   dutyRosters?: MonthlyDutyRoster[];
   existingCases?: AppealCase[];
+  onOpenRevisions?: (caseId: string, blackCaseNo: string) => void;
 }
 
 export const EditCaseModal: React.FC<EditCaseModalProps> = ({
@@ -57,6 +59,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   suggestedDutyOfficer,
   dutyRosters = [],
   existingCases = [],
+  onOpenRevisions,
 }) => {
   const [filingDate, setFilingDate] = useState<string>('');
   const [blackCaseNo, setBlackCaseNo] = useState('');
@@ -87,6 +90,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   const [confessedDefendants, setConfessedDefendants] = useState<string>('');
   const [deniedDefendants, setDeniedDefendants] = useState<string>('');
   const [hasPendingSeveredFiling, setHasPendingSeveredFiling] = useState<boolean>(false);
+  const [severedFilingDaysLimit, setSeveredFilingDaysLimit] = useState<number>(7);
   const [severedFilingOrderDate, setSeveredFilingOrderDate] = useState<string>('');
   const [severedFilingDeadline, setSeveredFilingDeadline] = useState<string>('');
   const [isSeveredFilingCompleted, setIsSeveredFilingCompleted] = useState<boolean>(false);
@@ -129,7 +133,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   // สถานะเสร็จสิ้นสำนวน & วันที่เสร็จสิ้น
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [completedDate, setCompletedDate] = useState<string>('');
-  const [completionReason, setCompletionReason] = useState<CaseCompletionReason>('appealed');
+  const [completionReason, setCompletionReason] = useState<CaseCompletionReason>('submitted_appellate');
   const [isNoAppealConfirmed, setIsNoAppealConfirmed] = useState<boolean>(false);
 
   // สำนวนเบิกฟ้อง
@@ -206,6 +210,19 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       setConfessedDefendants(caseItem.confessedDefendants || '');
       setDeniedDefendants(caseItem.deniedDefendants || '');
       setHasPendingSeveredFiling(Boolean(caseItem.hasPendingSeveredFiling));
+      let initialDaysLimit = caseItem.severedFilingDaysLimit;
+      if (!initialDaysLimit && caseItem.severedFilingOrderDate && caseItem.severedFilingDeadline) {
+        try {
+          const d1 = new Date(caseItem.severedFilingOrderDate).getTime();
+          const d2 = new Date(caseItem.severedFilingDeadline).getTime();
+          const diffDays = Math.round((d2 - d1) / (1000 * 3600 * 24));
+          if (diffDays >= 12) initialDaysLimit = 15;
+          else initialDaysLimit = 7;
+        } catch {
+          initialDaysLimit = 7;
+        }
+      }
+      setSeveredFilingDaysLimit(initialDaysLimit || 7);
       setSeveredFilingOrderDate(caseItem.severedFilingOrderDate || '');
       setSeveredFilingDeadline(caseItem.severedFilingDeadline || '');
       setIsSeveredFilingCompleted(Boolean(caseItem.isSeveredFilingCompleted));
@@ -245,7 +262,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
       setIsCompleted(Boolean(caseItem.isCompleted));
       setCompletedDate(caseItem.completedDate || (caseItem.isCompleted ? getTodayString() : ''));
-      setCompletionReason(caseItem.completionReason || 'appealed');
+      setCompletionReason(caseItem.completionReason || 'submitted_appellate');
       setIsNoAppealConfirmed(Boolean(caseItem.isNoAppealConfirmed));
 
       setIsSubmittedToDuty(Boolean(caseItem.isSubmittedToDuty));
@@ -470,9 +487,10 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       confessedDefendants: hasPartialDenial ? (confessedDefendants.trim() || undefined) : undefined,
       deniedDefendants: hasPartialDenial ? (deniedDefendants.trim() || undefined) : undefined,
       hasPendingSeveredFiling: hasPartialDenial ? hasPendingSeveredFiling : false,
+      severedFilingDaysLimit: (hasPartialDenial && hasPendingSeveredFiling) ? severedFilingDaysLimit : undefined,
       severedFilingOrderDate: (hasPartialDenial && hasPendingSeveredFiling) ? (severedFilingOrderDate || judgmentDate || filingDate || undefined) : undefined,
       severedFilingDeadline: (hasPartialDenial && hasPendingSeveredFiling)
-        ? (severedFilingDeadline || calculateSeveredDeadline(severedFilingOrderDate || judgmentDate || filingDate, 7).deadlineDate)
+        ? (severedFilingDeadline || calculateSeveredDeadline(severedFilingOrderDate || judgmentDate || filingDate, severedFilingDaysLimit).deadlineDate)
         : undefined,
       isSeveredFilingCompleted: (hasPartialDenial && hasPendingSeveredFiling) ? isSeveredFilingCompleted : undefined,
       severedNewBlackCaseNo: (hasPartialDenial && hasPendingSeveredFiling && isSeveredFilingCompleted) ? (severedNewBlackCaseNo.trim() || undefined) : undefined,
@@ -531,12 +549,26 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onOpenRevisions && caseItem && (
+              <button
+                type="button"
+                onClick={() => onOpenRevisions(caseItem.id, caseItem.blackCaseNo)}
+                className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+                title="ดูประวัติการแก้ไขและย้อนกลับข้อมูลเดิมของสำนวนนี้"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">ย้อนหลังข้อมูล / ดูประวัติ</span>
+                <span className="sm:hidden">ย้อนข้อมูล</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-white p-1 rounded-lg transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Form */}
@@ -792,6 +824,39 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* ข้อมูลการแจ้งเตือนรอบ 5 วัน เมื่ออยู่ในสถานะ "ยังไม่เลือกสถานะ" */}
+          {!isTemporarilyDischarged && isUnspecifiedStage && caseItem && (
+            (() => {
+              const unspecifiedAlert = getUnspecifiedStageAlertInfo(caseItem);
+              return (
+                <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-3.5 space-y-2 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-rose-600 text-white flex items-center justify-center text-xs font-bold shadow-2xs">
+                        🚨
+                      </span>
+                      <h4 className="text-xs font-bold text-rose-950 font-['Prompt']">
+                        สำนวนคุมการฟ้อง (ยังไม่เลือกสถานะสำนวน)
+                      </h4>
+                    </div>
+                    {unspecifiedAlert.isAlertDue ? (
+                      <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-full font-bold shadow-2xs animate-pulse">
+                        🔔 เตือนรอบที่ {unspecifiedAlert.cycle} (ครบ {unspecifiedAlert.daysElapsed} วัน)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-rose-200 text-rose-900 px-2 py-0.5 rounded-full font-semibold">
+                        เตือนรอบแรกในอีก {unspecifiedAlert.daysUntilNextAlert} วัน
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-rose-800 leading-relaxed">
+                    ระบบจะคอยแจ้งเตือนทุกๆ 5 วัน เพื่อให้ตรวจสอบว่า <strong>จำเลยให้การอย่างไร</strong> (รับสารภาพ หรือ ปฏิเสธ) หรือ <strong>อยู่ในสถานะใด</strong> (นัดคุ้มครองสิทธิ, เบิกฟ้อง, แยกฟ้อง) เมื่อทราบผลแล้วสามารถคลิกเลือกตัวเลือกสถานะด้านบนได้ทันที
+                  </p>
+                </div>
+              );
+            })()
+          )}
 
           {/* หัวข้อตัวเลือก: สำนวนจำหน่ายคดีออกจากสารบบชั่วคราว เนื่องจากจำเลยหลบหนี */}
           <div className={`p-3.5 rounded-xl border transition ${
@@ -1458,7 +1523,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                           setHasPendingSeveredFiling(true);
                           const ordDate = judgmentDate || filingDate || getTodayString();
                           setSeveredFilingOrderDate(ordDate);
-                          setSeveredFilingDeadline(calculateSeveredDeadline(ordDate, 7).deadlineDate);
+                          setSeveredFilingDeadline(calculateSeveredDeadline(ordDate, severedFilingDaysLimit).deadlineDate);
                           if (!confessedDefendants && defendant) {
                             setConfessedDefendants(`จำเลยที่ 1 (หรือระบุชื่อ)`);
                           }
@@ -1520,7 +1585,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                               if (checked && !severedFilingOrderDate) {
                                 const ordDate = judgmentDate || filingDate || getTodayString();
                                 setSeveredFilingOrderDate(ordDate);
-                                setSeveredFilingDeadline(calculateSeveredDeadline(ordDate, 7).deadlineDate);
+                                setSeveredFilingDeadline(calculateSeveredDeadline(ordDate, severedFilingDaysLimit).deadlineDate);
                               }
                             }}
                             className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-purple-300"
@@ -1528,7 +1593,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                           <span>⚖️ ศาลมีคำสั่งให้พนักงานอัยการแยกฟ้องจำเลยที่ปฏิเสธ (ป.วิ.อ. ม.176 วรรคสอง)</span>
                         </label>
                         <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">
-                          กำหนด 7 วัน
+                          กำหนด {severedFilingDaysLimit} วัน
                         </span>
                       </div>
 
@@ -1545,7 +1610,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                                   onClick={() => {
                                     const today = getTodayString();
                                     setSeveredFilingOrderDate(today);
-                                    setSeveredFilingDeadline(calculateSeveredDeadline(today, 7).deadlineDate);
+                                    setSeveredFilingDeadline(calculateSeveredDeadline(today, severedFilingDaysLimit).deadlineDate);
                                   }}
                                   className="text-[10px] text-purple-700 hover:text-purple-950 underline cursor-pointer"
                                 >
@@ -1559,20 +1624,67 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                                   const ord = e.target.value;
                                   setSeveredFilingOrderDate(ord);
                                   if (ord) {
-                                    setSeveredFilingDeadline(calculateSeveredDeadline(ord, 7).deadlineDate);
+                                    setSeveredFilingDeadline(calculateSeveredDeadline(ord, severedFilingDaysLimit).deadlineDate);
                                   }
                                 }}
                                 className="w-full text-xs border border-purple-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-medium"
                               />
+
+                              {/* ตัวเลือกระยะเวลาตามคำสั่งศาล: ภายใน 7 วัน หรือ ภายใน 15 วัน */}
+                              <div className="mt-2 p-1.5 bg-purple-100/70 rounded-lg border border-purple-200 flex items-center justify-between gap-1.5">
+                                <span className="text-[11px] font-bold text-purple-950 shrink-0">
+                                  คำสั่งศาล:
+                                </span>
+                                <div className="flex items-center gap-1.5 flex-1 justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSeveredFilingDaysLimit(7);
+                                      const ord = severedFilingOrderDate || judgmentDate || filingDate || getTodayString();
+                                      if (ord) {
+                                        setSeveredFilingDeadline(calculateSeveredDeadline(ord, 7).deadlineDate);
+                                      }
+                                    }}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                      severedFilingDaysLimit === 7
+                                        ? 'bg-purple-700 text-white shadow-2xs'
+                                        : 'bg-white text-purple-900 border border-purple-300 hover:bg-purple-50'
+                                    }`}
+                                    title="ศาลสั่งให้พนักงานอัยการแยกฟ้องภายใน 7 วัน"
+                                  >
+                                    <span>⚡ ภายใน 7 วัน</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSeveredFilingDaysLimit(15);
+                                      const ord = severedFilingOrderDate || judgmentDate || filingDate || getTodayString();
+                                      if (ord) {
+                                        setSeveredFilingDeadline(calculateSeveredDeadline(ord, 15).deadlineDate);
+                                      }
+                                    }}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                      severedFilingDaysLimit === 15
+                                        ? 'bg-purple-700 text-white shadow-2xs'
+                                        : 'bg-white text-purple-900 border border-purple-300 hover:bg-purple-50'
+                                    }`}
+                                    title="ศาลสั่งให้พนักงานอัยการแยกฟ้องภายใน 15 วัน"
+                                  >
+                                    <span>⚡ ภายใน 15 วัน</span>
+                                  </button>
+                                </div>
+                              </div>
                             </div>
 
                             <div>
-                              <label className="block text-xs font-semibold text-purple-950 mb-1 flex items-center justify-between">
-                                <span>กำหนดเวลายื่นแยกฟ้อง (เตือนภายใน 7 วัน) *</span>
-                                <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
-                                  7 วัน
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-xs font-semibold text-purple-950 flex items-center gap-1">
+                                  <span>กำหนดเวลายื่นแยกฟ้อง (เตือนภายใน {severedFilingDaysLimit} วัน) *</span>
+                                </label>
+                                <span className="text-[10px] text-rose-700 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                  {severedFilingDaysLimit} วัน
                                 </span>
-                              </label>
+                              </div>
                               <input
                                 type="date"
                                 value={severedFilingDeadline}
@@ -1580,7 +1692,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                                 className="w-full text-xs border border-purple-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 font-bold text-rose-700"
                               />
                               {severedFilingDeadline && (
-                                <span className="text-[10px] text-purple-800 block mt-0.5">
+                                <span className="text-[10px] text-purple-800 block mt-0.5 font-medium">
                                   ครบกำหนด: {formatThaiDate(severedFilingDeadline, { short: false })}
                                 </span>
                               )}
@@ -1598,7 +1710,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                                   onChange={() => setIsSeveredFilingCompleted(false)}
                                   className="text-purple-600 focus:ring-purple-500"
                                 />
-                                <span>⏳ รอแยกฟ้อง (ระบบจะเตือนนับถอยหลัง 7 วัน)</span>
+                                <span>⏳ รอแยกฟ้อง (ระบบจะเตือนนับถอยหลัง {severedFilingDaysLimit} วัน)</span>
                               </label>
 
                               <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-800">
@@ -1631,7 +1743,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                           <div className="text-[11px] text-purple-900 bg-purple-100/70 p-2 rounded-lg border border-purple-200 flex items-start gap-1.5">
                             <span className="shrink-0 text-xs">🔗</span>
                             <div>
-                              <span><strong>ระบบเชื่อมโยงหัวข้อแยกฟ้อง:</strong> สำนวนนี้จะปรากฏในแท็บ/ตัวกรอง <strong>"✂️ สำนวนที่ศาลแยกฟ้อง"</strong> พร้อมแสดงการแจ้งเตือนเตือนด่วนภายใน 7 วัน และเชื่อมโยงผ่าน ส.1, ส.4 โดยอัตโนมัติ</span>
+                              <span><strong>ระบบเชื่อมโยงหัวข้อแยกฟ้อง:</strong> สำนวนนี้จะปรากฏในแท็บ/ตัวกรอง <strong>"✂️ สำนวนที่ศาลแยกฟ้อง"</strong> พร้อมแสดงการแจ้งเตือนเตือนด่วนภายใน {severedFilingDaysLimit} วัน และเชื่อมโยงผ่าน ส.1, ส.4 โดยอัตโนมัติ</span>
                             </div>
                           </div>
                         </div>
@@ -2517,6 +2629,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                       onChange={(e) => setCompletionReason(e.target.value as CaseCompletionReason)}
                       className="w-full text-xs border border-emerald-300 rounded-lg px-2.5 py-1.5 bg-white text-emerald-950 font-medium focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                     >
+                      <option value="submitted_appellate">เสนออัยการศาลสูงแล้ว</option>
                       <option value="appealed">ยื่นอุทธรณ์ต่อศาลเรียบร้อยแล้ว</option>
                       <option value="no_appeal">มีคำสั่งไม่อุทธรณ์ / ยุติการดำเนินคดี</option>
                       <option value="finalized">คดีถึงที่สุดตามคำพิพากษาศาลชั้นต้น</option>

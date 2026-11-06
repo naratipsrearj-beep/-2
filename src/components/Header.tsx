@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History, RotateCcw } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
 import { AppAuthUser } from '../services/auth';
 
@@ -10,6 +10,7 @@ interface HeaderProps {
   role?: 'admin' | 'editor' | 'appeal_officer' | 'viewer';
   pendingRequestsCount?: number;
   activityLogsCount?: number;
+  revisionsCount?: number;
   sheetConfig: SheetConfig | null;
   todayDutyOfficer?: string;
   onOpenDutyRoster?: () => void;
@@ -26,6 +27,7 @@ interface HeaderProps {
   onDownloadBackup?: () => void;
   onOpenBackupViewer?: () => void;
   onOpenActivityLog?: () => void;
+  onOpenRevisions?: () => void;
   connectionStatus?: 'connected' | 'error' | 'connecting';
   firebaseProjectId?: string;
   onOpenRulesGuide?: () => void;
@@ -36,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   role = 'viewer',
   pendingRequestsCount = 0,
   activityLogsCount = 0,
+  revisionsCount = 0,
   sheetConfig,
   todayDutyOfficer,
   onOpenDutyRoster,
@@ -52,6 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
   onDownloadBackup,
   onOpenBackupViewer,
   onOpenActivityLog,
+  onOpenRevisions,
   connectionStatus = 'connected',
   firebaseProjectId = 'nrt555',
   onOpenRulesGuide,
@@ -237,6 +241,25 @@ export const Header: React.FC<HeaderProps> = ({
                 {activityLogsCount > 0 && (
                   <span className="bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full font-mono">
                     {activityLogsCount > 99 ? '99+' : activityLogsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Revert / Version History: ย้อนกลับข้อมูล & ประวัติการแก้ไข (สำหรับแอดมินและผู้ร่วมแก้ไข) */}
+            {(role === 'admin' || role === 'editor') && onOpenRevisions && (
+              <button
+                type="button"
+                onClick={onOpenRevisions}
+                className="flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/45 text-amber-200 border border-amber-500/50 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer relative"
+                title="ระบบย้อนกลับข้อมูลที่กรอกไปแล้ว และดูประวัติการแก้ไขสำนวนคดี (Data Rollback & Revision History)"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden sm:inline">ย้อนหลังข้อมูล</span>
+                <span className="sm:hidden">ย้อนข้อมูล</span>
+                {revisionsCount > 0 && (
+                  <span className="bg-amber-400 text-slate-950 text-[10px] font-bold px-1.5 py-0.2 rounded-full font-mono">
+                    {revisionsCount > 99 ? '99+' : revisionsCount}
                   </span>
                 )}
               </button>

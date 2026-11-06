@@ -247,6 +247,7 @@ export function formatCompletedDate(c: AppealCase, concise: boolean = false): st
       const dateStr = formatThaiDate(c.completedDate, { short: true });
       if (!concise && c.completionReason) {
         const reasonMap: Record<string, string> = {
+          submitted_appellate: 'เสนออัยการศาลสูงแล้ว',
           appealed: 'ยื่นอุทธรณ์แล้ว',
           no_appeal: 'มีคำสั่งไม่อุทธรณ์/ยุติ',
           finalized: 'คดีถึงที่สุด',

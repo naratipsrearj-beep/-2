@@ -26,7 +26,7 @@ export const CompleteModal: React.FC<CompleteModalProps> = ({
   onReopenCase,
   onEditCase,
 }) => {
-  const [reason, setReason] = useState<CaseCompletionReason>('appealed');
+  const [reason, setReason] = useState<CaseCompletionReason>('submitted_appellate');
   const [completedDate, setCompletedDate] = useState<string>(getTodayString());
   const [notes, setNotes] = useState('');
   const [isNoAppealConfirmed, setIsNoAppealConfirmed] = useState<boolean>(false);
@@ -34,7 +34,7 @@ export const CompleteModal: React.FC<CompleteModalProps> = ({
   // Pre-populate with case details when opening
   useEffect(() => {
     if (caseItem && isOpen) {
-      setReason(caseItem.completionReason || 'appealed');
+      setReason(caseItem.completionReason || 'submitted_appellate');
       setCompletedDate(caseItem.completedDate || getTodayString());
       setNotes(caseItem.notes || '');
       setIsNoAppealConfirmed(Boolean(caseItem.isNoAppealConfirmed));
@@ -169,6 +169,7 @@ export const CompleteModal: React.FC<CompleteModalProps> = ({
                 onChange={(e) => setReason(e.target.value as CaseCompletionReason)}
                 className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium cursor-pointer"
               >
+                <option value="submitted_appellate">เสนออัยการศาลสูงแล้ว</option>
                 <option value="appealed">ยื่นอุทธรณ์ต่อศาลเรียบร้อยแล้ว</option>
                 <option value="no_appeal">มีคำสั่งไม่อุทธรณ์ / ยุติการดำเนินคดี</option>
                 <option value="finalized">คดีถึงที่สุดตามคำพิพากษาศาลชั้นต้น</option>

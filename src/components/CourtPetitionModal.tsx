@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   FileText,
+  FileDown,
   Printer,
   Copy,
   Check,
@@ -17,6 +18,8 @@ import {
   CourtPetitionData,
   PRESET_PETITION_REASONS,
   generateCourtPetitionText,
+  generateCourtPetitionWordHtml,
+  downloadCourtPetitionWordDoc,
   formatCourtThaiDate,
   formatDayMonthYearSimple,
   toThaiNumerals,
@@ -138,9 +141,52 @@ export const CourtPetitionModal: React.FC<CourtPetitionModalProps> = ({
     }
   };
 
-  // Handle Copy to Clipboard (for Word)
+  // Handle Download Microsoft Word Document (.doc)
+  const handleDownloadWordDoc = () => {
+    try {
+      downloadCourtPetitionWordDoc(petitionData, {
+        hasGarudaOnPaper,
+        highlightEnabled,
+        leaveDayBlank,
+      });
+      if (onToast) {
+        onToast(`ดาวน์โหลดไฟล์ Word คำร้องคดีดำ ${caseItem.blackCaseNo} เรียบร้อยแล้ว (สามารถดับเบิลคลิกเปิดใน Microsoft Word ได้ทันที)`);
+      }
+    } catch (err: any) {
+      console.error('Word download error:', err);
+      if (onToast) onToast('ไม่สามารถดาวน์โหลดไฟล์ Word ได้: ' + err.message);
+    }
+  };
+
+  // Handle Copy to Clipboard (Support both Rich Text HTML and Plain Text for Word)
   const handleCopyText = async () => {
     try {
+      const wordHtml = generateCourtPetitionWordHtml(petitionData, {
+        hasGarudaOnPaper,
+        highlightEnabled,
+        leaveDayBlank,
+      });
+
+      // Try rich-text clipboard item first so formatting & fonts paste cleanly into Word
+      if (navigator.clipboard && 'write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+        try {
+          const blobHtml = new Blob([wordHtml], { type: 'text/html' });
+          const blobText = new Blob([petitionFullText], { type: 'text/plain' });
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': blobHtml,
+              'text/plain': blobText,
+            }),
+          ]);
+          setCopied(true);
+          if (onToast) onToast('คัดลอกคำร้องพร้อมรูปแบบแล้ว (สามารถกด Ctrl+V วางใน Microsoft Word ได้ทันที)');
+          setTimeout(() => setCopied(false), 2000);
+          return;
+        } catch (clipErr) {
+          console.warn('Rich clipboard write failed, falling back to writeText:', clipErr);
+        }
+      }
+
       await navigator.clipboard.writeText(petitionFullText);
       setCopied(true);
       if (onToast) onToast('คัดลอกข้อความคำร้องขอขยายอุทธรณ์แล้ว (พร้อมวางลงใน Word ได้ทันที)');
@@ -479,9 +525,24 @@ export const CourtPetitionModal: React.FC<CourtPetitionModalProps> = ({
 
             {/* Center Date */}
             <div className="text-center my-2 text-sm sm:text-base">
-              <HighlightDateRow>
-                วันที่{leaveDayBlank ? '......' : ` ${petitionDayThai} `}เดือน {petitionMonth} พุทธศักราช {petitionYearThai}
-              </HighlightDateRow>
+              {leaveDayBlank ? (
+                highlightEnabled ? (
+                  <span className="inline-flex items-center gap-8">
+                    <span className="bg-yellow-200 text-slate-950 font-bold px-2.5 py-0.5 rounded border border-yellow-400 print:bg-yellow-200 print:border-yellow-400 print:text-black shadow-2xs">
+                      วันที่......เดือน
+                    </span>
+                    <span className="bg-yellow-200 text-slate-950 font-bold px-2.5 py-0.5 rounded border border-yellow-400 print:bg-yellow-200 print:border-yellow-400 print:text-black shadow-2xs">
+                      พุทธศักราช {petitionYearThai}
+                    </span>
+                  </span>
+                ) : (
+                  <span>วันที่......เดือน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;พุทธศักราช {petitionYearThai}</span>
+                )
+              ) : (
+                <HighlightDateRow>
+                  วันที่ {petitionDayThai} เดือน {petitionMonth} พุทธศักราช {petitionYearThai}
+                </HighlightDateRow>
+              )}
             </div>
 
             {/* Center Case Type */}
@@ -523,7 +584,7 @@ export const CourtPetitionModal: React.FC<CourtPetitionModalProps> = ({
 
             {/* Body: ข้อ ๑ */}
             <p className="indent-16 leading-relaxed text-sm sm:text-base text-justify mt-3">
-              ...............ข้อ ๑. คดีนี้ ศาลจังหวัดเพชรบุรีได้มีคำพิพากษาจำเลย เมื่อวันที่ <HighlightField>{judgmentDateFormatted}</HighlightField> และจะครบกำหนดระยะเวลาอุทธรณ์ ในวันที่ <HighlightField>{originalDeadlineFormatted}</HighlightField> ซึ่งคดีนี้อยู่ระหว่างเสนอผู้บังคับบัญชา โจทก์ จึงยื่นคำร้องขอขยายระยะเวลาอุทธรณ์ออกไปอีก มีกำหนด ๒ เดือน นับแต่วันที่ <HighlightField>{nextDayDeadlineFormatted}</HighlightField> ถึงวันที่ <HighlightField>{newDeadlineFormatted}</HighlightField> ขอศาลได้โปรดอนุญาต................................
+              ...............ข้อ ๑. คดีนี้ ศาลจังหวัดเพชรบุรีได้มีคำพิพากษาจำเลย เมื่อวันที่ <HighlightField>{judgmentDateFormatted}</HighlightField> และจะครบกำหนดระยะเวลาอุทธรณ์ ในวันที่ <HighlightField>{originalDeadlineFormatted}</HighlightField> ซึ่งคดีนี้อยู่ระหว่างเสนอผู้บังคับบัญชา โจทก์ จึงยื่นคำร้องขอขยายระยะเวลาอุทธรณ์ออกไปอีก มีกำหนด ๒ เดือน นับแต่วันที่ <HighlightField>{nextDayDeadlineFormatted}</HighlightField> ถึงวันที่ <HighlightField>{newDeadlineFormatted}</HighlightField> ขอศาลได้โปรดอนุญาต
             </p>
 
             {/* ควรมิควรแล้วแต่จะโปรด */}
@@ -537,9 +598,12 @@ export const CourtPetitionModal: React.FC<CourtPetitionModalProps> = ({
             </div>
 
             {/* คำร้องฉบับนี้ ข้าพเจ้า... เป็นผู้เรียงและพิมพ์ */}
-            <p className="indent-16 leading-relaxed text-sm sm:text-base text-justify my-3">
-              ...............คำร้องฉบับนี้ ข้าพเจ้า <HighlightField>{prosecutorName || caseItem.prosecutorName || caseItem.responsiblePerson || '................................................'}</HighlightField> พนักงานอัยการจังหวัดเพชรบุรี โจทก์ เป็นผู้เรียงและพิมพ์.............................................................................................................................
+            <p className="indent-16 leading-relaxed text-sm sm:text-base text-justify mt-3 mb-1">
+              ...............คำร้องฉบับนี้ ข้าพเจ้า{prosecutorName ? <> <HighlightField>{prosecutorName}</HighlightField> </> : '................................................'}พนักงานอัยการจังหวัดเพชรบุรี โจทก์ เป็น
             </p>
+            <div className="leading-relaxed text-sm sm:text-base">
+              ผู้เรียงและพิมพ์.............................................................................................................................
+            </div>
 
             {/* ลงชื่อ ผู้เรียงและพิมพ์ */}
             <div className="text-right pr-6 my-4 text-sm sm:text-base">
@@ -551,7 +615,7 @@ export const CourtPetitionModal: React.FC<CourtPetitionModalProps> = ({
               <span className="font-bold underline">หมายเหตุ</span> ข้าพเจ้ารอฟังคำสั่งอยู่ ถ้าไม่รอให้ถือว่าทราบแล้ว
             </div>
             <div className="text-right pr-6 mt-3 text-sm sm:text-base">
-              ....................................................ผู้ร้อง
+              ผู้ร้อง
             </div>
           </div>
         </div>
@@ -577,13 +641,24 @@ export const CourtPetitionModal: React.FC<CourtPetitionModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Download Microsoft Word (.doc) Button */}
+            <button
+              type="button"
+              onClick={handleDownloadWordDoc}
+              className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95"
+              title="ดาวน์โหลดเป็นไฟล์ Microsoft Word (.doc) เพื่อเปิดและสั่งพิมพ์ในโปรแกรม Word บนคอมพิวเตอร์ทั่วไปได้ทันที"
+            >
+              <FileDown className="w-4 h-4 text-white" />
+              <span>ดาวน์โหลดไฟล์ Word (.doc)</span>
+            </button>
+
             {/* Copy Text Button */}
             <button
               type="button"
               onClick={handleCopyText}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer"
-              title="คัดลอกข้อความทั้งหมดเพื่อนำไปวางใน Word หรือโปรแกรมของสำนักงาน"
+              title="คัดลอกข้อความคำร้องทั้งหมด (สามารถนำไปกด Paste/Ctrl+V ในโปรแกรม Word ได้ทันที)"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied ? 'คัดลอกแล้ว' : 'คัดลอกลง Word'}</span>

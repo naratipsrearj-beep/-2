@@ -280,11 +280,12 @@ export function getSeveredFilingAlertInfo(
     };
   }
 
-  // กำหนดวันที่คำนวณ: ใช้วันครบกำหนดที่มี หรือคำนวณจากวันที่ศาลสั่ง 7 วัน
+  // กำหนดวันที่คำนวณ: ใช้วันครบกำหนดที่มี หรือคำนวณจากวันที่ศาลสั่ง (7 วัน หรือ 15 วัน ตามคำสั่งศาล)
+  const daysLimit = caseItem.severedFilingDaysLimit || 7;
   const orderDate = caseItem.severedFilingOrderDate || caseItem.severedOrderDate || caseItem.judgmentDate || caseItem.filingDate;
   let deadlineDate = caseItem.severedFilingDeadline || caseItem.severedDeadlineDate;
   if (!deadlineDate && orderDate) {
-    deadlineDate = calculateSeveredDeadline(orderDate, 7).deadlineDate;
+    deadlineDate = calculateSeveredDeadline(orderDate, daysLimit).deadlineDate;
   }
 
   if (!deadlineDate) {
@@ -293,9 +294,9 @@ export function getSeveredFilingAlertInfo(
       isPending: true,
       isCompleted: false,
       orderDate,
-      daysRemaining: 7,
+      daysRemaining: daysLimit,
       status: 'warning',
-      alertBadgeText: 'มีคำสั่งแยกฟ้อง (เตือน 7 วัน)',
+      alertBadgeText: `มีคำสั่งแยกฟ้อง (เตือน ${daysLimit} วัน)`,
       alertBadgeClass: 'bg-purple-100 text-purple-950 border-purple-300',
       isAlertDue: true,
     };
@@ -311,7 +312,7 @@ export function getSeveredFilingAlertInfo(
       deadlineDate,
       daysRemaining: 999,
       status: 'normal',
-      alertBadgeText: 'เตือนแยกฟ้อง 7 วัน',
+      alertBadgeText: `เตือนแยกฟ้อง ${daysLimit} วัน`,
       alertBadgeClass: 'bg-purple-100 text-purple-950 border-purple-300',
       isAlertDue: false,
     };
