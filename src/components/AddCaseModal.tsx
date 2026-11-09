@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   PlusCircle,
   Check,
+  AlertTriangle,
   Clock,
   Shield,
   Plus,
@@ -157,6 +158,34 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
     }
     return calculateAppealDeadline(judgmentDate);
   }, [judgmentDate]);
+
+  // Visual validations for filing date & appeal deadlines
+  const todayStr = getTodayString();
+  const isFilingDateInFuture = Boolean(filingDate && filingDate > todayStr);
+  const isFilingDateTooOld = useMemo(() => {
+    if (!filingDate) return false;
+    const fDate = new Date(filingDate);
+    const tDate = new Date(todayStr);
+    const diffDays = Math.floor((tDate.getTime() - fDate.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays > 365;
+  }, [filingDate, todayStr]);
+  const isFilingDateInPast = Boolean(filingDate && filingDate < todayStr && !isFilingDateTooOld);
+
+  // Validation: Judgment date before filing date
+  const isJudgmentBeforeFiling = Boolean(
+    (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) &&
+    judgmentDate &&
+    filingDate &&
+    judgmentDate < filingDate
+  );
+
+  // Validation: Auto-calculated appeal deadline invalid (e.g. deadline <= judgment date)
+  const isAppealDeadlineInvalid = Boolean(
+    (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate)) &&
+    judgmentDate &&
+    deadlineInfo.deadlineDate &&
+    deadlineInfo.deadlineDate <= judgmentDate
+  );
 
   // Reset form inputs whenever modal opens for a new case entry (กรอกใหม่ทุกครั้ง ยกเว้นประเภทคดีอาญา)
   useEffect(() => {
@@ -352,6 +381,11 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isFilingDateInFuture) {
+      alert('ไม่สามารถบันทึกได้: วันที่ยื่นฟ้องไม่สามารถเป็นวันในอนาคตได้ (ต้องไม่เกินวันที่ปัจจุบัน)');
+      return;
+    }
+
     if (!blackCaseNo.trim()) {
       alert('กรุณากรอกหมายเลขคดีดำ');
       return;
@@ -481,9 +515,21 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
         recapturedDate: !isTemporarilyDischarged && recapturedDate ? recapturedDate : undefined,
         temporaryDischargeNotes: isTemporarilyDischarged ? (temporaryDischargeNotes.trim() || undefined) : undefined,
 
-        appointmentType: (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection' ? 'none' : appointmentType,
-        appointmentTypeName: appointmentType === 'other' ? appointmentTypeName.trim() : undefined,
-        appointmentDate: ((hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection') ? undefined : (appointmentType !== 'none' && appointmentDate ? appointmentDate : undefined),
+        appointmentType: (isRequisitionCase || appointmentType === 'requisition')
+          ? 'requisition'
+          : (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection'
+            ? 'none'
+            : appointmentType,
+        appointmentTypeName: (isRequisitionCase || appointmentType === 'requisition')
+          ? 'สำนวนเบิกฟ้อง'
+          : appointmentType === 'other'
+            ? appointmentTypeName.trim()
+            : undefined,
+        appointmentDate: (isRequisitionCase || appointmentType === 'requisition')
+          ? (requisitionDate || appointmentDate || undefined)
+          : ((hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection')
+            ? undefined
+            : (appointmentType !== 'none' && appointmentDate ? appointmentDate : undefined),
         appointmentTime: appointmentTime || undefined,
         appointmentCourtRoom: appointmentCourtRoom.trim() || undefined,
         appointmentNotes: appointmentNotes.trim() || undefined,
@@ -1064,19 +1110,61 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
           {/* Row 1: Filing date & Case Type */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                วันที่ยื่นฟ้อง (สำหรับแยกสำนวนรายวัน) *
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span>วันที่ยื่นฟ้อง (สำหรับแยกสำนวนรายวัน) *</span>
+                {isFilingDateInFuture && (
+                  <span className="text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded border border-red-300">
+                    ❌ ห้ามเลือกวันในอนาคต
+                  </span>
+                )}
+                {isFilingDateTooOld && (
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+                    ⚠️ ย้อนหลัง &gt; 1 ปี
+                  </span>
+                )}
+                {isFilingDateInPast && (
+                  <span className="text-[10px] text-amber-700 font-medium">
+                    (ยื่นฟ้องย้อนหลัง)
+                  </span>
+                )}
               </label>
               <input
                 type="date"
                 required
                 value={filingDate}
                 onChange={(e) => setFilingDate(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                className={`w-full text-xs border rounded-xl px-3 py-2 transition font-medium ${
+                  isFilingDateInFuture
+                    ? 'border-red-500 bg-red-50 text-red-900 ring-2 ring-red-400 focus:ring-red-500'
+                    : isFilingDateTooOld
+                      ? 'border-amber-400 bg-amber-50/70 text-amber-900 ring-1 ring-amber-300 focus:ring-amber-500'
+                      : 'border-slate-300 bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 text-slate-800'
+                }`}
               />
-              <span className="text-[10px] text-slate-500">
-                {formatThaiDate(filingDate, { short: false })}
-              </span>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-[10px] text-slate-500">
+                  {formatThaiDate(filingDate, { short: false })}
+                </span>
+                {todayStr && (
+                  <span className="text-[10px] text-slate-400">
+                    วันนี้: {formatThaiDate(todayStr, { short: true })}
+                  </span>
+                )}
+              </div>
+
+              {isFilingDateInFuture && (
+                <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-100/90 border border-red-300 rounded-lg p-2 mt-1.5 animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span><strong>วันที่ยื่นฟ้องไม่ถูกต้อง:</strong> วันที่ยื่นฟ้องไม่สามารถเป็นวันในอนาคตได้ (ต้องไม่เกินวันที่ปัจจุบัน)</span>
+                </div>
+              )}
+
+              {isFilingDateTooOld && (
+                <div className="flex items-center gap-1.5 text-xs text-amber-800 bg-amber-100/90 border border-amber-300 rounded-lg p-2 mt-1.5 animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span><strong>คำเตือน:</strong> วันที่ยื่นฟ้องย้อนหลังเกินกว่า 1 ปี กรุณาตรวจสอบปี พ.ศ. ให้ถูกต้อง</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1677,6 +1765,20 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                       ⚡ วันครบกำหนดตรงวันหยุดเสาร์-อาทิตย์ เลื่อนเป็นวันทำการถัดไป
                     </span>
                   )}
+
+                  {isJudgmentBeforeFiling && (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-800 bg-amber-100/90 border border-amber-300 rounded-lg p-2 mt-1.5 animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                      <span><strong>คำเตือน:</strong> วันที่อ่านคำพิพากษาเกิดขึ้นก่อนวันที่ยื่นฟ้อง ({formatThaiDate(filingDate, { short: true })}) กรุณาตรวจสอบให้ถูกต้อง</span>
+                    </div>
+                  )}
+
+                  {isAppealDeadlineInvalid && (
+                    <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-100/90 border border-red-300 rounded-lg p-2 mt-1.5 animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                      <span><strong>คำเตือน:</strong> ระบบตรวจพบว่าวันครบกำหนดอุทธรณ์ที่คำนวณได้ไม่ถูกต้องสำหรับศาลที่เลือก (ต้องมากกว่าวันพิพากษา)</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2008,6 +2110,20 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                     <span className="text-[10px] text-amber-700 font-medium">
                       ⚡ วันครบกำหนดเดิมตรงกับวันหยุดเสาร์-อาทิตย์ กฎหมายเลื่อนเป็นวันทำการถัดไป
                     </span>
+                  )}
+
+                  {isJudgmentBeforeFiling && (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-800 bg-amber-100/90 border border-amber-300 rounded-lg p-2 mt-1.5 animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                      <span><strong>คำเตือน:</strong> วันที่อ่านคำพิพากษาเกิดขึ้นก่อนวันที่ยื่นฟ้อง ({formatThaiDate(filingDate, { short: true })}) กรุณาตรวจสอบให้ถูกต้อง</span>
+                    </div>
+                  )}
+
+                  {isAppealDeadlineInvalid && (
+                    <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-100/90 border border-red-300 rounded-lg p-2 mt-1.5 animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                      <span><strong>คำเตือน:</strong> ระบบตรวจพบว่าวันครบกำหนดอุทธรณ์ที่คำนวณได้ไม่ถูกต้องสำหรับศาลที่เลือก (ต้องมากกว่าวันพิพากษา)</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -2403,8 +2519,12 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                       setIsRequisitionCase(checked);
                       if (checked) {
                         setDefendantPlea('pending');
-                        if (!requisitionDate && appointmentDate) {
-                          setRequisitionDate(appointmentDate);
+                        setAppointmentType('requisition');
+                        setAppointmentTypeName('สำนวนเบิกฟ้อง');
+                        const targetDate = requisitionDate || appointmentDate || '';
+                        if (targetDate) {
+                          setRequisitionDate(targetDate);
+                          setAppointmentDate(targetDate);
                         }
                       }
                     }}
@@ -2413,7 +2533,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5 font-['Prompt']">
                     <span>🚚 สำนวนเบิกฟ้อง</span>
                     <span className="text-[10px] bg-orange-100 text-orange-800 font-semibold px-2 py-0.5 rounded-full border border-orange-200">
-                      ระบบจะคอยแจ้งเตือนเมื่อใกล้ถึงวันเบิกฟ้อง
+                      ระบบจะคอยแจ้งเตือนและคุมตามวันเบิกฟ้อง
                     </span>
                   </span>
                 </label>
@@ -2430,11 +2550,17 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                       required={isRequisitionCase}
                       value={requisitionDate || appointmentDate}
                       onChange={(e) => {
-                        setRequisitionDate(e.target.value);
-                        if (!appointmentDate) setAppointmentDate(e.target.value);
+                        const val = e.target.value;
+                        setRequisitionDate(val);
+                        setAppointmentDate(val);
+                        setAppointmentType('requisition');
+                        setAppointmentTypeName('สำนวนเบิกฟ้อง');
                       }}
                       className="w-full text-xs border border-orange-300 rounded-lg px-2.5 py-1.5 bg-white text-orange-950 font-medium focus:ring-2 focus:ring-orange-500"
                     />
+                    <span className="text-[10px] text-orange-800 mt-0.5 block">
+                      {(requisitionDate || appointmentDate) && formatThaiDate(requisitionDate || appointmentDate, { short: false })}
+                    </span>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-orange-950 mb-1">
@@ -2504,20 +2630,24 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
             </button>
             <button
               type="submit"
-              className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer ${
-                isUnspecifiedStage
-                  ? 'bg-rose-600 hover:bg-rose-700 ring-2 ring-rose-500/20'
-                  : defendantPlea === 'confessed'
-                    ? 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400/30'
-                    : hasJudgment || Boolean(judgmentDate)
-                      ? 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400/30'
-                      : isRequisitionCase || appointmentType === 'requisition'
-                        ? 'bg-emerald-600 hover:bg-emerald-700'
-                        : isSeveredCase
-                          ? 'bg-purple-600 hover:bg-purple-700'
-                          : defendantPlea === 'denied' || appointmentType === 'rights_protection'
-                            ? 'bg-orange-600 hover:bg-orange-700'
-                            : 'bg-amber-600 hover:bg-amber-700'
+              disabled={isFilingDateInFuture}
+              title={isFilingDateInFuture ? 'ไม่สามารถบันทึกได้เนื่องจากวันที่ยื่นฟ้องเป็นวันในอนาคต (ต้องไม่เกินวันที่ปัจจุบัน)' : undefined}
+              className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl shadow-xs transition flex items-center gap-1.5 ${
+                isFilingDateInFuture
+                  ? 'opacity-40 cursor-not-allowed bg-slate-400'
+                  : isUnspecifiedStage
+                    ? 'bg-rose-600 hover:bg-rose-700 ring-2 ring-rose-500/20 cursor-pointer'
+                    : defendantPlea === 'confessed'
+                      ? 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400/30 cursor-pointer'
+                      : hasJudgment || Boolean(judgmentDate)
+                        ? 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400/30 cursor-pointer'
+                        : isRequisitionCase || appointmentType === 'requisition'
+                          ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
+                          : isSeveredCase
+                            ? 'bg-purple-600 hover:bg-purple-700 cursor-pointer'
+                            : defendantPlea === 'denied' || appointmentType === 'rights_protection'
+                              ? 'bg-orange-600 hover:bg-orange-700 cursor-pointer'
+                              : 'bg-amber-600 hover:bg-amber-700 cursor-pointer'
               }`}
             >
               <PlusCircle className="w-4 h-4" />

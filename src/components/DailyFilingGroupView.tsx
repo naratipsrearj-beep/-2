@@ -18,7 +18,8 @@ import {
   Scale,
   Shield,
   Truck,
-  Palette
+  Palette,
+  Check
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency } from '../utils/dateUtils';
@@ -397,6 +398,14 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                         {/* Case Details */}
                         <div className="space-y-1.5 flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
+                            {caseItem.isSubmittedToDuty && (
+                              <span
+                                className="inline-flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-emerald-600 text-white shadow-md ring-2 ring-emerald-300 shrink-0"
+                                title={`สำนวนนี้เสนอเวรชี้แล้ว${caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}${caseItem.submittedToDutyDate ? ` (${formatThaiDate(caseItem.submittedToDutyDate, { short: true })})` : ''}`}
+                              >
+                                <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3.5]" />
+                              </span>
+                            )}
                             <span className="font-bold text-slate-900 font-['Prompt'] text-sm">
                               ดำ {caseItem.blackCaseNo}
                             </span>

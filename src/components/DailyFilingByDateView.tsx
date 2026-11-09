@@ -2229,6 +2229,16 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                       <div className="space-y-1.5 flex-1 min-w-0">
                         {/* Number Badges & Badges Row */}
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {/* เครื่องหมายสีเขียวติ๊กถูกอันใหญ่ หากสำนวนไหนกดเสนอเวรชี้แล้ว อยู่หน้าสำนวน */}
+                          {caseItem.isSubmittedToDuty && (
+                            <span
+                              className="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 text-white shadow-md ring-2 ring-emerald-300 shrink-0"
+                              title={`สำนวนนี้เสนอเวรชี้แล้ว${caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}${caseItem.submittedToDutyDate ? ` (${formatThaiDate(caseItem.submittedToDutyDate, { short: true })})` : ''}`}
+                            >
+                              <Check className="w-5 h-5 sm:w-6 sm:h-6 stroke-[3.5]" />
+                            </span>
+                          )}
+
                           <span className="w-5 h-5 rounded text-[11px] font-mono font-bold bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
                             {idx + 1}
                           </span>
@@ -3322,6 +3332,14 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                         <div key={caseItem.id} className={`p-3 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs border transition ${rowStyle.cardClass}`}>
                           <div className="space-y-1.5 flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
+                              {caseItem.isSubmittedToDuty && (
+                                <span
+                                  className="inline-flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-emerald-600 text-white shadow-md ring-2 ring-emerald-300 shrink-0"
+                                  title={`สำนวนนี้เสนอเวรชี้แล้ว${caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}${caseItem.submittedToDutyDate ? ` (${formatThaiDate(caseItem.submittedToDutyDate, { short: true })})` : ''}`}
+                                >
+                                  <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3.5]" />
+                                </span>
+                              )}
                               <span className="font-bold text-slate-900 font-['Prompt']">ดำ {caseItem.blackCaseNo}</span>
                               {caseItem.redCaseNo && <span className="text-rose-700 font-semibold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">แดง {caseItem.redCaseNo}</span>}
                               {/* ป้ายแสดงสถานะการกดเสร็จสิ้นสำนวน */}

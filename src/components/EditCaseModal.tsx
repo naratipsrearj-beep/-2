@@ -495,9 +495,21 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       isSeveredFilingCompleted: (hasPartialDenial && hasPendingSeveredFiling) ? isSeveredFilingCompleted : undefined,
       severedNewBlackCaseNo: (hasPartialDenial && hasPendingSeveredFiling && isSeveredFilingCompleted) ? (severedNewBlackCaseNo.trim() || undefined) : undefined,
 
-      appointmentType: (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection' ? 'none' : appointmentType,
-      appointmentTypeName: appointmentType === 'other' ? appointmentTypeName.trim() : undefined,
-      appointmentDate: ((hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection') ? undefined : (appointmentType !== 'none' && appointmentDate ? appointmentDate : undefined),
+      appointmentType: (isRequisitionCase || appointmentType === 'requisition')
+        ? 'requisition'
+        : (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection'
+          ? 'none'
+          : appointmentType,
+      appointmentTypeName: (isRequisitionCase || appointmentType === 'requisition')
+        ? 'สำนวนเบิกฟ้อง'
+        : appointmentType === 'other'
+          ? appointmentTypeName.trim()
+          : undefined,
+      appointmentDate: (isRequisitionCase || appointmentType === 'requisition')
+        ? (requisitionDate || appointmentDate || undefined)
+        : ((hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection')
+          ? undefined
+          : (appointmentType !== 'none' && appointmentDate ? appointmentDate : undefined),
       appointmentTime: appointmentTime || undefined,
       appointmentCourtRoom: appointmentCourtRoom.trim() || undefined,
       appointmentNotes: appointmentNotes.trim() || undefined,
@@ -2503,8 +2515,12 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                       setIsRequisitionCase(checked);
                       if (checked) {
                         setDefendantPlea('pending');
-                        if (!requisitionDate && appointmentDate) {
-                          setRequisitionDate(appointmentDate);
+                        setAppointmentType('requisition');
+                        setAppointmentTypeName('สำนวนเบิกฟ้อง');
+                        const targetDate = requisitionDate || appointmentDate || '';
+                        if (targetDate) {
+                          setRequisitionDate(targetDate);
+                          setAppointmentDate(targetDate);
                         }
                       }
                     }}
@@ -2513,7 +2529,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5 font-['Prompt']">
                     <span>🚚 สำนวนเบิกฟ้อง</span>
                     <span className="text-[10px] bg-orange-100 text-orange-800 font-semibold px-2 py-0.5 rounded-full border border-orange-200">
-                      ระบบจะคอยแจ้งเตือนเมื่อใกล้ถึงวันเบิกฟ้อง
+                      ระบบจะคอยแจ้งเตือนและคุมตามวันเบิกฟ้อง
                     </span>
                   </span>
                 </label>
@@ -2530,11 +2546,17 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                       required={isRequisitionCase}
                       value={requisitionDate || appointmentDate}
                       onChange={(e) => {
-                        setRequisitionDate(e.target.value);
-                        if (!appointmentDate) setAppointmentDate(e.target.value);
+                        const val = e.target.value;
+                        setRequisitionDate(val);
+                        setAppointmentDate(val);
+                        setAppointmentType('requisition');
+                        setAppointmentTypeName('สำนวนเบิกฟ้อง');
                       }}
                       className="w-full text-xs border border-orange-300 rounded-lg px-2.5 py-1.5 bg-white text-orange-950 font-medium focus:ring-2 focus:ring-orange-500"
                     />
+                    <span className="text-[10px] text-orange-800 mt-0.5 block">
+                      {(requisitionDate || appointmentDate) && formatThaiDate(requisitionDate || appointmentDate, { short: false })}
+                    </span>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-orange-950 mb-1">

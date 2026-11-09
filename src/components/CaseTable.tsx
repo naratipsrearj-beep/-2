@@ -29,7 +29,8 @@ import {
   Send,
   Eye,
   History,
-  RotateCcw
+  RotateCcw,
+  Check
 } from 'lucide-react';
 import { AppealCase, CaseAppointment } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
@@ -749,8 +750,16 @@ export const CaseTable: React.FC<CaseTableProps> = ({
 
                     {/* Case Numbers */}
                     <td className="py-2 px-1.5">
-                      <div className="font-bold text-slate-900 font-['Prompt'] text-xs">
-                        ดำ {caseItem.blackCaseNo}
+                      <div className="font-bold text-slate-900 font-['Prompt'] text-xs flex items-center gap-1.5">
+                        {caseItem.isSubmittedToDuty && (
+                          <span
+                            className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white shadow-2xs shrink-0"
+                            title={`สำนวนนี้เสนอเวรชี้แล้ว${caseItem.submittedToDutyOfficer ? `: ${caseItem.submittedToDutyOfficer}` : ''}${caseItem.submittedToDutyDate ? ` (${formatThaiDate(caseItem.submittedToDutyDate, { short: true })})` : ''}`}
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3.5]" />
+                          </span>
+                        )}
+                        <span>ดำ {caseItem.blackCaseNo}</span>
                       </div>
                       {caseItem.redCaseNo ? (
                         <div className="text-rose-700 font-semibold text-[11px]">
