@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History, RotateCcw } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History, RotateCcw, Type } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
 import { AppAuthUser } from '../services/auth';
 
@@ -71,6 +71,21 @@ export const Header: React.FC<HeaderProps> = ({
   const isPinAdmin = Boolean((user as AppAuthUser)?.isPinAdmin);
   const isPinAppealOfficer = Boolean((user as AppAuthUser)?.isPinAppealOfficer);
 
+  // Font size setting ('normal' | 'large' | 'xlarge'), defaulting to 'large' for comfortable reading
+  const [fontSize, setFontSizeState] = React.useState<'normal' | 'large' | 'xlarge'>(() => {
+    return (localStorage.getItem('app_font_size') as 'normal' | 'large' | 'xlarge') || 'large';
+  });
+
+  const handleSetFontSize = (size: 'normal' | 'large' | 'xlarge') => {
+    setFontSizeState(size);
+    document.documentElement.setAttribute('data-font-size', size);
+    localStorage.setItem('app_font_size', size);
+  };
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-font-size', fontSize);
+  }, [fontSize]);
+
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
@@ -118,8 +133,55 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Right Side: Duty Officer, Google Sheets Connection & Auth */}
+          {/* Right Side: Font Size, Duty Officer, Google Sheets Connection & Auth */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Font Size Adjuster (ขนาดตัวอักษร) */}
+            <div
+              className="inline-flex items-center bg-slate-800/90 border border-slate-700/80 rounded-lg p-0.5 text-xs text-slate-300 shadow-2xs"
+              title="ปรับขนาดตัวอักษร UI ให้อ่านง่ายและตัวใหญ่ขึ้น"
+            >
+              <div className="px-1.5 py-0.5 text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+                <Type className="w-3 h-3 text-amber-400" />
+                <span className="hidden sm:inline">ขนาด:</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSetFontSize('normal')}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                  fontSize === 'normal'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="ขนาดปกติ (100%)"
+              >
+                ปกติ
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetFontSize('large')}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                  fontSize === 'large'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="ขนาดใหญ่ขึ้น อ่านสบายตา (แนะนำ)"
+              >
+                ใหญ่
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetFontSize('xlarge')}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                  fontSize === 'xlarge'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="ขนาดใหญ่พิเศษ (116%)"
+              >
+                ใหญ่+
+              </button>
+            </div>
+
             {/* Today Duty Officer Pill */}
             {todayDutyOfficer && (
               <button

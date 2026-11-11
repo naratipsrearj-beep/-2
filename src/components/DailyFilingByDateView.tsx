@@ -378,6 +378,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   const [procedureFilter, setProcedureFilter] = useState<DailyProcedureFilter>('all');
   const [dateSearch, setDateSearch] = useState<string>(externalDateSearch);
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+  // Highlighted case when jumping from search ("ดูในวันที่ฟ้อง")
+  const [highlightedCaseId, setHighlightedCaseId] = useState<string | null>(null);
 
   // Convenience boolean for backward-compatible active/incomplete checks
   const filterOnlyActive = completionFilter === 'incomplete';
@@ -1184,18 +1186,39 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             if (c.filingDate) {
+                              // 1. สลับไปยังวันที่ฟ้องของสำนวนนี้ และเคลียร์ตัวกรองให้สำนวนแสดงแน่นอน
                               setSelectedDate(c.filingDate);
                               setViewMode('single_date');
                               setTopSearchQuery('');
                               setTopFilterStatus('all');
                               setIsSearchPanelExplicitlyOpen(false);
-                              if (onToast) onToast(`สลับไปดูวันที่ยื่นฟ้อง ${formatThaiDate(c.filingDate)}`);
+                              setCompletionFilter('all');
+                              setProcedureFilter('all');
+                              setDateSearch('');
+                              setHighlightedCaseId(c.id);
+
+                              // 2. เด้งเลื่อนหน้าจอไปยังสำนวนคดีนั้นโดยตรง (ไม่เด้งหน้าต่างขึ้นมา หากต้องการแก้ไขผู้ใช้จะกดปุ่มแก้ไขเอง)
+                              setTimeout(() => {
+                                const el = document.getElementById(`case-card-${c.id}`);
+                                if (el) {
+                                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                              }, 160);
+
+                              if (onToast) {
+                                onToast(`เด้งไปยังวันที่ฟ้อง ${formatThaiDate(c.filingDate)} ที่สำนวนคดีดำ ${c.blackCaseNo} แล้ว`);
+                              }
+
+                              // ล้างไฮไลท์หลังผ่านไป 8 วินาที
+                              setTimeout(() => {
+                                setHighlightedCaseId((prev) => (prev === c.id ? null : prev));
+                              }, 8000);
                             }
                           }}
-                          className="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition flex items-center gap-1 cursor-pointer"
-                          title="ไปที่วันที่ยื่นฟ้องของสำนวนนี้"
+                          className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                          title="เด้งไปยังวันที่ฟ้องของสำนวนนี้ เพื่อดูข้อมูลและแก้ไขได้ทันที"
                         >
-                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          <Calendar className="w-3.5 h-3.5 text-indigo-600" />
                           <span>ดูในวันที่ฟ้อง</span>
                         </button>
                       </div>
@@ -2135,11 +2158,37 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                 const hasJudgmentRecorded = isJudgmentRecorded(caseItem);
                 const isUnspecified = procCat === 'unspecified' || isCaseUnspecifiedStage(caseItem);
 
+                const isTargetHighlighted = highlightedCaseId === caseItem.id;
+
                 return (
                   <div
                     key={caseItem.id}
-                    className={`rounded-xl p-3 sm:p-3.5 shadow-2xs hover:shadow-xs transition border ${cardStyle.cardClass}`}
+                    id={`case-card-${caseItem.id}`}
+                    className={`rounded-xl p-3 sm:p-3.5 shadow-2xs hover:shadow-xs transition border ${cardStyle.cardClass} ${
+                      isTargetHighlighted
+                        ? 'ring-4 ring-amber-400 ring-offset-2 border-amber-500 shadow-xl bg-amber-50/90'
+                        : ''
+                    }`}
                   >
+                    {/* ป้ายไฮไลท์เมื่อเด้งมาจากปุ่ม 'ดูในวันที่ฟ้อง' */}
+                    {isTargetHighlighted && (
+                      <div className="mb-2.5 bg-gradient-to-r from-amber-500 via-amber-500 to-amber-600 text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow-xs animate-in zoom-in-95 border border-amber-600">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm">🎯</span>
+                          <span>เด้งมาที่สำนวนนี้แล้ว: คดีดำ {caseItem.blackCaseNo} ({formatThaiDate(caseItem.filingDate)})</span>
+                        </div>
+                        {canEdit && onEditCase && (
+                          <button
+                            type="button"
+                            onClick={() => onEditCase(caseItem)}
+                            className="text-[11px] bg-slate-950 hover:bg-slate-800 text-amber-300 font-bold px-2.5 py-0.5 rounded cursor-pointer transition shadow-2xs flex items-center gap-1 active:scale-95"
+                          >
+                            <Edit3 className="w-3 h-3 text-amber-400" />
+                            <span>กรอก/แก้ไขข้อมูลสำนวนนี้</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {/* แถบสีแดงเตือน: ยังไม่เลือกสถานะสำนวนในการพิจารณาของศาล (คุมสำนวนที่จะฟ้องในวันไว้ก่อน) */}
                     {isUnspecified && (() => {
                       const unspecifiedAlert = getUnspecifiedStageAlertInfo(caseItem);
@@ -2239,20 +2288,20 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                             </span>
                           )}
 
-                          <span className="w-5 h-5 rounded text-[11px] font-mono font-bold bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
+                          <span className="w-6 h-6 rounded text-xs font-mono font-bold bg-slate-200/90 text-slate-800 flex items-center justify-center shrink-0">
                             {idx + 1}
                           </span>
 
-                          <span className="font-bold text-slate-900 font-['Prompt'] text-sm sm:text-base">
+                          <span className="font-extrabold text-slate-950 font-['Prompt'] text-base sm:text-lg tracking-tight">
                             ดำ {caseItem.blackCaseNo}
                           </span>
 
                           {caseItem.redCaseNo ? (
-                            <span className="text-xs font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                            <span className="text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-md border border-rose-200">
                               แดง {caseItem.redCaseNo}
                             </span>
                           ) : (
-                            <span className="text-[11px] text-slate-400 bg-slate-100/90 px-1.5 py-0.5 rounded-md border border-slate-200">
+                            <span className="text-xs text-slate-400 bg-slate-100/90 px-1.5 py-0.5 rounded-md border border-slate-200">
                               ยังไม่มีเลขแดง
                             </span>
                           )}
@@ -2393,25 +2442,26 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                         </div>
 
                         {/* Parties, Defendant & Prosecutor row */}
-                        <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+                        <div className="text-xs sm:text-[13px] text-slate-700 flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5">
                           {/* ชื่อจำเลย - แสดงเด่นชัดเจนในกรอบสีอำพัน */}
                           <div
-                            className="inline-flex items-center gap-1 bg-amber-50/95 border border-amber-300 text-slate-950 px-2.5 py-0.5 rounded-lg shadow-2xs font-['Prompt']"
+                            className="inline-flex items-center gap-1.5 bg-amber-50/95 border border-amber-300 text-slate-950 px-3 py-1 rounded-lg shadow-2xs font-['Prompt']"
                             title={`จำเลย: ${caseItem.defendant || '-'}`}
                           >
-                            <span className="text-amber-800 font-extrabold text-[11px] shrink-0">👤 จำเลย:</span>
-                            <span className="text-slate-950 font-bold text-xs sm:text-sm tracking-wide">
+                            <span className="text-amber-800 font-extrabold text-xs shrink-0">👤 จำเลย:</span>
+                            <span className="text-slate-950 font-bold text-sm sm:text-base tracking-wide">
                               {caseItem.defendant || '-'}
                             </span>
                           </div>
 
                           <div>
-                            <span className="text-slate-400 font-medium">โจทก์:</span> {caseItem.plaintiff || '-'}
+                            <span className="text-slate-500 font-medium">โจทก์:</span>{' '}
+                            <span className="text-slate-900 font-semibold">{caseItem.plaintiff || '-'}</span>
                           </div>
 
-                          <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-950 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                          <div className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-950 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-md">
                             <span className="text-indigo-700">👔 เจ้าของสำนวน:</span>
-                            <span>{caseItem.responsiblePerson || 'รอกำหนด'}</span>
+                            <span className="font-bold">{caseItem.responsiblePerson || 'รอกำหนด'}</span>
                           </div>
 
                           {/* อัยการเวรชี้ */}
@@ -2422,12 +2472,12 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 setCaseForDutyPicker(caseItem);
                                 setIsDutyPickerOpen(true);
                               }}
-                              className="text-[11px] font-medium text-slate-700 bg-white/90 hover:bg-slate-100 px-2 py-0.5 rounded-md border border-slate-300 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                              className="text-xs font-medium text-slate-700 bg-white/90 hover:bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-300 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
                               title="คลิกเพื่อเลือกหรือเปลี่ยนอัยการเวรชี้จากตารางเวรชี้"
                             >
                               <span className="text-slate-500">⚖️ เวรชี้:</span>
-                              <span className="text-slate-900 font-bold">{caseItem.prosecutorName}</span>
-                              <UserCheck className="w-3 h-3 text-slate-400" />
+                              <span className="text-slate-950 font-bold">{caseItem.prosecutorName}</span>
+                              <UserCheck className="w-3.5 h-3.5 text-slate-400" />
                             </button>
                           ) : (
                             <div className="flex items-center gap-1">
@@ -2738,22 +2788,22 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                           <div className="text-left sm:text-right space-y-1">
                             <div
                               onClick={() => canEdit && onExtendDeadline(caseItem)}
-                              className={`flex items-center gap-1 text-[11px] sm:justify-end ${canEdit ? 'cursor-pointer hover:text-amber-700' : ''}`}
+                              className={`flex items-center gap-1.5 text-xs sm:text-[13px] sm:justify-end ${canEdit ? 'cursor-pointer hover:text-amber-700' : ''}`}
                               title={canEdit ? 'คลิกเพื่อขอขยายระยะเวลาอุทธรณ์' : undefined}
                             >
-                              <span className="text-slate-400">ครบอุทธรณ์ 1 ด.:</span>
-                              <span className="text-xs font-bold text-slate-800">
+                              <span className="text-slate-500 font-medium">ครบอุทธรณ์ 1 ด.:</span>
+                              <span className="text-xs sm:text-sm font-extrabold text-slate-950 font-['Prompt']">
                                 {formatThaiDate(caseItem.extendedDeadline || caseItem.appealDeadline || '')}
                               </span>
                               {caseItem.extendedDeadline && (
-                                <span className="text-[10px] text-amber-800 font-bold bg-amber-50 border border-amber-200 px-1 rounded">
+                                <span className="text-xs text-amber-800 font-bold bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
                                   ขยาย #{caseItem.extensionCount || 1}
                                 </span>
                               )}
                             </div>
                             <div className="flex items-center sm:justify-end">
                               <span
-                                className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${getUrgencyBadgeStyle(urgency)}`}
+                                className={`text-xs sm:text-[13px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs ${getUrgencyBadgeStyle(urgency)}`}
                               >
                                 {daysLeft < 0
                                   ? `เกินกำหนด ${Math.abs(daysLeft)} วัน`
@@ -2854,7 +2904,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onEditCase(caseItem)}
-                                  className="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  className="px-2.5 py-1 text-xs sm:text-[13px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs"
                                   title="กรอกหรือแก้ไขข้อมูลสำนวนคดีนี้"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
@@ -2867,7 +2917,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onMarkComplete(caseItem)}
-                                  className={`px-2 py-1 text-xs rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
+                                  className={`px-2.5 py-1 text-xs sm:text-[13px] rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
                                     isCompleted
                                       ? 'text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 font-bold'
                                       : 'text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 font-semibold'
@@ -2884,7 +2934,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onOpenSubmitToDuty(caseItem)}
-                                  className={`px-2 py-1 text-xs rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
+                                  className={`px-2.5 py-1 text-xs sm:text-[13px] rounded-md transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
                                     caseItem.isSubmittedToDuty
                                       ? 'text-blue-950 bg-blue-100 hover:bg-blue-200 border border-blue-300 font-bold'
                                       : 'text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 font-semibold'
@@ -3340,8 +3390,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                                   <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3.5]" />
                                 </span>
                               )}
-                              <span className="font-bold text-slate-900 font-['Prompt']">ดำ {caseItem.blackCaseNo}</span>
-                              {caseItem.redCaseNo && <span className="text-rose-700 font-semibold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">แดง {caseItem.redCaseNo}</span>}
+                              <span className="font-extrabold text-slate-950 font-['Prompt'] text-sm sm:text-base tracking-tight">ดำ {caseItem.blackCaseNo}</span>
+                              {caseItem.redCaseNo && <span className="text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-xs sm:text-sm">แดง {caseItem.redCaseNo}</span>}
                               {/* ป้ายแสดงสถานะการกดเสร็จสิ้นสำนวน */}
                               {caseItem.isCompleted ? (
                                 <span

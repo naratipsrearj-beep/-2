@@ -406,15 +406,15 @@ export const DailyFilingGroupView: React.FC<DailyFilingGroupViewProps> = ({
                                 <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3.5]" />
                               </span>
                             )}
-                            <span className="font-bold text-slate-900 font-['Prompt'] text-sm">
+                            <span className="font-extrabold text-slate-950 font-['Prompt'] text-base sm:text-lg tracking-tight">
                               ดำ {caseItem.blackCaseNo}
                             </span>
                             {caseItem.redCaseNo ? (
-                              <span className="text-xs font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                              <span className="text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
                                 แดง {caseItem.redCaseNo}
                               </span>
                             ) : (
-                              <span className="text-[11px] text-slate-400 bg-slate-100/80 px-1.5 py-0.5 rounded border border-slate-200">
+                              <span className="text-xs text-slate-400 bg-slate-100/80 px-1.5 py-0.5 rounded border border-slate-200">
                                 ยังไม่มีเลขแดง
                               </span>
                             )}

@@ -30,7 +30,10 @@ import {
   Eye,
   History,
   RotateCcw,
-  Check
+  Check,
+  Users,
+  UserCheck,
+  ChevronDown
 } from 'lucide-react';
 import { AppealCase, CaseAppointment } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
@@ -229,6 +232,57 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   // แคชความเชื่อมโยงของสำนวนคดีทั้งหมดเพื่อการค้นหาและการแสดงผลที่รวดเร็ว
   const prebuiltLinkedMap = React.useMemo(() => buildLinkedCasesMap(cases), [cases]);
 
+  // Filter by Prosecutor: 'all' or specific prosecutor name
+  const [selectedProsecutor, setSelectedProsecutor] = useState<string>('all');
+  const [prosecutorActiveOnly, setProsecutorActiveOnly] = useState<boolean>(true);
+
+  // สรุปรายชื่ออัยการทั้งหมด (ทั้งอัยการเจ้าของสำนวน, อัยการเวรชี้ และผู้รับเสนอเวรชี้) พร้อมจำนวนสำนวน
+  const prosecutorList = React.useMemo(() => {
+    const map = new Map<string, { name: string; activeCount: number; totalCount: number }>();
+
+    cases.forEach((c) => {
+      const candidates = new Set<string>();
+      if (
+        c.responsiblePerson &&
+        c.responsiblePerson.trim() &&
+        c.responsiblePerson !== 'ผู้ดูแลสำนวน' &&
+        c.responsiblePerson !== 'รอกำหนด' &&
+        c.responsiblePerson !== '-'
+      ) {
+        candidates.add(c.responsiblePerson.trim());
+      }
+      if (
+        c.prosecutorName &&
+        c.prosecutorName.trim() &&
+        c.prosecutorName !== 'ผู้ดูแลสำนวน' &&
+        c.prosecutorName !== 'รอกำหนด' &&
+        c.prosecutorName !== '-'
+      ) {
+        candidates.add(c.prosecutorName.trim());
+      }
+      if (
+        c.submittedToDutyOfficer &&
+        c.submittedToDutyOfficer.trim() &&
+        c.submittedToDutyOfficer !== '-'
+      ) {
+        candidates.add(c.submittedToDutyOfficer.trim());
+      }
+
+      const isActive = !c.isCompleted && !isCaseTemporarilyDischarged(c);
+
+      candidates.forEach((name) => {
+        const existing = map.get(name) || { name, activeCount: 0, totalCount: 0 };
+        existing.totalCount += 1;
+        if (isActive) {
+          existing.activeCount += 1;
+        }
+        map.set(name, existing);
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  }, [cases]);
+
   useEffect(() => {
     if (externalSearchTerm !== undefined) {
       setSearchTerm(externalSearchTerm);
@@ -294,6 +348,26 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       }
       if (statusFilter === 'completed') {
         return c.isCompleted;
+      }
+      return true;
+    })
+    .filter((c) => {
+      // กรองตามอัยการเจ้าของสำนวน หรือ อัยการเวรชี้ (Filter by Prosecutor)
+      if (selectedProsecutor && selectedProsecutor !== 'all') {
+        const resp = (c.responsiblePerson || '').trim();
+        const duty = (c.prosecutorName || '').trim();
+        const subDuty = (c.submittedToDutyOfficer || '').trim();
+        const matchesProsecutor =
+          resp === selectedProsecutor ||
+          duty === selectedProsecutor ||
+          subDuty === selectedProsecutor;
+
+        if (!matchesProsecutor) return false;
+
+        // หากเลือกให้แสดงเฉพาะสำนวนที่ยังไม่เสร็จสิ้น (Active cases only)
+        if (prosecutorActiveOnly && (c.isCompleted || isCaseTemporarilyDischarged(c))) {
+          return false;
+        }
       }
       return true;
     })
@@ -570,9 +644,30 @@ export const CaseTable: React.FC<CaseTableProps> = ({
           </div>
         </div>
 
-        {/* Search & Actions */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 sm:w-80">
+        {/* Search, Filter by Prosecutor & Actions */}
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
+          {/* Filter by Prosecutor Dropdown */}
+          <div className="relative min-w-[210px] sm:w-64 flex-shrink-0">
+            <Users className="w-4 h-4 text-amber-700 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <select
+              value={selectedProsecutor}
+              onChange={(e) => setSelectedProsecutor(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-amber-500 font-semibold text-slate-800 transition cursor-pointer appearance-none shadow-2xs"
+              title="กรองตามอัยการเจ้าของสำนวน หรือ อัยการเวรชี้"
+            >
+              <option value="all">
+                👨‍⚖️ อัยการทั้งหมด ({prosecutorList.length} ท่าน)
+              </option>
+              {prosecutorList.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name} ({p.activeCount} ค้างอยู่ / รวม {p.totalCount})
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          <div className="relative flex-1 min-w-[180px] sm:w-72">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -625,6 +720,41 @@ export const CaseTable: React.FC<CaseTableProps> = ({
           )}
         </div>
       </div>
+
+      {/* Active Prosecutor Filter Banner */}
+      {selectedProsecutor !== 'all' && (
+        <div className="bg-amber-50/90 border-b border-amber-200 px-4 py-2.5 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-2.5 animate-in fade-in">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold font-['Prompt'] flex items-center gap-1.5 text-amber-900">
+              <UserCheck className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>กำลังกรองตามอัยการ: <strong className="text-amber-950 underline text-sm">{selectedProsecutor}</strong></span>
+            </span>
+            <span className="text-amber-300">•</span>
+            <span className="text-amber-900 font-medium">
+              แสดง <strong>{filteredCases.length}</strong> สำนวน
+            </span>
+            <label className="inline-flex items-center gap-1.5 ml-1.5 cursor-pointer bg-white/95 px-2.5 py-1 rounded-lg border border-amber-300 text-xs font-semibold text-amber-900 shadow-2xs hover:bg-white transition">
+              <input
+                type="checkbox"
+                checked={prosecutorActiveOnly}
+                onChange={(e) => setProsecutorActiveOnly(e.target.checked)}
+                className="w-3.5 h-3.5 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+              />
+              <span>เฉพาะสำนวนที่ยังไม่เสร็จสิ้น (Active Cases)</span>
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setSelectedProsecutor('all')}
+            className="text-xs text-amber-900 hover:text-amber-950 font-bold bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer transition shadow-2xs active:scale-95"
+            title="ล้างตัวกรองอัยการ กลับไปแสดงทั้งหมด"
+          >
+            <X className="w-3.5 h-3.5 text-amber-700" />
+            <span>ล้างตัวกรองอัยการ</span>
+          </button>
+        </div>
+      )}
 
       {/* Voice Status Alert if active */}
       {voiceNotice && (
@@ -908,10 +1038,10 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                       </div>
                       <div className="mt-0.5">
                         <span
-                          className="inline-flex items-center gap-1 bg-white/95 border border-amber-300 text-slate-950 px-1.5 py-0.5 rounded font-['Prompt'] text-[11px] font-bold shadow-2xs max-w-full"
+                          className="inline-flex items-center gap-1.5 bg-white/95 border border-amber-300 text-slate-950 px-2 py-0.5 rounded font-['Prompt'] text-xs font-bold shadow-2xs max-w-full"
                           title={`จำเลย: ${caseItem.defendant}`}
                         >
-                          <span className="text-amber-800 font-extrabold text-[10px] shrink-0">👤 ล:</span>
+                          <span className="text-amber-800 font-extrabold text-[11px] shrink-0">👤 จำเลย:</span>
                           <span className="truncate">{caseItem.defendant}</span>
                         </span>
                       </div>
