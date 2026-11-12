@@ -40,7 +40,8 @@ import {
   BarChart3,
   Eye,
   Image as ImageIcon,
-  Send
+  Send,
+  Keyboard
 } from 'lucide-react';
 import { AppealCase, MonthlyDutyRoster, SheetConfig } from '../types/appeal';
 import {
@@ -429,6 +430,64 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
   >('all');
   const [isSearchPanelExplicitlyOpen, setIsSearchPanelExplicitlyOpen] = useState<boolean>(false);
 
+  // Focus helper for top search input
+  const focusTopSearchInput = (selectText = true) => {
+    if (topSearchInputRef.current) {
+      topSearchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      topSearchInputRef.current.focus();
+      if (selectText) {
+        topSearchInputRef.current.select();
+      }
+    }
+  };
+
+  // Keyboard shortcut listener for focusing the search box:
+  // - Ctrl + K or Cmd + K (Universal search shortcut)
+  // - Ctrl + F or Cmd + F (Quick search on page)
+  // - Alt + S (Search / สืบค้น)
+  // - '/' (Forward slash when not typing in an input/textarea)
+  // - Esc (Clear query or blur search box)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditable =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.tagName === 'SELECT');
+
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      const isKeyK = e.key === 'k' || e.key === 'K' || e.code === 'KeyK';
+      const isKeyF = e.key === 'f' || e.key === 'F' || e.code === 'KeyF';
+      const isAltS = e.altKey && (e.key === 's' || e.key === 'S' || e.code === 'KeyS');
+      const isSlash = !isCtrlOrCmd && !e.altKey && (e.key === '/' || e.code === 'Slash');
+
+      // 1. If currently inside search box and pressed Escape: clear query or blur
+      if (document.activeElement === topSearchInputRef.current && e.key === 'Escape') {
+        e.preventDefault();
+        if (topSearchQuery) {
+          setTopSearchQuery('');
+          setIsSearchPanelExplicitlyOpen(false);
+        } else {
+          topSearchInputRef.current?.blur();
+        }
+        return;
+      }
+
+      // 2. Trigger search focus on shortcuts
+      if ((isCtrlOrCmd && isKeyK) || (isCtrlOrCmd && isKeyF) || isAltS || (isSlash && !isEditable)) {
+        e.preventDefault();
+        focusTopSearchInput(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [topSearchQuery]);
+
   const isGlobalSearchActive = Boolean(topSearchQuery.trim() || topFilterStatus !== 'all' || isSearchPanelExplicitlyOpen);
 
   const globalFilteredCases = useMemo(() => {
@@ -764,6 +823,18 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-2 py-0.5 rounded-full shadow-2xs">
                     ค้นหาแล้วกรอกได้ทันที
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => focusTopSearchInput(true)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-xs font-medium text-amber-300 shadow-2xs cursor-pointer transition select-none active:scale-95"
+                    title="กด Ctrl + K หรือปุ่ม / เพื่อไปยังช่องค้นหาทันที"
+                  >
+                    <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-slate-300 text-[11px]">คีย์ลัด:</span>
+                    <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-slate-950 text-amber-300 rounded border border-slate-700 shadow-xs">Ctrl + K</kbd>
+                    <span className="text-slate-400 text-[10px]">หรือ</span>
+                    <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-slate-950 text-amber-300 rounded border border-slate-700 shadow-xs">/</kbd>
+                  </button>
                 </div>
                 <p className="text-xs text-indigo-200/80 mt-0.5">
                   ค้นหาด้วยเลขคดีดำ (เช่น อ.1858, 2570), เลขแดง, เลข ส.1, ส.4, จำเลย หรืออัยการ เพื่อเปิดบันทึกคำพิพากษาหรือแก้ไขข้อมูลได้ทันที
@@ -822,16 +893,35 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     handleExecuteTopSearch();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    if (topSearchQuery) {
+                      setTopSearchQuery('');
+                      setIsSearchPanelExplicitlyOpen(false);
+                    } else {
+                      topSearchInputRef.current?.blur();
+                    }
                   }
                 }}
-                placeholder="🔍 พิมพ์เลขคดีดำ (เช่น 2570, อ.1858), คดีแดง, เลข ส.1, ส.4, จำเลย, หรืออัยการเจ้าของสำนวน..."
-                className={`w-full text-xs sm:text-sm pl-10 pr-20 py-2.5 rounded-xl border transition focus:outline-none ${
+                placeholder="🔍 พิมพ์เลขคดีดำ (เช่น 2570, อ.1858), คดีแดง, เลข ส.1, ส.4, จำเลย, หรืออัยการเจ้าของสำนวน... (คีย์ลัด: Ctrl+K หรือ /)"
+                className={`w-full text-xs sm:text-sm pl-10 pr-24 sm:pr-48 py-2.5 rounded-xl border transition focus:outline-none ${
                   isTopListening
                     ? 'border-rose-400 bg-rose-50/20 text-rose-100 ring-2 ring-rose-400'
                     : 'border-white/20 bg-white/10 text-white placeholder-slate-400 focus:bg-white/15 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
                 }`}
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                {!topSearchQuery && !isTopListening && (
+                  <button
+                    type="button"
+                    onClick={() => focusTopSearchInput(true)}
+                    className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/20 text-slate-300 text-[11px] font-mono transition cursor-pointer select-none"
+                    title="กดปุ่ม Ctrl + K หรือปุ่ม / เพื่อพิมพ์ค้นหาได้ทันที"
+                  >
+                    <span className="text-[10px] text-slate-400">คีย์ลัด</span>
+                    <kbd className="px-1.5 py-0.5 bg-slate-950 text-amber-300 font-bold rounded text-[10px] border border-slate-700 shadow-2xs">Ctrl+K</kbd>
+                  </button>
+                )}
                 {topSearchQuery && (
                   <button
                     type="button"
@@ -841,7 +931,7 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                       topSearchInputRef.current?.focus();
                     }}
                     className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-                    title="ล้างคำค้นหา"
+                    title="ล้างคำค้นหา (หรือกด Esc)"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1257,15 +1347,13 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
             <button
               type="button"
-              onClick={() => {
-                topSearchInputRef.current?.focus();
-                topSearchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }}
+              onClick={() => focusTopSearchInput(true)}
               className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-xs cursor-pointer active:scale-95"
-              title="คลิกเพื่อเลื่อนไปค้นหาสำนวนเพื่อกรอกข้อมูลด้านบน"
+              title="คลิกเพื่อเลื่อนไปค้นหาสำนวนเพื่อกรอกข้อมูลด้านบน (หรือกด Ctrl+K)"
             >
               <Search className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>ค้นหาสำนวนเพื่อกรอกข้อมูล</span>
+              <kbd className="hidden lg:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-bold bg-slate-950 text-amber-300 rounded border border-slate-800 shadow-2xs">Ctrl+K</kbd>
             </button>
 
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
