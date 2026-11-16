@@ -391,18 +391,8 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       ? (deadlineInfo.deadlineDate || calculatedDeadline?.deadlineDate || caseItem.appealDeadline)
       : undefined;
 
-    let finalRedCaseNo = redCaseNo.trim() || undefined;
-    if (!finalRedCaseNo) {
-      const match = `${fullJudgmentText} ${judgmentOutcome} ${notes}`.match(
-        /(?:คดีหมายเลขแดงที่|เลขคดีแดงที่|เลขคดีแดง|คดีแดงที่|คดีแดง|แดงที่|แดง)\s*([^\s,;()]+)/i
-      );
-      if (match && match[1]) {
-        const extracted = match[1].replace(/^[.:\s]+/, '').trim();
-        if (extracted && extracted !== '-' && extracted !== 'ยังไม่มีเลขแดง' && extracted.length >= 2) {
-          finalRedCaseNo = extracted;
-        }
-      }
-    }
+    // หากผู้ใช้ลบเลขแดงออก (redCaseNo เป็นค่าว่าง) ให้เคารพการลบของผู้ใช้ โดยไม่นำข้อความเดิมมาเติมกลับเข้าไป
+    const finalRedCaseNo = redCaseNo.trim() || undefined;
 
     const updatedCase: AppealCase = {
       ...caseItem,
@@ -1206,18 +1196,47 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
-                <span>หมายเลขคดีแดง</span>
+                <span className="flex items-center gap-1.5">
+                  <span>หมายเลขคดีแดง</span>
+                  {redCaseNo && (
+                    <span className="text-[10px] text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 font-semibold">
+                      แดง {redCaseNo}
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] text-slate-400 font-normal">
                   {hasJudgment ? 'จำเป็นเมื่อมีคำพิพากษา' : 'ไม่บังคับ (ยังไม่มีคำพิพากษา/จำเลยปฏิเสธ)'}
                 </span>
               </label>
-              <input
-                type="text"
-                placeholder={hasJudgment ? 'เช่น อ.891/2569' : 'ไม่บังคับ (รอกำหนดเมื่อศาลมีคำพิพากษา)'}
-                value={redCaseNo}
-                onChange={(e) => setRedCaseNo(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder={hasJudgment ? 'เช่น อ.891/2569' : 'ไม่บังคับ (รอกำหนดเมื่อศาลมีคำพิพากษา)'}
+                  value={redCaseNo}
+                  onChange={(e) => setRedCaseNo(e.target.value)}
+                  className={`w-full text-xs border rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 ${
+                    redCaseNo
+                      ? 'border-rose-300 bg-rose-50/20 text-rose-900 font-bold focus:ring-rose-400 pr-24'
+                      : 'border-slate-300 focus:ring-amber-500'
+                  }`}
+                />
+                {redCaseNo && (
+                  <button
+                    type="button"
+                    onClick={() => setRedCaseNo('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-rose-700 hover:text-white bg-rose-100 hover:bg-rose-600 border border-rose-300 px-2 py-0.5 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+                    title="คลิกลบหมายเลขคดีแดงออก"
+                  >
+                    <X className="w-3 h-3" />
+                    <span>ลบเลขแดง</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                {redCaseNo
+                  ? 'หากคดีนี้ยังไม่มีคำพิพากษาหรือกรอกเลขแดงผิด สามารถกดปุ่ม "ลบเลขแดง" เพื่อล้างค่าได้ทันที'
+                  : 'สำนวนที่ยังไม่มีคำพิพากษาหรือจำเลยปฏิเสธ สามารถเว้นว่างไว้ได้'}
+              </p>
             </div>
           </div>
 
@@ -1799,15 +1818,28 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                       เชื่อมโยงเลขแดง
                     </span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="เช่น อ.891/2569"
-                    value={redCaseNo}
-                    onChange={(e) => setRedCaseNo(e.target.value)}
-                    className="w-full text-xs border border-rose-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500 font-bold text-rose-800"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="เช่น อ.891/2569"
+                      value={redCaseNo}
+                      onChange={(e) => setRedCaseNo(e.target.value)}
+                      className="w-full text-xs border border-rose-300 rounded-xl px-3 py-2 pr-24 bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500 font-bold text-rose-800"
+                    />
+                    {redCaseNo && (
+                      <button
+                        type="button"
+                        onClick={() => setRedCaseNo('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-rose-700 hover:text-white bg-rose-100 hover:bg-rose-600 border border-rose-300 px-2 py-0.5 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+                        title="คลิกลบหมายเลขคดีแดงออก"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>ลบเลขแดง</span>
+                      </button>
+                    )}
+                  </div>
                   <span className="text-[10px] text-slate-500 block mt-1">
-                    {redCaseNo ? `เชื่อมโยง: แดง ${redCaseNo}` : 'ระบุเมื่อศาลตัดสิน'}
+                    {redCaseNo ? `เชื่อมโยง: แดง ${redCaseNo}` : 'ระบุเมื่อศาลตัดสิน หรือเว้นว่างหากยังไม่มี'}
                   </span>
                 </div>
 

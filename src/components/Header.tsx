@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History, RotateCcw, Type } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History, RotateCcw, Type, Undo2, Redo2 } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
 import { AppAuthUser } from '../services/auth';
 
@@ -28,6 +28,12 @@ interface HeaderProps {
   onOpenBackupViewer?: () => void;
   onOpenActivityLog?: () => void;
   onOpenRevisions?: () => void;
+  onUndo?: () => void;
+  undoCount?: number;
+  lastUndoLabel?: string;
+  onRedo?: () => void;
+  redoCount?: number;
+  lastRedoLabel?: string;
   connectionStatus?: 'connected' | 'error' | 'connecting';
   firebaseProjectId?: string;
   onOpenRulesGuide?: () => void;
@@ -56,8 +62,14 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenBackupViewer,
   onOpenActivityLog,
   onOpenRevisions,
+  onUndo,
+  undoCount = 0,
+  lastUndoLabel,
+  onRedo,
+  redoCount = 0,
+  lastRedoLabel,
   connectionStatus = 'connected',
-  firebaseProjectId = 'nrt555',
+  firebaseProjectId = 'naratipsrearj',
   onOpenRulesGuide,
 }) => {
   // วันที่ปัจจุบันแบบไทย
@@ -306,6 +318,79 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
               </button>
+            )}
+
+            {/* Quick Undo (Ctrl + Z) & Go Forward / Redo (Ctrl + Y) Buttons */}
+            {onUndo && (role === 'admin' || role === 'editor' || (role === 'appeal_officer' && (undoCount > 0 || redoCount > 0))) && (
+              <div className="inline-flex items-center gap-1 bg-slate-800/50 p-0.5 rounded-xl border border-slate-700/60">
+                <button
+                  type="button"
+                  onClick={onUndo}
+                  disabled={undoCount === 0}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                    undoCount > 0
+                      ? 'bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-200 border-emerald-400/60 shadow-sm cursor-pointer active:scale-95'
+                      : 'bg-slate-800/70 text-slate-500 border-transparent cursor-not-allowed'
+                  }`}
+                  title={
+                    undoCount > 0
+                      ? `ย้อนกลับไปเหตุการณ์ก่อนแก้ไข: ${lastUndoLabel || 'รายการล่าสุด'} (คีย์ลัด Ctrl + Z)`
+                      : 'ยังไม่มีรายการแก้ไขล่าสุดให้ย้อนกลับ (เมื่อแก้ไขหรือเปลี่ยนสถานะแล้ว สามารถกดปุ่มนี้หรือ Ctrl + Z เพื่อย้อนกลับได้ทันที)'
+                  }
+                >
+                  <Undo2 className={`w-3.5 h-3.5 ${undoCount > 0 ? 'text-emerald-300' : 'text-slate-500'}`} />
+                  <span>ย้อนกลับ</span>
+                  <kbd
+                    className={`hidden sm:inline-block px-1.5 py-0.2 rounded text-[10px] font-mono border ${
+                      undoCount > 0
+                        ? 'bg-slate-950/80 text-emerald-300 border-emerald-500/40'
+                        : 'bg-slate-900 text-slate-500 border-slate-700'
+                    }`}
+                  >
+                    Ctrl+Z
+                  </kbd>
+                  {undoCount > 0 && (
+                    <span className="bg-emerald-400 text-slate-950 text-[10px] font-bold px-1.5 py-0.2 rounded-full font-mono">
+                      {undoCount}
+                    </span>
+                  )}
+                </button>
+
+                {onRedo && (
+                  <button
+                    type="button"
+                    onClick={onRedo}
+                    disabled={redoCount === 0}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                      redoCount > 0
+                        ? 'bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border-sky-400/60 shadow-sm cursor-pointer active:scale-95'
+                        : 'bg-slate-800/70 text-slate-500 border-transparent cursor-not-allowed'
+                    }`}
+                    title={
+                      redoCount > 0
+                        ? `ไปข้างหน้า (ทำซ้ำ): ${lastRedoLabel || 'รายการที่เพิ่งย้อนกลับ'} (คีย์ลัด Ctrl + Y หรือ Ctrl + Shift + Z)`
+                        : 'ยังไม่มีรายการที่เพิ่งย้อนกลับให้กดไปข้างหน้า (กดปุ่มนี้หรือ Ctrl + Y หลังกดย้อนกลับ)'
+                    }
+                  >
+                    <Redo2 className={`w-3.5 h-3.5 ${redoCount > 0 ? 'text-sky-300' : 'text-slate-500'}`} />
+                    <span>ไปข้างหน้า</span>
+                    <kbd
+                      className={`hidden sm:inline-block px-1.5 py-0.2 rounded text-[10px] font-mono border ${
+                        redoCount > 0
+                          ? 'bg-slate-950/80 text-sky-300 border-sky-500/40'
+                          : 'bg-slate-900 text-slate-500 border-slate-700'
+                      }`}
+                    >
+                      Ctrl+Y
+                    </kbd>
+                    {redoCount > 0 && (
+                      <span className="bg-sky-400 text-slate-950 text-[10px] font-bold px-1.5 py-0.2 rounded-full font-mono">
+                        {redoCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Revert / Version History: ย้อนกลับข้อมูล & ประวัติการแก้ไข (สำหรับแอดมินและผู้ร่วมแก้ไข) */}

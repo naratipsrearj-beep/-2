@@ -331,23 +331,152 @@ export async function recordCriticalActivity(
 }
 
 /**
- * Save or update case in Firestore
+ * Helper to prepare case data for Firestore with proper deleteField() for cleared/deleted fields
  */
-export async function saveCaseToFirestore(caseItem: AppealCase): Promise<void> {
-  const docRef = doc(db, 'cases', caseItem.id);
-  // Clean undefined properties before saving to Firestore
-  const cleanData = JSON.parse(JSON.stringify(caseItem));
+function prepareCaseDataForFirestore(caseItem: AppealCase): Record<string, any> {
+  const cleanData: Record<string, any> = JSON.parse(JSON.stringify(caseItem));
+
+  // Explicitly delete optional fields in Firestore when they are empty or undefined
+  if (!caseItem.redCaseNo || !caseItem.redCaseNo.trim()) {
+    cleanData.redCaseNo = deleteField();
+  }
+  if (!caseItem.judgmentDate) {
+    cleanData.judgmentDate = deleteField();
+  }
+  if (!caseItem.judgmentOutcome) {
+    cleanData.judgmentOutcome = deleteField();
+  }
+  if (!caseItem.fullJudgmentText) {
+    cleanData.fullJudgmentText = deleteField();
+  }
+  if (!caseItem.appealDeadline) {
+    cleanData.appealDeadline = deleteField();
+  }
   if (!caseItem.extendedDeadline) {
     cleanData.extendedDeadline = deleteField();
   }
   if (!caseItem.extensionCount) {
     cleanData.extensionCount = deleteField();
   }
+  if (!caseItem.receivedNumberS1) {
+    cleanData.receivedNumberS1 = deleteField();
+  }
+  if (!caseItem.filingNumberS4) {
+    cleanData.filingNumberS4 = deleteField();
+  }
+  if (!caseItem.prosecutorName) {
+    cleanData.prosecutorName = deleteField();
+  }
+  if (!caseItem.submittedToDutyOfficer) {
+    cleanData.submittedToDutyOfficer = deleteField();
+  }
+  if (!caseItem.appointmentDate) {
+    cleanData.appointmentDate = deleteField();
+  }
+  if (!caseItem.appointmentType || caseItem.appointmentType === 'none') {
+    cleanData.appointmentType = deleteField();
+    cleanData.appointmentTypeName = deleteField();
+  }
+  if (!caseItem.appointmentNotes) {
+    cleanData.appointmentNotes = deleteField();
+  }
+  if (!caseItem.judgmentPhotoUrl) {
+    cleanData.judgmentPhotoUrl = deleteField();
+  }
+  if (!caseItem.judgmentPhotoName) {
+    cleanData.judgmentPhotoName = deleteField();
+  }
+  if (!caseItem.judgmentVerifiedBy) {
+    cleanData.judgmentVerifiedBy = deleteField();
+  }
+  if (!caseItem.judgmentRecheckNotes) {
+    cleanData.judgmentRecheckNotes = deleteField();
+  }
+  if (!caseItem.severedFromCaseId) {
+    cleanData.severedFromCaseId = deleteField();
+  }
+  if (!caseItem.originalBlackCaseNo) {
+    cleanData.originalBlackCaseNo = deleteField();
+  }
+  if (!caseItem.originalRedCaseNo) {
+    cleanData.originalRedCaseNo = deleteField();
+  }
+  if (!caseItem.originalReceivedNumberS1) {
+    cleanData.originalReceivedNumberS1 = deleteField();
+  }
+  if (!caseItem.originalFilingNumberS4) {
+    cleanData.originalFilingNumberS4 = deleteField();
+  }
+  if (!caseItem.severedOrderDate) {
+    cleanData.severedOrderDate = deleteField();
+  }
+  if (!caseItem.severedDeadlineDate) {
+    cleanData.severedDeadlineDate = deleteField();
+  }
+  if (!caseItem.severedNotes) {
+    cleanData.severedNotes = deleteField();
+  }
+  if (!caseItem.severedNewBlackCaseNo) {
+    cleanData.severedNewBlackCaseNo = deleteField();
+  }
+  if (!caseItem.temporaryDischargeDate) {
+    cleanData.temporaryDischargeDate = deleteField();
+  }
+  if (!caseItem.arrestWarrantNo) {
+    cleanData.arrestWarrantNo = deleteField();
+  }
+  if (!caseItem.arrestWarrantDate) {
+    cleanData.arrestWarrantDate = deleteField();
+  }
+  if (!caseItem.recapturedDate) {
+    cleanData.recapturedDate = deleteField();
+  }
+  if (!caseItem.temporaryDischargeNotes) {
+    cleanData.temporaryDischargeNotes = deleteField();
+  }
+  if (!caseItem.completedDate) {
+    cleanData.completedDate = deleteField();
+  }
+  if (!caseItem.completionReason) {
+    cleanData.completionReason = deleteField();
+  }
+  if (!caseItem.submittedToDutyDate) {
+    cleanData.submittedToDutyDate = deleteField();
+  }
+  if (!caseItem.submittedToDutyNotes) {
+    cleanData.submittedToDutyNotes = deleteField();
+  }
+  if (!caseItem.noAppealConfirmedAt) {
+    cleanData.noAppealConfirmedAt = deleteField();
+  }
+  if (!caseItem.defendantPlea) {
+    cleanData.defendantPlea = deleteField();
+  }
+  if (!caseItem.requisitionDate) {
+    cleanData.requisitionDate = deleteField();
+  }
+  if (!caseItem.requisitionNotes) {
+    cleanData.requisitionNotes = deleteField();
+  }
+  if (!caseItem.notes) {
+    cleanData.notes = deleteField();
+  }
+
   // Firestore per-document limit is 1 MiB (1,048,576 bytes). Ensure base64 string does not exceed safe margin
   if (cleanData.judgmentPhotoUrl && typeof cleanData.judgmentPhotoUrl === 'string' && cleanData.judgmentPhotoUrl.length > 850000) {
     console.warn('judgmentPhotoUrl is larger than 850KB, omitting from Firestore doc to avoid rejection');
     cleanData.judgmentPhotoUrl = deleteField();
   }
+
+  return cleanData;
+}
+
+/**
+ * Save or update case in Firestore
+ */
+export async function saveCaseToFirestore(caseItem: AppealCase): Promise<void> {
+  const docRef = doc(db, 'cases', caseItem.id);
+  const cleanData = prepareCaseDataForFirestore(caseItem);
   await setDoc(docRef, cleanData, { merge: true });
 }
 
@@ -358,16 +487,7 @@ export async function saveCasesBatchToFirestore(cases: AppealCase[]): Promise<vo
   const batch = writeBatch(db);
   cases.forEach((c) => {
     const docRef = doc(db, 'cases', c.id);
-    const cleanData = JSON.parse(JSON.stringify(c));
-    if (!c.extendedDeadline) {
-      cleanData.extendedDeadline = deleteField();
-    }
-    if (!c.extensionCount) {
-      cleanData.extensionCount = deleteField();
-    }
-    if (cleanData.judgmentPhotoUrl && typeof cleanData.judgmentPhotoUrl === 'string' && cleanData.judgmentPhotoUrl.length > 850000) {
-      cleanData.judgmentPhotoUrl = deleteField();
-    }
+    const cleanData = prepareCaseDataForFirestore(c);
     batch.set(docRef, cleanData, { merge: true });
   });
   await batch.commit();

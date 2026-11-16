@@ -22,6 +22,8 @@ import {
   KeyRound,
   BarChart3,
   RotateCcw,
+  Undo2,
+  Redo2,
   X
 } from 'lucide-react';
 
@@ -245,11 +247,33 @@ export default function App() {
   const [revisionFilterCaseId, setRevisionFilterCaseId] = useState<string | undefined>();
   const [revisionFilterBlackNo, setRevisionFilterBlackNo] = useState<string | undefined>();
   const [quickUndo, setQuickUndo] = useState<{
-    type: 'edit' | 'delete';
+    type: 'edit' | 'delete' | 'create' | 'redo';
     message: string;
     revisionId?: string;
     backupId?: string;
+    undoEntryId?: string;
+    redoEntryId?: string;
   } | null>(null);
+
+  // Multi-step Session Undo / Redo Stack (รองรับคีย์ลัด Ctrl+Z / Ctrl+Y และปุ่มย้อนกลับ)
+  interface UndoHistoryEntry {
+    id: string;
+    timestamp: string;
+    label: string;
+    type: 'update_cases' | 'create_case' | 'delete_case';
+    requiredRole: 'edit' | 'complete';
+    caseSnapshots?: Array<{
+      caseId: string;
+      before: AppealCase;
+      after: AppealCase;
+    }>;
+    createdCase?: AppealCase;
+    deletedCase?: AppealCase;
+    backupId?: string;
+  }
+
+  const [undoStack, setUndoStack] = useState<UndoHistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<UndoHistoryEntry[]>([]);
 
   // Auto-clear quickUndo after 8 seconds
   useEffect(() => {
@@ -412,9 +436,213 @@ export default function App() {
     showToast(`♻️ กู้คืนสำนวน ${restoredCase.blackCaseNo} กลับเข้าสู่ระบบเรียบร้อย`);
   };
 
+  // Helper to push an action onto the Undo stack (and display quick Undo toast)
+  const pushUndoEntry = (
+    entry: Omit<UndoHistoryEntry, 'id' | 'timestamp'>,
+    toastMsg?: string
+  ) => {
+    const newEntry: UndoHistoryEntry = {
+      ...JSON.parse(JSON.stringify(entry)),
+      id: `undo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: new Date().toISOString(),
+    };
+    setUndoStack((prev) => [newEntry, ...prev].slice(0, 50));
+    setRedoStack([]);
+    setQuickUndo({
+      type: entry.type === 'delete_case' ? 'delete' : entry.type === 'create_case' ? 'create' : 'edit',
+      message: toastMsg || entry.label,
+      backupId: entry.backupId,
+      undoEntryId: newEntry.id,
+    });
+  };
+
+  // Perform Undo (Ctrl+Z or Undo button)
+  const performUndo = async () => {
+    if (undoStack.length === 0) {
+      showToast('ยังไม่มีรายการที่เพิ่งแก้ไขในเซสชันนี้ (สามารถดูประวัติย้อนหลังทั้งหมดได้ที่ปุ่ม "ย้อนหลังข้อมูล")');
+      return;
+    }
+
+    const [latest, ...remainingUndo] = undoStack;
+    const hasPermission = latest.requiredRole === 'complete' ? (canEdit || canComplete) : canEdit;
+    if (!hasPermission) {
+      showToast('คุณไม่มีสิทธิ์ย้อนกลับรายการนี้');
+      return;
+    }
+
+    const actor = {
+      name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+      role: userRole,
+      email: user?.email || undefined,
+    };
+
+    try {
+      if (latest.type === 'update_cases' && latest.caseSnapshots && latest.caseSnapshots.length > 0) {
+        const snapshotMap = new Map<string, AppealCase>();
+        latest.caseSnapshots.forEach((snap) => {
+          const restored: AppealCase = {
+            ...JSON.parse(JSON.stringify(snap.before)),
+            updatedAt: new Date().toISOString(),
+          };
+          snapshotMap.set(snap.caseId, restored);
+          const current = cases.find((c) => c.id === snap.caseId) || snap.after;
+          recordCaseRevision(current, restored, actor, 'revert', `ย้อนกลับ (Ctrl+Z): ${latest.label}`);
+        });
+
+        const updatedCases = cases.map((c) => snapshotMap.get(c.id) || c);
+        setCases(updatedCases);
+        saveCases(updatedCases);
+        setRevisions(getSavedRevisions());
+
+        const changedList = Array.from(snapshotMap.values());
+        if (changedList.length === 1) {
+          saveCaseToFirestore(changedList[0]).catch((e) => console.warn('Firestore undo update error:', e));
+        } else if (changedList.length > 1) {
+          saveCasesBatchToFirestore(changedList).catch((e) => console.warn('Firestore undo batch error:', e));
+        }
+
+        const firstSnap = latest.caseSnapshots[0];
+        logAction(
+          'case_reverted',
+          'ย้อนกลับข้อมูล (Ctrl+Z)',
+          `คดีดำ ${firstSnap.before.blackCaseNo}`,
+          `ย้อนกลับเหตุการณ์: ${latest.label}`,
+          { caseId: firstSnap.caseId, blackCaseNo: firstSnap.before.blackCaseNo },
+          firstSnap.caseId
+        );
+      } else if (latest.type === 'create_case' && latest.createdCase) {
+        const targetId = latest.createdCase.id;
+        const remainingCases = cases.filter((c) => c.id !== targetId);
+        setCases(remainingCases);
+        saveCases(remainingCases);
+        deleteCaseFromFirestore(targetId).catch((e) => console.warn('Firestore undo create error:', e));
+
+        logAction(
+          'case_reverted',
+          'ย้อนกลับการเพิ่มสำนวน (Ctrl+Z)',
+          `คดีดำ ${latest.createdCase.blackCaseNo}`,
+          `ยกเลิกการเพิ่มสำนวนคดีดำ ${latest.createdCase.blackCaseNo} ด้วยการกดย้อนกลับ`,
+          { caseId: targetId, blackCaseNo: latest.createdCase.blackCaseNo },
+          targetId
+        );
+      } else if (latest.type === 'delete_case' && latest.deletedCase) {
+        const restoredCase: AppealCase = {
+          ...JSON.parse(JSON.stringify(latest.deletedCase)),
+          updatedAt: new Date().toISOString(),
+        };
+        const restoredList = [restoredCase, ...cases.filter((c) => c.id !== restoredCase.id)];
+        setCases(restoredList);
+        saveCases(restoredList);
+        saveCaseToFirestore(restoredCase).catch((e) => console.warn('Firestore undo delete error:', e));
+        removeDeletedCase(restoredCase.id);
+        setDeletedCases(getDeletedCases());
+
+        logAction(
+          'case_restored',
+          'กู้คืนสำนวนที่ลบ (Ctrl+Z)',
+          `คดีดำ ${restoredCase.blackCaseNo}`,
+          `กู้คืนสำนวนคดีดำ ${restoredCase.blackCaseNo} ที่ถูกลบด้วยปุ่มย้อนกลับ`,
+          { caseId: restoredCase.id, blackCaseNo: restoredCase.blackCaseNo },
+          restoredCase.id
+        );
+      }
+
+      setUndoStack(remainingUndo);
+      setRedoStack((prev) => [latest, ...prev].slice(0, 50));
+      setQuickUndo({
+        type: 'redo',
+        message: `↩️ ย้อนกลับแล้ว: ยกเลิก "${latest.label}"${remainingUndo.length > 0 ? ` (เหลือย้อนกลับอีก ${remainingUndo.length} ขั้น)` : ''}`,
+        redoEntryId: latest.id,
+      });
+    } catch (err) {
+      console.error('Undo error:', err);
+      showToast('เกิดข้อผิดพลาดในการย้อนกลับข้อมูล');
+    }
+  };
+
+  // Perform Redo (Ctrl+Y or Ctrl+Shift+Z or Go Forward button)
+  const performRedo = async () => {
+    if (redoStack.length === 0) {
+      showToast('ยังไม่มีรายการที่เพิ่งย้อนกลับให้กดไปข้างหน้า');
+      return;
+    }
+
+    const [latest, ...remainingRedo] = redoStack;
+    const hasPermission = latest.requiredRole === 'complete' ? (canEdit || canComplete) : canEdit;
+    if (!hasPermission) {
+      showToast('คุณไม่มีสิทธิ์ทำซ้ำรายการนี้');
+      return;
+    }
+
+    const actor = {
+      name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+      role: userRole,
+      email: user?.email || undefined,
+    };
+
+    try {
+      if (latest.type === 'update_cases' && latest.caseSnapshots && latest.caseSnapshots.length > 0) {
+        const snapshotMap = new Map<string, AppealCase>();
+        latest.caseSnapshots.forEach((snap) => {
+          const reapplied: AppealCase = {
+            ...JSON.parse(JSON.stringify(snap.after)),
+            updatedAt: new Date().toISOString(),
+          };
+          snapshotMap.set(snap.caseId, reapplied);
+          const current = cases.find((c) => c.id === snap.caseId) || snap.before;
+          recordCaseRevision(current, reapplied, actor, 'edit', `ทำซ้ำ (Ctrl+Y): ${latest.label}`);
+        });
+
+        const updatedCases = cases.map((c) => snapshotMap.get(c.id) || c);
+        setCases(updatedCases);
+        saveCases(updatedCases);
+        setRevisions(getSavedRevisions());
+
+        const changedList = Array.from(snapshotMap.values());
+        if (changedList.length === 1) {
+          saveCaseToFirestore(changedList[0]).catch((e) => console.warn('Firestore redo update error:', e));
+        } else if (changedList.length > 1) {
+          saveCasesBatchToFirestore(changedList).catch((e) => console.warn('Firestore redo batch error:', e));
+        }
+      } else if (latest.type === 'create_case' && latest.createdCase) {
+        const reCreated: AppealCase = {
+          ...JSON.parse(JSON.stringify(latest.createdCase)),
+          updatedAt: new Date().toISOString(),
+        };
+        const updated = [reCreated, ...cases.filter((c) => c.id !== reCreated.id)];
+        setCases(updated);
+        saveCases(updated);
+        saveCaseToFirestore(reCreated).catch((e) => console.warn('Firestore redo create error:', e));
+      } else if (latest.type === 'delete_case' && latest.deletedCase) {
+        const targetId = latest.deletedCase.id;
+        const remaining = cases.filter((c) => c.id !== targetId);
+        setCases(remaining);
+        saveCases(remaining);
+        deleteCaseFromFirestore(targetId).catch((e) => console.warn('Firestore redo delete error:', e));
+        recordDeletedCase(latest.deletedCase, { name: actor.name, role: actor.role });
+        setDeletedCases(getDeletedCases());
+      }
+
+      setRedoStack(remainingRedo);
+      setUndoStack((prev) => [latest, ...prev].slice(0, 50));
+      setQuickUndo({
+        type: latest.type === 'delete_case' ? 'delete' : latest.type === 'create_case' ? 'create' : 'edit',
+        message: `↪️ ไปข้างหน้าแล้ว: "${latest.label}"${remainingRedo.length > 0 ? ` (ไปข้างหน้าได้อีก ${remainingRedo.length} ขั้น)` : ''}`,
+        undoEntryId: latest.id,
+      });
+    } catch (err) {
+      console.error('Redo error:', err);
+      showToast('เกิดข้อผิดพลาดในการทำซ้ำข้อมูล');
+    }
+  };
+
   // Quick Undo handler (for bottom toast)
   const handleQuickUndo = async () => {
     if (!quickUndo) return;
+    if (quickUndo.undoEntryId && undoStack.some((u) => u.id === quickUndo.undoEntryId)) {
+      await performUndo();
+      return;
+    }
     if (quickUndo.type === 'edit' && quickUndo.revisionId) {
       const allRevs = getSavedRevisions();
       const rev = allRevs.find((r) => r.id === quickUndo.revisionId);
@@ -430,6 +658,13 @@ export default function App() {
     }
     setQuickUndo(null);
   };
+
+  // Refs to keep global Ctrl+Z / Ctrl+Y keyboard handler always fresh without stale closures
+  const performUndoRef = React.useRef(performUndo);
+  performUndoRef.current = performUndo;
+  const performRedoRef = React.useRef(performRedo);
+  performRedoRef.current = performRedo;
+  const hasBlockingModalOpenRef = React.useRef(false);
 
   // Confirmation dialog state (Workspace skill requirement for destructive/mutating operations)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -1021,6 +1256,15 @@ export default function App() {
     setCases(updated);
     saveCases(updated);
     saveCaseToFirestore(newCase).catch((e) => console.warn('Firestore save case error:', e));
+    pushUndoEntry(
+      {
+        type: 'create_case',
+        label: `เพิ่มสำนวนคดีดำ ${newCase.blackCaseNo}`,
+        requiredRole: 'edit',
+        createdCase: newCase,
+      },
+      `เพิ่มสำนวนดำ ${newCase.blackCaseNo} เรียบร้อยแล้ว`
+    );
     showToast(`เพิ่มสำนวนดำ ${newCase.blackCaseNo} ครบกำหนด 1 เดือนเรียบร้อยแล้ว`);
 
     logAction(
@@ -1119,12 +1363,16 @@ export default function App() {
     );
     if (rev) {
       setRevisions(getSavedRevisions());
-      setQuickUndo({
-        type: 'edit',
-        message: `บันทึกเสร็จสิ้นสำนวน ${targetCase.blackCaseNo} แล้ว`,
-        revisionId: rev.id,
-      });
     }
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `เสร็จสิ้นสำนวน ${targetCase.blackCaseNo} (${reasonLabel})`,
+        requiredRole: 'complete',
+        caseSnapshots: [{ caseId, before: targetCase, after: updatedCase }],
+      },
+      `บันทึกเสร็จสิ้นสำนวน ${targetCase.blackCaseNo} แล้ว`
+    );
 
     logAction(
       'case_completed',
@@ -1173,6 +1421,28 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore no appeal confirm error:', e));
 
+    const rev = recordCaseRevision(
+      targetCase,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'status_change',
+      'ยืนยันสำนวนไม่อุทธรณ์'
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `ยืนยันไม่อุทธรณ์ ${targetCase.blackCaseNo}`,
+        requiredRole: 'complete',
+        caseSnapshots: [{ caseId, before: targetCase, after: updatedCase }],
+      },
+      `ยืนยันสำนวน ${targetCase.blackCaseNo} ไม่อุทธรณ์แล้ว`
+    );
+
     logAction(
       'case_completed',
       'ยืนยันไม่อุทธรณ์',
@@ -1215,6 +1485,28 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore reopen error:', e));
+
+    const rev = recordCaseRevision(
+      targetCase,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'status_change',
+      'ยกเลิกเสร็จสิ้น (เปิดสำนวนใหม่)'
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `ยกเลิกเสร็จสิ้น ${targetCase.blackCaseNo}`,
+        requiredRole: 'complete',
+        caseSnapshots: [{ caseId, before: targetCase, after: updatedCase }],
+      },
+      `เปิดสำนวน ${targetCase.blackCaseNo} ใหม่แล้ว`
+    );
 
     logAction(
       'case_completion_undone',
@@ -1266,6 +1558,28 @@ export default function App() {
       setCases(newCases);
       saveCases(newCases);
       saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore submit to duty error:', e));
+
+      const rev = recordCaseRevision(
+        caseItem,
+        updatedCase,
+        {
+          name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+          role: userRole,
+          email: user?.email || undefined,
+        },
+        'status_change',
+        `เสนอเวรชี้ (${dutyOfficer || 'เวรชี้'})`
+      );
+      if (rev) setRevisions(getSavedRevisions());
+      pushUndoEntry(
+        {
+          type: 'update_cases',
+          label: `เสนอเวรชี้ ${caseItem.blackCaseNo}`,
+          requiredRole: 'edit',
+          caseSnapshots: [{ caseId: caseItem.id, before: caseItem, after: updatedCase }],
+        },
+        `สำนวน ${caseItem.blackCaseNo} เสนอเวรชี้แล้ว`
+      );
 
       logAction(
         'duty_submitted',
@@ -1320,6 +1634,28 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore submit to duty error:', e));
 
+    const rev = recordCaseRevision(
+      targetCase,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'status_change',
+      `เสนอเวรชี้ (${dutyOfficer})`
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `เสนอเวรชี้ ${targetCase.blackCaseNo} (${dutyOfficer})`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId, before: targetCase, after: updatedCase }],
+      },
+      `สำนวน ${targetCase.blackCaseNo} เสนอเวรชี้ (${dutyOfficer}) แล้ว`
+    );
+
     logAction(
       'duty_submitted',
       'เสนอเวรชี้',
@@ -1364,6 +1700,28 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore cancel submit to duty error:', e));
+
+    const rev = recordCaseRevision(
+      targetCase,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'status_change',
+      'ยกเลิกสถานะเสนอเวรชี้'
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `ยกเลิกเสนอเวรชี้ ${targetCase.blackCaseNo}`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId, before: targetCase, after: updatedCase }],
+      },
+      `ยกเลิกสถานะเสนอเวรชี้ ${targetCase.blackCaseNo} แล้ว`
+    );
 
     logAction(
       'duty_cancelled',
@@ -1465,6 +1823,15 @@ export default function App() {
     if (rev) {
       setRevisions(getSavedRevisions());
     }
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `${newDeadline ? 'ขยายเวลาอุทธรณ์' : 'ยกเลิกขยายเวลา'} ${targetCase.blackCaseNo}`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId, before: targetCase, after: updatedCase }],
+      },
+      newDeadline ? `ขยายเวลาอุทธรณ์ ${targetCase.blackCaseNo} แล้ว` : `ยกเลิกขยายเวลา ${targetCase.blackCaseNo} แล้ว`
+    );
 
     const newCases = cases.map((c) => (c.id === caseId ? updatedCase : c));
     setCases(newCases);
@@ -1510,11 +1877,16 @@ export default function App() {
           }
         );
         setDeletedCases(getDeletedCases());
-        setQuickUndo({
-          type: 'delete',
-          message: `ลบสำนวน ${targetCase.blackCaseNo} แล้ว (กู้คืนได้)`,
-          backupId: backup.id,
-        });
+        pushUndoEntry(
+          {
+            type: 'delete_case',
+            label: `ลบสำนวน ${targetCase.blackCaseNo}`,
+            requiredRole: 'edit',
+            deletedCase: targetCase,
+            backupId: backup.id,
+          },
+          `ลบสำนวน ${targetCase.blackCaseNo} แล้ว (กู้คืนได้)`
+        );
 
         logAction(
           'case_deleted',
@@ -1557,6 +1929,7 @@ export default function App() {
 
   // Google Docs Handlers for Daily Cases & Judgments
   const handleSaveJudgment = (caseId: string, judgmentText: string, docUrl?: string, docId?: string) => {
+    const prevCase = cases.find((c) => c.id === caseId);
     const updated = cases.map((c) =>
       c.id === caseId
         ? {
@@ -1573,6 +1946,29 @@ export default function App() {
     const targetCase = updated.find((c) => c.id === caseId);
     if (targetCase) {
       saveCaseToFirestore(targetCase).catch((e) => console.warn('Firestore judgment save error:', e));
+      if (prevCase) {
+        const rev = recordCaseRevision(
+          prevCase,
+          targetCase,
+          {
+            name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+            role: userRole,
+            email: user?.email || undefined,
+          },
+          'judgment',
+          'บันทึกคำพิพากษา / เชื่อม Google Docs'
+        );
+        if (rev) setRevisions(getSavedRevisions());
+        pushUndoEntry(
+          {
+            type: 'update_cases',
+            label: `บันทึกคำพิพากษา ${targetCase.blackCaseNo}`,
+            requiredRole: 'edit',
+            caseSnapshots: [{ caseId, before: prevCase, after: targetCase }],
+          },
+          `บันทึกคำพิพากษา ${targetCase.blackCaseNo} แล้ว`
+        );
+      }
       logAction(
         'judgment_recorded',
         'บันทึกคำพิพากษา',
@@ -1670,6 +2066,7 @@ export default function App() {
     },
     syncToCalendar?: boolean
   ) => {
+    const prevCase = cases.find((c) => c.id === caseId);
     const updated = cases.map((c) => {
       if (c.id !== caseId) return c;
       const isConfessed = isCaseConfessed(c);
@@ -1698,6 +2095,29 @@ export default function App() {
     const targetCase = updated.find((c) => c.id === caseId);
     if (targetCase) {
       saveCaseToFirestore(targetCase).catch((e) => console.warn('Firestore appointment error:', e));
+      if (prevCase) {
+        const rev = recordCaseRevision(
+          prevCase,
+          targetCase,
+          {
+            name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+            role: userRole,
+            email: user?.email || undefined,
+          },
+          'status_change',
+          'บันทึกขั้นตอนวันนัดของศาล'
+        );
+        if (rev) setRevisions(getSavedRevisions());
+        pushUndoEntry(
+          {
+            type: 'update_cases',
+            label: `บันทึกวันนัด ${targetCase.blackCaseNo}`,
+            requiredRole: 'edit',
+            caseSnapshots: [{ caseId, before: prevCase, after: targetCase }],
+          },
+          `บันทึกวันนัดของศาล ${targetCase.blackCaseNo} แล้ว`
+        );
+      }
     }
     showToast(`บันทึกขั้นตอนนัดของศาลสำหรับสำนวน ${targetCase?.blackCaseNo || ''} เรียบร้อยแล้ว`);
 
@@ -1750,12 +2170,16 @@ export default function App() {
       );
       if (rev) {
         setRevisions(getSavedRevisions());
-        setQuickUndo({
-          type: 'edit',
-          message: `แก้ไขสำนวน ${updatedCase.blackCaseNo} เรียบร้อยแล้ว`,
-          revisionId: rev.id,
-        });
       }
+      pushUndoEntry(
+        {
+          type: 'update_cases',
+          label: `แก้ไขข้อมูลสำนวน ${updatedCase.blackCaseNo}`,
+          requiredRole: 'edit',
+          caseSnapshots: [{ caseId: updatedCase.id, before: prevCase, after: updatedCase }],
+        },
+        `แก้ไขสำนวน ${updatedCase.blackCaseNo} เรียบร้อยแล้ว`
+      );
     }
 
     const newCases = cases.map((c) => (c.id === updatedCase.id ? updatedCase : c));
@@ -1812,6 +2236,28 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore assign officer error:', e));
 
+    const rev = recordCaseRevision(
+      targetCase,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'edit',
+      `กำหนดเวรชี้ (${officerName})`
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `กำหนดเวรชี้ ${targetCase.blackCaseNo}`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId, before: targetCase, after: updatedCase }],
+      },
+      `กำหนดเวรชี้ "${officerName}" ให้ ${targetCase.blackCaseNo} แล้ว`
+    );
+
     showToast(`กำหนดเวรชี้ "${officerName}" ให้สำนวนคดีดำ ${targetCase.blackCaseNo} เรียบร้อยแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -1838,15 +2284,18 @@ export default function App() {
       return;
     }
 
+    const changedSnapshots: Array<{ caseId: string; before: AppealCase; after: AppealCase }> = [];
     const updatedCases = cases.map((c) => {
       if (c.filingDate === filingDate && (!c.prosecutorName || !c.prosecutorName.trim())) {
-        return {
+        const after = {
           ...c,
           prosecutorName: officerName,
           // Do not overwrite responsiblePerson (อัยการเจ้าของสำนวน) with duty officer
           responsiblePerson: c.responsiblePerson || '',
           updatedAt: new Date().toISOString(),
         };
+        changedSnapshots.push({ caseId: c.id, before: c, after });
+        return after;
       }
       return c;
     });
@@ -1854,12 +2303,21 @@ export default function App() {
     setCases(updatedCases);
     saveCases(updatedCases);
 
-    const changedCases = updatedCases.filter(
-      (c) => c.filingDate === filingDate && c.prosecutorName === officerName
-    );
+    const changedCases = changedSnapshots.map((s) => s.after);
     saveCasesBatchToFirestore(changedCases).catch((e: any) =>
       console.warn('Firestore batch assign error:', e)
     );
+    if (changedSnapshots.length > 0) {
+      pushUndoEntry(
+        {
+          type: 'update_cases',
+          label: `เชื่อมโยงเวรชี้ "${officerName}" (${changedSnapshots.length} สำนวน)`,
+          requiredRole: 'edit',
+          caseSnapshots: changedSnapshots,
+        },
+        `เชื่อมโยงเวรชี้ "${officerName}" ให้ ${changedSnapshots.length} สำนวนแล้ว`
+      );
+    }
 
     showToast(`เชื่อมโยงอัยการเวรชี้ "${officerName}" ให้ ${unassignedCases.length} สำนวนเรียบร้อยแล้ว`);
   };
@@ -1961,6 +2419,35 @@ export default function App() {
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e: any) => console.warn('Firestore update case error:', e));
 
+    const pleaLabelMap: Record<string, string> = {
+      confessed: 'จำเลยรับสารภาพ',
+      denied: 'จำเลยปฏิเสธ / คุ้มครองสิทธิ',
+      requisition: 'สำนวนเบิกฟ้อง',
+      unspecified: 'ยังไม่เลือกสถานะ',
+      pending: 'มีนัดอื่นๆ / รอนัด',
+    };
+    const rev = recordCaseRevision(
+      caseItem,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'status_change',
+      `ปรับสถานะเป็น: ${pleaLabelMap[newStatus] || newStatus}`
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `เปลี่ยนสถานะ ${caseItem.blackCaseNo} (${pleaLabelMap[newStatus] || newStatus})`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId: caseItem.id, before: caseItem, after: updatedCase }],
+      },
+      `เปลี่ยนสถานะ ${caseItem.blackCaseNo} เป็น "${pleaLabelMap[newStatus] || newStatus}" แล้ว`
+    );
+
     const currentToken = token || (await getAccessToken());
     if (sheetConfig && currentToken && updatedCase.sheetRowIndex) {
       try {
@@ -2002,6 +2489,28 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e: any) => console.warn('Firestore toggle temp discharge error:', e));
+
+    const rev = recordCaseRevision(
+      caseItem,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'status_change',
+      isDischarged ? 'จำหน่ายคดีชั่วคราว (หลบหนี)' : 'จับกุมตัวแล้ว (กลับมาคุมอุทธรณ์)'
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `${isDischarged ? 'จำหน่ายชั่วคราว' : 'จับกุมตัว/คุมอุทธรณ์'} ${caseItem.blackCaseNo}`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId: caseItem.id, before: caseItem, after: updatedCase }],
+      },
+      `${isDischarged ? 'จำหน่ายชั่วคราว' : 'กลับมาคุมอุทธรณ์'} ${caseItem.blackCaseNo} แล้ว`
+    );
 
     if (isDischarged) {
       showToast(`สำนวนคดีดำ ${caseItem.blackCaseNo} จำหน่ายคดีออกจากสารบบชั่วคราวแล้ว (ไม่ต้องคุมอุทธรณ์)`);
@@ -2065,6 +2574,29 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore record judgment error:', e));
+
+    const rev = recordCaseRevision(
+      target,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'judgment',
+      'บันทึกคำพิพากษาและคุมอุทธรณ์ 1 เดือน'
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `บันทึกคำพิพากษา ${target.blackCaseNo}`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId, before: target, after: updatedCase }],
+      },
+      `บันทึกคำพิพากษา ${target.blackCaseNo} แล้ว`
+    );
+
     showToast(`บันทึกคำพิพากษาคดีดำ ${target.blackCaseNo} และเริ่มคุมอุทธรณ์ 1 เดือนแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -2115,6 +2647,29 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore save recheck error:', e));
+
+    const rev = recordCaseRevision(
+      target,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'edit',
+      'บันทึกการตรวจทานคำพิพากษา'
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `ตรวจทานคำพิพากษา ${target.blackCaseNo}`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId, before: target, after: updatedCase }],
+      },
+      `บันทึกการตรวจทานคำพิพากษา ${target.blackCaseNo} แล้ว`
+    );
+
     showToast(`บันทึกการตรวจทานคำพิพากษาคดีดำ ${target.blackCaseNo} เรียบร้อยแล้ว`);
   };
 
@@ -2178,6 +2733,29 @@ export default function App() {
     setCases(newCases);
     saveCases(newCases);
     saveCaseToFirestore(updatedCase).catch((e) => console.warn('Firestore clear judgment error:', e));
+
+    const rev = recordCaseRevision(
+      target,
+      updatedCase,
+      {
+        name: user?.displayName || (isPinAdmin ? 'Admin (PIN)' : isPinAppealOfficer ? 'จนท.คุมอุทธรณ์' : 'ผู้ใช้งาน'),
+        role: userRole,
+        email: user?.email || undefined,
+      },
+      'status_change',
+      'ล้างคำพิพากษา (ยังไม่กรอกคำพิพากษา)'
+    );
+    if (rev) setRevisions(getSavedRevisions());
+    pushUndoEntry(
+      {
+        type: 'update_cases',
+        label: `ล้างคำพิพากษา ${target.blackCaseNo}`,
+        requiredRole: 'edit',
+        caseSnapshots: [{ caseId, before: target, after: updatedCase }],
+      },
+      `ปรับสถานะ ${target.blackCaseNo} เป็น "ยังไม่กรอกคำพิพากษา" แล้ว`
+    );
+
     showToast(`ปรับสถานะสำนวนดำ ${target.blackCaseNo} เป็น "ยังไม่กรอกคำพิพากษา" เรียบร้อยแล้ว`);
 
     const currentToken = token || (await getAccessToken());
@@ -2349,6 +2927,68 @@ export default function App() {
     showToast(`กรองดูสำนวนของ: ${officerName}`);
   };
 
+  hasBlockingModalOpenRef.current = Boolean(
+    authInitializing ||
+      !user ||
+      isAddCaseOpen ||
+      isEditCaseOpen ||
+      isRecordJudgmentOpen ||
+      selectedCaseForComplete ||
+      selectedCaseForSubmitDuty ||
+      selectedCaseForExtend ||
+      selectedCaseForCourtPetition ||
+      selectedCaseForJudgmentDoc ||
+      selectedCaseForEmailAlert ||
+      selectedCaseForAppointment ||
+      isRecheckModalOpen ||
+      isUploadDutyModalOpen ||
+      isPermissionsModalOpen ||
+      isBackupViewerOpen ||
+      isActivityLogOpen ||
+      isRevisionModalOpen ||
+      isAdminPinModalOpen ||
+      isRequestEditModalOpen ||
+      isSheetModalOpen ||
+      isRulesGuideOpen ||
+      confirmDialog.isOpen
+  );
+
+  // Global Keyboard Shortcuts: Ctrl+Z (Undo) & Ctrl+Y / Ctrl+Shift+Z (Redo)
+  useEffect(() => {
+    const handleGlobalUndoRedoKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (hasBlockingModalOpenRef.current) return;
+
+      const target = e.target as HTMLElement | null;
+      const isTextInput = Boolean(
+        target &&
+          (target.tagName === 'TEXTAREA' ||
+            target.isContentEditable ||
+            (target.tagName === 'INPUT' &&
+              !['checkbox', 'radio', 'button', 'submit', 'reset', 'file'].includes(
+                (target as HTMLInputElement).type?.toLowerCase() || 'text'
+              )))
+      );
+      if (isTextInput) return;
+
+      const isKeyZ = e.key.toLowerCase() === 'z' || e.code === 'KeyZ';
+      const isKeyY = e.key.toLowerCase() === 'y' || e.code === 'KeyY';
+
+      if (isKeyZ && !e.shiftKey) {
+        e.preventDefault();
+        performUndoRef.current();
+      } else if (isKeyY || (isKeyZ && e.shiftKey)) {
+        e.preventDefault();
+        performRedoRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalUndoRedoKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalUndoRedoKeyDown);
+    };
+  }, []);
+
   // 1. Auth Initializing Loader
   if (authInitializing) {
     return (
@@ -2383,17 +3023,38 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-100 selection:text-amber-900 font-['Sarabun',sans-serif]">
       {/* Toast Notification with Quick Undo */}
       {(toastMessage || quickUndo) && (
-        <div className="fixed bottom-5 right-5 z-50 bg-slate-900/95 backdrop-blur-sm text-white text-xs px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-3 animate-in slide-in-from-bottom-5">
+        <div className="fixed bottom-5 right-5 z-50 bg-slate-900/95 backdrop-blur-sm text-white text-xs px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-3 animate-in slide-in-from-bottom-5 max-w-[92vw]">
           <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 animate-pulse" />
           <span className="font-medium text-slate-100">{quickUndo?.message || toastMessage}</span>
-          {quickUndo && canEdit && (
-            <button
-              onClick={handleQuickUndo}
-              className="ml-1 px-3 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>↩️ ย้อนกลับทันที</span>
-            </button>
+          {quickUndo && (canEdit || canComplete) && (
+            <div className="ml-1 flex items-center gap-1.5 shrink-0">
+              {undoStack.length > 0 && (
+                <button
+                  onClick={handleQuickUndo}
+                  className="px-2.5 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer"
+                  title="ย้อนกลับไปเหตุการณ์ก่อนแก้ไขทันที (คีย์ลัด Ctrl + Z)"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span>ย้อนกลับ</span>
+                  <kbd className="hidden sm:inline-block px-1.5 py-0.2 bg-slate-950/20 text-slate-950 rounded text-[10px] font-mono border border-slate-950/20">
+                    Ctrl+Z
+                  </kbd>
+                </button>
+              )}
+              {redoStack.length > 0 && (
+                <button
+                  onClick={performRedo}
+                  className="px-2.5 py-1.5 bg-gradient-to-r from-sky-400 to-sky-500 hover:from-sky-300 hover:to-sky-400 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer"
+                  title="ไปข้างหน้า (ทำซ้ำเหตุการณ์ที่เพิ่งย้อนกลับ) (คีย์ลัด Ctrl + Y)"
+                >
+                  <Redo2 className="w-3.5 h-3.5" />
+                  <span>ไปข้างหน้า</span>
+                  <kbd className="hidden sm:inline-block px-1.5 py-0.2 bg-slate-950/20 text-slate-950 rounded text-[10px] font-mono border border-slate-950/20">
+                    Ctrl+Y
+                  </kbd>
+                </button>
+              )}
+            </div>
           )}
           <button
             onClick={() => {
@@ -2433,6 +3094,12 @@ export default function App() {
         activityLogsCount={userRole === 'admin' ? activityLogs.length : 0}
         onOpenRevisions={canEdit ? () => handleOpenRevisions() : undefined}
         revisionsCount={revisions.length}
+        onUndo={(canEdit || canComplete) ? performUndo : undefined}
+        undoCount={undoStack.length}
+        lastUndoLabel={undoStack[0]?.label}
+        onRedo={(canEdit || canComplete) ? performRedo : undefined}
+        redoCount={redoStack.length}
+        lastRedoLabel={redoStack[0]?.label}
         connectionStatus={connectionStatus}
         firebaseProjectId={FIREBASE_PROJECT_ID}
         onOpenRulesGuide={() => setIsRulesGuideOpen(true)}

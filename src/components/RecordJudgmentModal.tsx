@@ -296,7 +296,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
       caseItem.id,
       {
         judgmentDate,
-        redCaseNo: redCaseNo.trim() || caseItem.redCaseNo || undefined,
+        redCaseNo: redCaseNo.trim() || undefined,
         judgmentOutcome: finalJudgment,
         appealDeadline: effectiveDeadline,
         fullJudgmentText: finalJudgment,
@@ -774,13 +774,26 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                   {caseItem.redCaseNo ? '🔗 ดึงจากข้อมูลสำนวนที่กรอกไว้ตอนแรก' : 'กรอกเลขแดงเมื่อศาลมีคำพิพากษา'}
                 </span>
               </label>
-              <input
-                type="text"
-                placeholder="เช่น อ.891/2569 หรือ แดง 124/2569"
-                value={redCaseNo}
-                onChange={(e) => setRedCaseNo(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-bold text-rose-800"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="เช่น อ.891/2569 หรือ แดง 124/2569"
+                  value={redCaseNo}
+                  onChange={(e) => setRedCaseNo(e.target.value)}
+                  className="w-full text-xs px-3 py-2 pr-24 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-bold text-rose-800"
+                />
+                {redCaseNo && (
+                  <button
+                    type="button"
+                    onClick={() => setRedCaseNo('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-rose-700 hover:text-white bg-rose-100 hover:bg-rose-600 border border-rose-300 px-2 py-0.5 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+                    title="คลิกลบหมายเลขคดีแดงออก"
+                  >
+                    <X className="w-3 h-3" />
+                    <span>ลบเลขแดง</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* ช่องกรอกคำพิพากษาเป็นช่องเดียว (ตามที่ผู้ใช้ร้องขอ) */}
