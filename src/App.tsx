@@ -3318,9 +3318,9 @@ export default function App() {
               }`}
             >
               <Calendar className="w-4 h-4 text-amber-300" />
-              <span>วันนัดศาลรายเดือน (อัยการ)</span>
+              <span>ปฏิทินนัดอัยการรายเดือน</span>
               <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'prosecutor_hearings' ? 'bg-blue-950 text-amber-300' : 'bg-blue-50 text-blue-800'}`}>
-                คุ้มครองสิทธิ/สืบเสาะ
+                คุ้มครองสิทธิ/สืบเสาะ/นัดต่างๆ
               </span>
             </button>
           </div>
@@ -3453,27 +3453,46 @@ export default function App() {
         {activeTab === 'monthly_prosecutor' && (
           <MonthlyProsecutorSummaryView
             cases={cases}
+            dutyRosters={dutyRosters}
             initialYearMonth={monthlySummaryInitialMonth}
+            canEdit={canEdit}
+            canComplete={canComplete}
             onSelectCase={(caseItem) => {
               setSelectedCaseForEdit(caseItem);
               setIsEditCaseOpen(true);
             }}
             onUpdateCase={handleSaveEditedCase}
             onQuickChangePleaStatus={handleQuickChangePleaStatus}
+            onOpenAppointmentModal={(caseItem) => setSelectedCaseForAppointment(caseItem)}
+            onOpenSubmitToDuty={handleToggleSubmitToDuty}
+            onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
+            onAddNewCaseForDate={(dateStr) => {
+              setAddCaseInitialFilingDate(dateStr);
+              setIsAddCaseOpen(true);
+            }}
             onToast={showToast}
           />
         )}
 
-        {/* Tab 5: Monthly Prosecutor Court Hearing Schedule (คุ้มครองสิทธิ • สืบเสาะ • นัดสืบประกอบรับสารภาพ) */}
+        {/* Tab 5: Monthly Prosecutor Court Hearing Calendar (ปฏิทินเชื่อมโยงฐานข้อมูลอัยการ คุ้มครองสิทธิ • สืบเสาะ • นัดต่างๆ รายเดือน) */}
         {activeTab === 'prosecutor_hearings' && (
           <MonthlyProsecutorHearingScheduleView
             cases={cases}
+            dutyRosters={dutyRosters}
             initialYearMonth={monthlySummaryInitialMonth}
+            canEdit={canEdit}
+            canComplete={canComplete}
             onSelectCase={(caseItem) => {
               setSelectedCaseForEdit(caseItem);
               setIsEditCaseOpen(true);
             }}
+            onOpenAppointmentModal={(caseItem) => setSelectedCaseForAppointment(caseItem)}
             onOpenSubmitToDuty={handleToggleSubmitToDuty}
+            onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
+            onAddNewCaseForDate={(dateStr) => {
+              setAddCaseInitialFilingDate(dateStr);
+              setIsAddCaseOpen(true);
+            }}
             onToast={showToast}
           />
         )}

@@ -25,9 +25,10 @@ import {
   AlertCircle,
   HelpCircle,
   ArrowRight,
-  Send
+  Send,
+  LayoutGrid
 } from 'lucide-react';
-import { AppealCase } from '../types/appeal';
+import { AppealCase, MonthlyDutyRoster } from '../types/appeal';
 import { getTodayString, formatThaiDate } from '../utils/dateUtils';
 import {
   extractProsecutorMonthlyHearings,
@@ -35,61 +36,82 @@ import {
   formatProsecutorHearingSummaryTsv,
   formatProsecutorHearingSummaryHtml,
   downloadProsecutorHearingCsv,
-  TargetAppointmentCategory,
+  CalendarAppointmentCategory,
   ProsecutorHearingAppointment,
+  getCalendarCategoryDisplay,
 } from '../utils/monthlyProsecutorAppointmentUtils';
+import { MonthlyProsecutorCalendarView } from './MonthlyProsecutorCalendarView';
 
 interface MonthlyProsecutorHearingScheduleViewProps {
   cases: AppealCase[];
+  dutyRosters?: MonthlyDutyRoster[];
   initialYearMonth?: string;
+  canEdit?: boolean;
+  canComplete?: boolean;
   onSelectCase?: (caseItem: AppealCase) => void;
+  onOpenAppointmentModal?: (caseItem: AppealCase) => void;
   onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
+  onMarkComplete?: (caseItem: AppealCase) => void;
+  onAddNewCaseForDate?: (dateStr: string) => void;
   onToast?: (message: string) => void;
 }
 
 export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHearingScheduleViewProps> = ({
   cases,
+  dutyRosters = [],
   initialYearMonth,
+  canEdit = false,
+  canComplete = false,
   onSelectCase,
+  onOpenAppointmentModal,
   onOpenSubmitToDuty,
+  onMarkComplete,
+  onAddNewCaseForDate,
   onToast,
 }) => {
-  const availableMonths = useMemo(() => getAvailableHearingMonths(cases), [cases]);
+  const todayStr = useMemo(() => getTodayString(), []);
+  const availableMonths = useMemo(() => getAvailableHearingMonths(cases, dutyRosters), [cases, dutyRosters]);
 
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    if (initialYearMonth && availableMonths.includes(initialYearMonth)) {
+    if (initialYearMonth && /^\d{4}-\d{2}$/.test(initialYearMonth)) {
       return initialYearMonth;
     }
-    return availableMonths[0] || '2026-10';
+    return todayStr.slice(0, 7) || availableMonths[0] || '2026-11';
   });
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | TargetAppointmentCategory>('all');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'other_group' | CalendarAppointmentCategory>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'completed' | 'submitted_duty'>('all');
   const [selectedProsecutorFilter, setSelectedProsecutorFilter] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'by_prosecutor' | 'by_date' | 'table'>('by_prosecutor');
+  const [viewMode, setViewMode] = useState<'calendar' | 'by_prosecutor' | 'by_date' | 'table'>('calendar');
   const [expandedProsecutors, setExpandedProsecutors] = useState<Record<string, boolean>>({});
   const [isCopied, setIsCopied] = useState(false);
 
-  // สกัดและสรุปข้อมูลนัดศาลประจำเดือน
+  // สกัดและสรุปข้อมูลนัดศาลประจำเดือน (ครอบคลุมทุกประเภทนัด ทั้งเสร็จสิ้นและยังไม่เสร็จสิ้น)
   const result = useMemo(() => {
-    return extractProsecutorMonthlyHearings(cases, selectedMonth);
+    return extractProsecutorMonthlyHearings(cases, selectedMonth, { includeAllAppointmentTypes: true });
   }, [cases, selectedMonth]);
 
-  // วันนี้ในรูปแบบ YYYY-MM-DD
-  const todayStr = useMemo(() => getTodayString(), []);
+  // ตัวเลือกเดือนใน dropdown (รวม selectedMonth เสมอแม้เพิ่งเลื่อนไปเดือนใหม่)
+  const monthDropdownOptions = useMemo(() => {
+    const set = new Set(availableMonths);
+    if (/^\d{4}-\d{2}$/.test(selectedMonth)) set.add(selectedMonth);
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [availableMonths, selectedMonth]);
 
-  // เดือนก่อนหน้า / ถัดไป
-  const currentMonthIndex = availableMonths.indexOf(selectedMonth);
-  const hasPrevious = currentMonthIndex < availableMonths.length - 1;
-  const hasNext = currentMonthIndex > 0;
-
+  // เลื่อนเดือนก่อนหน้า / ถัดไป แบบปฏิทินต่อเนื่องได้ทุกเดือน
   const handlePrevMonth = () => {
-    if (hasPrevious) setSelectedMonth(availableMonths[currentMonthIndex + 1]);
+    const [y, m] = selectedMonth.split('-').map(Number);
+    if (!y || !m) return;
+    const d = new Date(y, m - 2, 1);
+    setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
 
   const handleNextMonth = () => {
-    if (hasNext) setSelectedMonth(availableMonths[currentMonthIndex - 1]);
+    const [y, m] = selectedMonth.split('-').map(Number);
+    if (!y || !m) return;
+    const d = new Date(y, m, 1);
+    setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
 
   // Toggle expand all/individual
@@ -138,6 +160,38 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
     }
   };
 
+  const matchesCategoryFilter = (cat: CalendarAppointmentCategory) => {
+    if (selectedCategory === 'all') return true;
+    if (selectedCategory === 'other_group') {
+      return cat !== 'rights_protection' && cat !== 'investigation' && cat !== 'witness_confessed';
+    }
+    return cat === selectedCategory;
+  };
+
+  const filteredAllAppointments = useMemo(() => {
+    return result.allAppointments.filter((a) => {
+      if (selectedProsecutorFilter !== 'all' && a.prosecutorName !== selectedProsecutorFilter) return false;
+      if (!matchesCategoryFilter(a.category)) return false;
+      if (statusFilter === 'incomplete' && a.isCompleted) return false;
+      if (statusFilter === 'completed' && !a.isCompleted) return false;
+      if (statusFilter === 'submitted_duty' && !a.isSubmittedToDuty) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          a.prosecutorName.toLowerCase().includes(q) ||
+          a.blackCaseNo.toLowerCase().includes(q) ||
+          (a.redCaseNo && a.redCaseNo.toLowerCase().includes(q)) ||
+          a.defendant.toLowerCase().includes(q) ||
+          a.categoryLabel.toLowerCase().includes(q) ||
+          (a.courtRoom && a.courtRoom.toLowerCase().includes(q)) ||
+          (a.notes && a.notes.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [result.allAppointments, selectedProsecutorFilter, selectedCategory, statusFilter, searchQuery]);
+
   // คัดกรองข้อมูลตาม search query และ filter
   const filteredProsecutors = useMemo(() => {
     return result.prosecutors
@@ -145,44 +199,13 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
         if (selectedProsecutorFilter !== 'all' && p.prosecutorName !== selectedProsecutorFilter) {
           return false;
         }
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          const matchName = p.prosecutorName.toLowerCase().includes(q);
-          const matchCase = p.dateSchedules.some((ds) =>
-            ds.appointments.some(
-              (a) =>
-                a.blackCaseNo.toLowerCase().includes(q) ||
-                (a.redCaseNo && a.redCaseNo.toLowerCase().includes(q)) ||
-                a.defendant.toLowerCase().includes(q) ||
-                (a.courtRoom && a.courtRoom.toLowerCase().includes(q)) ||
-                (a.notes && a.notes.toLowerCase().includes(q))
-            )
-          );
-          if (!matchName && !matchCase) return false;
-        }
-
-        if (selectedCategory !== 'all') {
-          if (p.countsByCategory[selectedCategory] === 0) return false;
-        }
-
-        if (statusFilter === 'incomplete' && p.countsByStatus && p.countsByStatus.incomplete === 0) {
-          return false;
-        }
-        if (statusFilter === 'completed' && p.countsByStatus && p.countsByStatus.completed === 0) {
-          return false;
-        }
-        if (statusFilter === 'submitted_duty' && p.countsByStatus && p.countsByStatus.submittedToDuty === 0) {
-          return false;
-        }
-
         return true;
       })
       .map((p) => {
-        // กรอง appointments ภายในแต่ละ dateSchedule ให้ตรงกับ category, status และ search
         const filteredDateSchedules = p.dateSchedules
           .map((ds) => {
             const filteredAppts = ds.appointments.filter((a) => {
-              if (selectedCategory !== 'all' && a.category !== selectedCategory) return false;
+              if (!matchesCategoryFilter(a.category)) return false;
               if (statusFilter === 'incomplete' && a.isCompleted) return false;
               if (statusFilter === 'completed' && !a.isCompleted) return false;
               if (statusFilter === 'submitted_duty' && !a.isSubmittedToDuty) return false;
@@ -194,6 +217,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                   a.blackCaseNo.toLowerCase().includes(q) ||
                   (a.redCaseNo && a.redCaseNo.toLowerCase().includes(q)) ||
                   a.defendant.toLowerCase().includes(q) ||
+                  a.categoryLabel.toLowerCase().includes(q) ||
                   (a.courtRoom && a.courtRoom.toLowerCase().includes(q)) ||
                   (a.notes && a.notes.toLowerCase().includes(q));
                 return matchName || matchCase;
@@ -224,7 +248,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
       .map((ds) => {
         const filteredAppts = ds.appointments.filter((a) => {
           if (selectedProsecutorFilter !== 'all' && a.prosecutorName !== selectedProsecutorFilter) return false;
-          if (selectedCategory !== 'all' && a.category !== selectedCategory) return false;
+          if (!matchesCategoryFilter(a.category)) return false;
           if (statusFilter === 'incomplete' && a.isCompleted) return false;
           if (statusFilter === 'completed' && !a.isCompleted) return false;
           if (statusFilter === 'submitted_duty' && !a.isSubmittedToDuty) return false;
@@ -236,6 +260,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
               a.blackCaseNo.toLowerCase().includes(q) ||
               (a.redCaseNo && a.redCaseNo.toLowerCase().includes(q)) ||
               a.defendant.toLowerCase().includes(q) ||
+              a.categoryLabel.toLowerCase().includes(q) ||
               (a.courtRoom && a.courtRoom.toLowerCase().includes(q)) ||
               (a.notes && a.notes.toLowerCase().includes(q));
             return matchName || matchCase;
@@ -299,151 +324,187 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
   return (
     <div className="space-y-6">
       {/* 1. Header Banner & Month Selector */}
-      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 sm:p-6 rounded-2xl shadow-md relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mt-6 -mr-6 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="bg-amber-400 text-slate-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                <Calendar className="w-3.5 h-3.5" />
-                สรุปวันนัดศาลรายเดือน
-              </span>
-              <span className="text-xs text-blue-200">
-                (คุ้มครองสิทธิ • สืบเสาะ • นัดสืบประกอบรับสารภาพ)
-              </span>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="h-1.5 bg-gradient-to-r from-blue-800 via-blue-600 to-amber-500" />
+        <div className="p-5 sm:p-6 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
+          {/* Left: High-Contrast Title & Scope */}
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="w-12 h-12 rounded-xl bg-blue-800 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+              <Calendar className="w-6 h-6 text-amber-300" />
             </div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <span>สรุปวันนัดของอัยการเจ้าของสำนวน</span>
-              <span className="text-amber-300 font-semibold text-lg sm:text-xl">
-                ประจำเดือน{result.monthLabel}
-              </span>
-            </h1>
-            <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed max-w-3xl">
-              รายงานและปฏิทินแสดงว่าในแต่ละเดือน อัยการเจ้าของสำนวนแต่ละท่านมีนัดศาลในวันใดบ้าง 
-              สำหรับสำนวนที่มี <strong>นัดคุ้มครองสิทธิ</strong>, <strong>นัดสืบเสาะ</strong> และ <strong>นัดสืบประกอบรับสารภาพ</strong> เพื่อเตรียมความพร้อมในการปฏิบัติราชการ
-            </p>
+
+            <div className="space-y-1.5 min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-bold text-blue-800">
+                <span>ปฏิทินนัดอัยการเชื่อมโยงฐานข้อมูล</span>
+                <span aria-hidden="true" className="text-slate-300">·</span>
+                <span className="text-slate-700 font-semibold">
+                  คุ้มครองสิทธิ · สืบเสาะ · สืบประกอบฯ · นัดพร้อม / สืบพยาน / นัดอื่นๆ
+                </span>
+              </div>
+
+              <h1 className="text-2xl sm:text-[28px] font-bold tracking-tight text-slate-950 font-['Prompt'] leading-snug flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                <span>ปฏิทินวันนัดอัยการเจ้าของสำนวน</span>
+                <span className="text-blue-700 font-bold">
+                  ประจำเดือน{result.monthLabel}
+                </span>
+              </h1>
+
+              <p className="text-sm text-slate-700 leading-relaxed flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>เชื่อมโยงข้อมูลสำนวนคดีและตารางเวรชี้แบบเรียลไทม์ ครอบคลุมทั้ง</span>
+                <span className="inline-flex items-center gap-1 font-bold text-amber-800">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>สำนวนที่ยังไม่กดเสร็จสิ้น</span>
+                </span>
+                <span>และ</span>
+                <span className="inline-flex items-center gap-1 font-bold text-emerald-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>สำนวนที่กดเสร็จสิ้นแล้ว</span>
+                </span>
+              </p>
+            </div>
           </div>
 
-          {/* Month Switcher Controls */}
-          <div className="bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/20 flex flex-col sm:flex-row items-center gap-2 shrink-0">
-            <div className="flex items-center gap-1 w-full sm:w-auto justify-between sm:justify-start">
-              <button
-                type="button"
-                onClick={handlePrevMonth}
-                disabled={!hasPrevious}
-                className="p-1.5 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-transparent transition text-white"
-                title="เดือนก่อนหน้า"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
+          {/* Right: Prominent Month Switcher Controls */}
+          <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 self-start xl:self-center">
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              className="min-h-[42px] px-3.5 py-2 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-900 font-bold text-sm flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
+              title="ดูเดือนก่อนหน้า"
+            >
+              <ChevronLeft className="w-4 h-4 text-slate-700" />
+              <span>เดือนก่อน</span>
+            </button>
 
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-slate-900/80 text-white text-xs font-semibold px-3 py-1.5 rounded-lg border border-white/30 focus:outline-hidden focus:ring-2 focus:ring-amber-400 cursor-pointer"
-              >
-                {availableMonths.map((ym) => {
-                  const [y, m] = ym.split('-');
-                  const tYear = parseInt(y, 10) + 543;
-                  const tMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-                  const tMonthLabel = tMonths[parseInt(m, 10) - 1] || '';
-                  return (
-                    <option key={ym} value={ym} className="bg-slate-900 text-white">
-                      {tMonthLabel} {tYear} ({ym})
-                    </option>
-                  );
-                })}
-              </select>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              aria-label="เลือกเดือนและปีที่ต้องการดูปฏิทิน"
+              className="min-h-[42px] bg-white hover:bg-blue-50/40 text-blue-950 text-sm sm:text-base font-bold px-4 py-2 rounded-lg border-2 border-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-600 cursor-pointer tabular-nums"
+            >
+              {monthDropdownOptions.map((ym) => {
+                const [y, m] = ym.split('-');
+                const tYear = parseInt(y, 10) + 543;
+                const tFullMonths = [
+                  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+                  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+                ];
+                const tMonthLabel = tFullMonths[parseInt(m, 10) - 1] || '';
+                return (
+                  <option key={ym} value={ym} className="bg-white text-slate-900 font-semibold">
+                    {tMonthLabel} {tYear} ({ym})
+                  </option>
+                );
+              })}
+            </select>
 
-              <button
-                type="button"
-                onClick={handleNextMonth}
-                disabled={!hasNext}
-                className="p-1.5 rounded-lg hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-transparent transition text-white"
-                title="เดือนถัดไป"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              className="min-h-[42px] px-3.5 py-2 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-900 font-bold text-sm flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
+              title="ดูเดือนถัดไป"
+            >
+              <span>เดือนถัดไป</span>
+              <ChevronRight className="w-4 h-4 text-slate-700" />
+            </button>
 
-            {selectedMonth !== todayStr.slice(0, 7) && (
+            {selectedMonth !== todayStr.slice(0, 7) ? (
               <button
                 type="button"
                 onClick={() => setSelectedMonth(todayStr.slice(0, 7))}
-                className="text-[11px] font-medium bg-amber-500 hover:bg-amber-600 text-slate-950 px-2.5 py-1 rounded-lg transition shadow-xs w-full sm:w-auto text-center"
+                className="min-h-[42px] px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-sm flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
               >
-                เดือนปัจจุบัน
+                <Calendar className="w-4 h-4" />
+                <span>เดือนปัจจุบัน</span>
               </button>
+            ) : (
+              <span className="min-h-[42px] px-3 py-2 text-xs font-bold text-emerald-800 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>เดือนปัจจุบัน</span>
+              </span>
             )}
           </div>
         </div>
       </div>
 
       {/* 2. Key Statistics Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
           <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
             <Users className="w-3.5 h-3.5 text-blue-600" />
             อัยการที่มีนัด
           </span>
-          <div className="mt-1.5 flex items-baseline gap-1">
+          <div className="mt-1.5 flex items-baseline gap-1 tabular-nums">
             <span className="text-xl font-bold text-slate-800">{result.totalProsecutors}</span>
-            <span className="text-[10px] text-slate-400">ท่าน</span>
+            <span className="text-[11px] text-slate-400">ท่าน</span>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
           <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5 text-emerald-600" />
             วันที่มีนัดในเดือน
           </span>
-          <div className="mt-1.5 flex items-baseline gap-1">
+          <div className="mt-1.5 flex items-baseline gap-1 tabular-nums">
             <span className="text-xl font-bold text-emerald-700">{result.totalActiveDays}</span>
-            <span className="text-[10px] text-slate-400">วัน</span>
+            <span className="text-[11px] text-slate-400">วัน</span>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-indigo-100 shadow-xs flex flex-col justify-between bg-indigo-50/30">
+        <div className="bg-white p-3.5 rounded-xl border border-indigo-200/80 flex flex-col justify-between">
           <span className="text-[11px] font-semibold text-indigo-700 flex items-center gap-1">
             <span>🛡️</span>
             นัดคุ้มครองสิทธิ
           </span>
-          <div className="mt-1.5 flex items-baseline gap-1">
+          <div className="mt-1.5 flex items-baseline gap-1 tabular-nums">
             <span className="text-xl font-bold text-indigo-900">{result.countsByCategory.rights_protection}</span>
-            <span className="text-[10px] text-indigo-500">นัด</span>
+            <span className="text-[11px] text-indigo-500">นัด</span>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs flex flex-col justify-between bg-purple-50/30">
+        <div className="bg-white p-3.5 rounded-xl border border-purple-200/80 flex flex-col justify-between">
           <span className="text-[11px] font-semibold text-purple-700 flex items-center gap-1">
             <span>🔍</span>
             นัดสืบเสาะ
           </span>
-          <div className="mt-1.5 flex items-baseline gap-1">
+          <div className="mt-1.5 flex items-baseline gap-1 tabular-nums">
             <span className="text-xl font-bold text-purple-900">{result.countsByCategory.investigation}</span>
-            <span className="text-[10px] text-purple-500">นัด</span>
+            <span className="text-[11px] text-purple-500">นัด</span>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-amber-100 shadow-xs flex flex-col justify-between bg-amber-50/30">
+        <div className="bg-white p-3.5 rounded-xl border border-amber-200/80 flex flex-col justify-between">
           <span className="text-[11px] font-semibold text-amber-800 flex items-center gap-1">
             <span>📝</span>
             นัดสืบประกอบ
           </span>
-          <div className="mt-1.5 flex items-baseline gap-1">
+          <div className="mt-1.5 flex items-baseline gap-1 tabular-nums">
             <span className="text-xl font-bold text-amber-900">{result.countsByCategory.witness_confessed}</span>
-            <span className="text-[10px] text-amber-600">นัด</span>
+            <span className="text-[11px] text-amber-600">นัด</span>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-3.5 rounded-xl shadow-xs flex flex-col justify-between">
+        <div className="bg-white p-3.5 rounded-xl border border-sky-200/80 flex flex-col justify-between">
+          <span className="text-[11px] font-semibold text-sky-800 flex items-center gap-1">
+            <span>📌</span>
+            นัดต่างๆ อื่นๆ
+          </span>
+          <div className="mt-1.5 flex items-baseline gap-1 tabular-nums">
+            <span className="text-xl font-bold text-sky-900">{result.countsByCategory.other_appointments}</span>
+            <span className="text-[11px] text-sky-600">นัด</span>
+          </div>
+        </div>
+
+        <div className="bg-slate-900 text-white p-3.5 rounded-xl flex flex-col justify-between">
           <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
             <Scale className="w-3.5 h-3.5 text-amber-400" />
-            รวมนัด 3 ประเภท
+            รวมนัดทั้งหมด
           </span>
-          <div className="mt-1.5 flex items-baseline gap-1">
+          <div className="mt-1.5 flex items-baseline gap-2 tabular-nums">
             <span className="text-xl font-bold text-amber-300">{result.totalAppointments}</span>
-            <span className="text-[10px] text-slate-300">นัด</span>
+            <span className="text-[11px] text-slate-300">
+              (⏳{result.countsByStatus.incomplete} · ✓{result.countsByStatus.completed})
+            </span>
           </div>
         </div>
       </div>
@@ -472,15 +533,15 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
             )}
           </div>
 
-          {/* Category Filter Pills */}
+          {/* Category Filter Buttons */}
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={() => setSelectedCategory('all')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
                 selectedCategory === 'all'
-                  ? 'bg-slate-800 text-white shadow-2xs'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
               }`}
             >
               ทุกประเภทนัด ({result.totalAppointments})
@@ -488,10 +549,10 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
             <button
               type="button"
               onClick={() => setSelectedCategory('rights_protection')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
                 selectedCategory === 'rights_protection'
-                  ? 'bg-indigo-700 text-white shadow-2xs'
-                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
+                  ? 'bg-indigo-700 text-white'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200'
               }`}
             >
               <span>🛡️</span>
@@ -500,10 +561,10 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
             <button
               type="button"
               onClick={() => setSelectedCategory('investigation')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
                 selectedCategory === 'investigation'
-                  ? 'bg-purple-700 text-white shadow-2xs'
-                  : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200'
+                  ? 'bg-purple-700 text-white'
+                  : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200'
               }`}
             >
               <span>🔍</span>
@@ -512,18 +573,50 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
             <button
               type="button"
               onClick={() => setSelectedCategory('witness_confessed')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
                 selectedCategory === 'witness_confessed'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300'
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
               }`}
             >
               <span>📝</span>
               <span>สืบประกอบ ({result.countsByCategory.witness_confessed})</span>
             </button>
+            <select
+              value={
+                selectedCategory === 'all' ||
+                selectedCategory === 'rights_protection' ||
+                selectedCategory === 'investigation' ||
+                selectedCategory === 'witness_confessed'
+                  ? ''
+                  : selectedCategory
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                setSelectedCategory(v ? (v as any) : 'all');
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                selectedCategory !== 'all' &&
+                selectedCategory !== 'rights_protection' &&
+                selectedCategory !== 'investigation' &&
+                selectedCategory !== 'witness_confessed'
+                  ? 'bg-sky-700 text-white border-sky-700'
+                  : 'bg-sky-50 text-sky-900 border-sky-200 hover:bg-sky-100'
+              }`}
+              title="เลือกกรองนัดประเภทอื่นๆ"
+            >
+              <option value="">📌 นัดต่างๆ อื่นๆ ({result.countsByCategory.other_appointments})</option>
+              <option value="other_group">ทุกนัดอื่นๆ รวมกัน ({result.countsByCategory.other_appointments})</option>
+              <option value="pre_trial">📋 นัดพร้อม / ตรวจพยาน ({result.countsByCategory.pre_trial})</option>
+              <option value="witness_examination">🎙️ นัดสืบพยาน ({result.countsByCategory.witness_examination})</option>
+              <option value="mediation">🤝 นัดไกล่เกลี่ย ({result.countsByCategory.mediation})</option>
+              <option value="judgment">⚖️ นัดฟังคำพิพากษา ({result.countsByCategory.judgment})</option>
+              <option value="requisition">🚚 นัดเบิกฟ้อง ({result.countsByCategory.requisition})</option>
+              <option value="other">📌 นัดอื่นๆ เฉพาะเรื่อง ({result.countsByCategory.other})</option>
+            </select>
           </div>
 
-          {/* Status Filter Pills: ทั้งหมด / ยังไม่เสร็จสิ้น / กดเสร็จสิ้นแล้ว / เสนอเวรชี้แล้ว */}
+          {/* Status Filter Buttons */}
           <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
             <span className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
               <Filter className="w-3 h-3 text-slate-400" />
@@ -532,53 +625,52 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
             <button
               type="button"
               onClick={() => setStatusFilter('all')}
-              className={`px-2 py-0.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+              className={`px-2 py-0.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
                 statusFilter === 'all'
-                  ? 'bg-blue-900 text-white shadow-2xs'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  ? 'bg-blue-900 text-white'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
               }`}
             >
-              นัดทั้งหมด ({result.countsByStatus.total})
+              ทุกสถานะ ({result.countsByStatus.total})
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('incomplete')}
-              className={`px-2.5 py-0.5 rounded-md text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+              className={`px-2.5 py-0.5 rounded-md text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 ${
                 statusFilter === 'incomplete'
-                  ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                  ? 'bg-amber-500 text-slate-950'
                   : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200'
               }`}
               title="คัดกรองเฉพาะสำนวนที่ยังไม่กดเสร็จสิ้น"
             >
-              <Clock className="w-3 h-3 text-amber-600" />
+              <Clock className="w-3 h-3" />
               <span>ยังไม่เสร็จสิ้น ({result.countsByStatus.incomplete})</span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('completed')}
-              className={`px-2.5 py-0.5 rounded-md text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+              className={`px-2.5 py-0.5 rounded-md text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 ${
                 statusFilter === 'completed'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  ? 'bg-emerald-600 text-white'
                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300'
               }`}
-              title="รวมสำนวนที่มีนัดที่กดเสร็จสิ้นไปแล้ว เอาไว้ดูเฉยๆ ว่ามีนัดวันไหน"
+              title="คัดกรองเฉพาะสำนวนที่กดเสร็จสิ้นแล้ว"
             >
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              <span>✅ กดเสร็จสิ้นแล้ว ({result.countsByStatus.completed})</span>
-              <span className="text-[10px] opacity-80">(ดูเฉยๆ)</span>
+              <CheckCircle2 className="w-3 h-3" />
+              <span>กดเสร็จสิ้นแล้ว ({result.countsByStatus.completed})</span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('submitted_duty')}
-              className={`px-2.5 py-0.5 rounded-md text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+              className={`px-2.5 py-0.5 rounded-md text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 ${
                 statusFilter === 'submitted_duty'
-                  ? 'bg-blue-600 text-white shadow-2xs'
+                  ? 'bg-blue-600 text-white'
                   : 'bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200'
               }`}
-              title="คัดกรองเฉพาะสำนวนที่เสนอเวรชี้แล้ว (ยังคงคุมอุทธรณ์อยู่จนกว่าจะกดเสร็จสิ้น)"
+              title="คัดกรองเฉพาะสำนวนที่เสนอเวรชี้แล้ว"
             >
-              <Send className="w-3 h-3 text-blue-600" />
-              <span>📋 เสนอเวรชี้แล้ว ({result.countsByStatus.submittedToDuty})</span>
+              <Send className="w-3 h-3" />
+              <span>เสนอเวรชี้แล้ว ({result.countsByStatus.submittedToDuty})</span>
             </button>
           </div>
         </div>
@@ -586,11 +678,24 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
         {/* View Mode & Export Actions */}
         <div className="flex flex-wrap items-center gap-2 self-end lg:self-auto shrink-0">
           {/* View Mode Toggle */}
-          <div className="bg-slate-100 p-0.5 rounded-lg border border-slate-200 flex items-center">
+          <div className="bg-slate-100 p-0.5 rounded-lg border border-slate-200 flex items-center flex-wrap">
+            <button
+              type="button"
+              onClick={() => setViewMode('calendar')}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                viewMode === 'calendar'
+                  ? 'bg-white text-blue-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="ตารางปฏิทินรายเดือน (เชื่อมโยงฐานข้อมูลอัยการ)"
+            >
+              <LayoutGrid className="w-3.5 h-3.5 text-blue-700" />
+              <span>ตารางปฏิทิน</span>
+            </button>
             <button
               type="button"
               onClick={() => setViewMode('by_prosecutor')}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition ${
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0 ${
                 viewMode === 'by_prosecutor'
                   ? 'bg-white text-blue-900 shadow-2xs font-bold'
                   : 'text-slate-600 hover:text-slate-900'
@@ -603,12 +708,12 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
             <button
               type="button"
               onClick={() => setViewMode('by_date')}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition ${
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0 ${
                 viewMode === 'by_date'
                   ? 'bg-white text-emerald-900 shadow-2xs font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="เรียงตามวันนัดในเดือน (ปฏิทิน)"
+              title="ไทม์ไลน์เรียงตามวันนัดในเดือน"
             >
               <Calendar className="w-3.5 h-3.5 text-emerald-600" />
               <span>ไทม์ไลน์รายวัน</span>
@@ -616,7 +721,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
             <button
               type="button"
               onClick={() => setViewMode('table')}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition ${
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0 ${
                 viewMode === 'table'
                   ? 'bg-white text-purple-900 shadow-2xs font-bold'
                   : 'text-slate-600 hover:text-slate-900'
@@ -632,7 +737,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
           <button
             type="button"
             onClick={handleCopyClipboard}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition flex items-center gap-1 cursor-pointer active:scale-95"
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
             title="คัดลอกข้อมูลสำหรับวางลง Excel หรือตาราง"
           >
             {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-600" />}
@@ -642,7 +747,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
           <button
             type="button"
             onClick={handleDownloadCsv}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition flex items-center gap-1 cursor-pointer active:scale-95"
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
             title="ดาวน์โหลดไฟล์ CSV สำหรับเปิดใน Microsoft Excel"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
@@ -652,7 +757,7 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
           <button
             type="button"
             onClick={handlePrint}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition flex items-center gap-1 cursor-pointer active:scale-95 print:hidden"
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition flex items-center gap-1 cursor-pointer active:scale-95 print:hidden whitespace-nowrap shrink-0"
             title="พิมพ์รายงานสรุปวันนัด"
           >
             <Printer className="w-3.5 h-3.5 text-slate-600" />
@@ -662,16 +767,33 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
       </div>
 
       {/* 4. Main Content Area */}
-      {result.totalAppointments === 0 ? (
+      {viewMode === 'calendar' ? (
+        <MonthlyProsecutorCalendarView
+          cases={cases}
+          dutyRosters={dutyRosters}
+          yearMonth={selectedMonth}
+          monthResult={result}
+          filteredAppointments={filteredAllAppointments}
+          selectedProsecutorFilter={selectedProsecutorFilter}
+          onSelectProsecutor={(name) => setSelectedProsecutorFilter(name)}
+          canEdit={canEdit}
+          canComplete={canComplete}
+          onSelectCase={onSelectCase}
+          onOpenAppointmentModal={onOpenAppointmentModal}
+          onOpenSubmitToDuty={onOpenSubmitToDuty}
+          onMarkComplete={onMarkComplete}
+          onAddNewCaseForDate={onAddNewCaseForDate}
+        />
+      ) : result.totalAppointments === 0 ? (
         <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
           <div className="w-12 h-12 mx-auto rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
             <Calendar className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-slate-800">
-            ไม่พบนัดคุ้มครองสิทธิ, สืบเสาะ หรือสืบประกอบรับสารภาพ ในเดือน{result.monthLabel}
+            ไม่พบนัดศาลในเดือน{result.monthLabel}
           </h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            ในเดือนนี้ยังไม่มีสำนวนที่ระบุวันนัดใน 3 หมวดหมู่นี้ ท่านสามารถเพิ่มวันนัดในสำนวนคดี หรือสลับไปยังเดือนอื่นๆ ด้านบนได้ครับ
+            ในเดือนนี้ยังไม่มีสำนวนที่ระบุวันนัดในระบบ ท่านสามารถสลับไปมุมมองตารางปฏิทินเพื่อเพิ่มวันนัด หรือเปลี่ยนไปเดือนอื่นๆ ด้านบนได้ครับ
           </p>
         </div>
       ) : viewMode === 'by_prosecutor' ? (
@@ -1034,23 +1156,13 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                             {/* Appointments list for this date */}
                             <div className="p-3 sm:p-4 divide-y divide-slate-100">
                               {ds.appointments.map((a) => {
-                                const categoryBadge =
-                                  a.category === 'rights_protection' ? (
-                                    <span className="text-xs font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
-                                      <span>🛡️</span>
-                                      <span>นัดคุ้มครองสิทธิ</span>
-                                    </span>
-                                  ) : a.category === 'investigation' ? (
-                                    <span className="text-xs font-bold bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
-                                      <span>🔍</span>
-                                      <span>นัดสืบเสาะ</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs font-bold bg-amber-100 text-amber-950 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs">
-                                      <span>📝</span>
-                                      <span>นัดสืบประกอบรับสารภาพ</span>
-                                    </span>
-                                  );
+                                const catDisplay = getCalendarCategoryDisplay(a.category, a.appointmentTypeName);
+                                const categoryBadge = (
+                                  <span className={`text-xs font-bold border px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs ${catDisplay.badgeClass}`}>
+                                    <span>{catDisplay.icon}</span>
+                                    <span>{catDisplay.label}</span>
+                                  </span>
+                                );
 
                                 return (
                                   <div
@@ -1238,19 +1350,14 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                               {a.prosecutorName}
                             </span>
 
-                            {a.category === 'rights_protection' ? (
-                              <span className="text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded">
-                                🛡️ นัดคุ้มครองสิทธิ
-                              </span>
-                            ) : a.category === 'investigation' ? (
-                              <span className="text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded">
-                                🔍 นัดสืบเสาะ
-                              </span>
-                            ) : (
-                              <span className="text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 px-2 py-0.5 rounded">
-                                📝 นัดสืบประกอบรับสารภาพ
-                              </span>
-                            )}
+                            {(() => {
+                              const catDisplay = getCalendarCategoryDisplay(a.category, a.appointmentTypeName);
+                              return (
+                                <span className={`text-xs font-bold border px-2 py-0.5 rounded ${catDisplay.badgeClass}`}>
+                                  {catDisplay.icon} {catDisplay.label}
+                                </span>
+                              );
+                            })()}
 
                             <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                               ⏰ {a.appointmentTime || '09:00 น.'}
@@ -1357,54 +1464,28 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {result.allAppointments
-                  .filter((a) => {
-                    if (selectedProsecutorFilter !== 'all' && a.prosecutorName !== selectedProsecutorFilter) return false;
-                    if (selectedCategory !== 'all' && a.category !== selectedCategory) return false;
-                    if (statusFilter === 'incomplete' && a.isCompleted) return false;
-                    if (statusFilter === 'completed' && !a.isCompleted) return false;
-                    if (statusFilter === 'submitted_duty' && !a.isSubmittedToDuty) return false;
-
-                    if (searchQuery.trim()) {
-                      const q = searchQuery.toLowerCase();
-                      return (
-                        a.prosecutorName.toLowerCase().includes(q) ||
-                        a.blackCaseNo.toLowerCase().includes(q) ||
-                        (a.redCaseNo && a.redCaseNo.toLowerCase().includes(q)) ||
-                        a.defendant.toLowerCase().includes(q) ||
-                        (a.courtRoom && a.courtRoom.toLowerCase().includes(q)) ||
-                        (a.notes && a.notes.toLowerCase().includes(q))
-                      );
-                    }
-                    return true;
-                  })
-                  .map((a, idx) => (
+                {filteredAllAppointments.map((a, idx) => (
                     <tr key={a.uniqueKey} className={`hover:bg-slate-50 transition ${a.isCompleted ? 'bg-emerald-50/20' : ''}`}>
-                      <td className="p-3 text-center text-slate-400 font-medium">{idx + 1}</td>
+                      <td className="p-3 text-center text-slate-400 font-medium tabular-nums">{idx + 1}</td>
                       <td className="p-3 font-bold text-slate-900">{a.prosecutorName}</td>
-                      <td className="p-3 text-slate-700 whitespace-nowrap">
+                      <td className="p-3 text-slate-700 whitespace-nowrap tabular-nums">
                         {formatThaiDate(a.appointmentDate)}
                       </td>
-                      <td className="p-3 text-center text-slate-600 whitespace-nowrap">
+                      <td className="p-3 text-center text-slate-600 whitespace-nowrap tabular-nums">
                         {a.appointmentTime || '09:00 น.'}
                       </td>
                       <td className="p-3 text-center text-slate-600 whitespace-nowrap">
                         {a.courtRoom || '-'}
                       </td>
                       <td className="p-3 text-center whitespace-nowrap">
-                        {a.category === 'rights_protection' ? (
-                          <span className="font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-[11px]">
-                            🛡️ คุ้มครองสิทธิ
-                          </span>
-                        ) : a.category === 'investigation' ? (
-                          <span className="font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded text-[11px]">
-                            🔍 สืบเสาะ
-                          </span>
-                        ) : (
-                          <span className="font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded text-[11px]">
-                            📝 สืบประกอบ
-                          </span>
-                        )}
+                        {(() => {
+                          const catDisplay = getCalendarCategoryDisplay(a.category, a.appointmentTypeName);
+                          return (
+                            <span className={`font-semibold border px-2 py-0.5 rounded text-[11px] ${catDisplay.badgeClass}`}>
+                              {catDisplay.icon} {catDisplay.shortLabel}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-3 font-semibold text-slate-800 whitespace-nowrap">{a.blackCaseNo}</td>
                       <td className="p-3 text-rose-700 whitespace-nowrap">{a.redCaseNo || '-'}</td>

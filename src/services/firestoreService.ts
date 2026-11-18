@@ -377,8 +377,17 @@ function prepareCaseDataForFirestore(caseItem: AppealCase): Record<string, any> 
     cleanData.appointmentType = deleteField();
     cleanData.appointmentTypeName = deleteField();
   }
+  if (!caseItem.appointmentTime) {
+    cleanData.appointmentTime = deleteField();
+  }
+  if (!caseItem.appointmentCourtRoom) {
+    cleanData.appointmentCourtRoom = deleteField();
+  }
   if (!caseItem.appointmentNotes) {
     cleanData.appointmentNotes = deleteField();
+  }
+  if (!caseItem.subsequentAppointments || caseItem.subsequentAppointments.length === 0) {
+    cleanData.subsequentAppointments = deleteField();
   }
   if (!caseItem.judgmentPhotoUrl) {
     cleanData.judgmentPhotoUrl = deleteField();

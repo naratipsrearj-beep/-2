@@ -368,7 +368,9 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       return;
     }
 
-    if (isUnspecifiedStage) {
+    if (isTemporarilyDischarged) {
+      // จำหน่ายคดีชั่วคราว (จำเลยหลบหนี) — ไม่บังคับกรอกวันที่พิพากษา หรือวันนัดคุ้มครองสิทธิ/วันนัดศาล จนกว่าศาลจะยกคดีขึ้นพิจารณาใหม่
+    } else if (isUnspecifiedStage) {
       // กรณียังไม่เลือกสถานะสำนวน (คุมสำนวนที่จะฟ้องในวันไว้ก่อน)
       // ไม่บังคับคำพิพากษาหรือวันที่นัด
     } else if (hasJudgment) {
@@ -437,13 +439,15 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
         ? ''
         : effectiveHasJudgment
           ? (judgmentOutcome.trim() || fullJudgmentText.trim() || '')
-          : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
-            ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)')
-            : (isRequisitionCase || appointmentType === 'requisition')
-              ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
-              : (appointmentType !== 'none'
-                ? 'อยู่ระหว่างนัดพิจารณา (รอคำให้การ)'
-                : judgmentOutcome),
+          : (isTemporarilyDischarged && !appointmentDate)
+            ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : '')
+            : (defendantPlea === 'denied' || appointmentType === 'rights_protection')
+              ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'อยู่ระหว่างนัดคุ้มครองสิทธิ (จำเลยให้การปฏิเสธ)')
+              : (isRequisitionCase || appointmentType === 'requisition')
+                ? (judgmentOutcome && !judgmentOutcome.includes('รับสารภาพ') ? judgmentOutcome.trim() : 'สำนวนเบิกฟ้อง (รอเบิกตัวมาฟ้อง / ยังไม่ทราบคำให้การ)')
+                : (appointmentType !== 'none'
+                  ? 'อยู่ระหว่างนัดพิจารณา (รอคำให้การ)'
+                  : judgmentOutcome),
       fullJudgmentText: effectiveHasJudgment ? (fullJudgmentText.trim() || judgmentOutcome.trim() || undefined) : undefined,
       judgmentPhotoUrl: effectiveHasJudgment ? (judgmentPhotoUrl || null) : null,
       judgmentPhotoName: effectiveHasJudgment ? (judgmentPhotoName || undefined) : undefined,
@@ -487,14 +491,18 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
       appointmentType: (isRequisitionCase || appointmentType === 'requisition')
         ? 'requisition'
-        : (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection'
+        : (isTemporarilyDischarged && !appointmentDate)
           ? 'none'
-          : appointmentType,
+          : (hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection'
+            ? 'none'
+            : appointmentType,
       appointmentTypeName: (isRequisitionCase || appointmentType === 'requisition')
         ? 'สำนวนเบิกฟ้อง'
-        : appointmentType === 'other'
-          ? appointmentTypeName.trim()
-          : undefined,
+        : (isTemporarilyDischarged && !appointmentDate)
+          ? undefined
+          : appointmentType === 'other'
+            ? appointmentTypeName.trim()
+            : undefined,
       appointmentDate: (isRequisitionCase || appointmentType === 'requisition')
         ? (requisitionDate || appointmentDate || undefined)
         : ((hasJudgment || defendantPlea === 'confessed') && appointmentType === 'rights_protection')
@@ -893,7 +901,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 mt-0.5">
-                    หากติ๊กตัวเลือกนี้ ระบบจะพักการคุมระยะเวลาอุทธรณ์และไม่แจ้งเตือน แต่ยังสามารถกรอกหรือแก้ไขคำพิพากษาได้ตามปกติ เมื่อจับกุมตัวจำเลยได้แล้ว สามารถติ๊กออกหรือกดปุ่มเพื่อกลับมาคุมอุทธรณ์เหมือนเดิมได้
+                    หากติ๊กตัวเลือกนี้ ระบบจะพักการคุมระยะเวลาอุทธรณ์ ไม่แจ้งเตือน และ<strong>ไม่บังคับกรอกวันคุ้มครองสิทธิหรือวันนัดศาล</strong> จนกว่าศาลจะยกคดีขึ้นพิจารณาใหม่ (ยังกรอกหรือแก้ไขคำพิพากษาได้ตามปกติ และกดปุ่มกลับมาคุมอุทธรณ์ได้เมื่อจับกุมตัวจำเลยแล้ว)
                   </p>
                 </div>
               </label>
@@ -2203,12 +2211,21 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
               </div>
 
               {/* Informative notice */}
-              <div className="p-2.5 bg-white border border-indigo-100 rounded-lg text-xs text-indigo-900 flex items-start gap-2">
-                <Info className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
-                <span>
-                  จำเลยให้การปฏิเสธ: ศาลยังไม่มีคำพิพากษาในวันฟ้อง ระบบจึงไม่บังคับให้ต้องเลือกวันที่พิพากษา (ยังไม่เริ่มนับกำหนดเวลาอุทธรณ์ 1 เดือน) โดยเปลี่ยนเป็นให้กำหนดนัดคุ้มครองสิทธิและเลือกวันนัดต่อๆ ไปแทน เมื่อศาลมีคำพิพากษาในอนาคต จึงค่อยมาระบุวันพิพากษาเพื่อเริ่มนับระยะเวลาอุทธรณ์ 1 เดือน
-                </span>
-              </div>
+              {isTemporarilyDischarged ? (
+                <div className="p-2.5 bg-slate-100 border border-slate-300 rounded-lg text-xs text-slate-800 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-slate-600 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <strong>สำนวนจำหน่ายคดีชั่วคราว:</strong> ไม่บังคับกรอกวันนัดคุ้มครองสิทธิหรือวันนัดศาล สามารถเว้นว่างไว้และกดบันทึกได้ทันที จนกว่าศาลจะยกคดีขึ้นพิจารณาใหม่
+                  </span>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-white border border-indigo-100 rounded-lg text-xs text-indigo-900 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                  <span>
+                    จำเลยให้การปฏิเสธ: ศาลยังไม่มีคำพิพากษาในวันฟ้อง ระบบจึงไม่บังคับให้ต้องเลือกวันที่พิพากษา (ยังไม่เริ่มนับกำหนดเวลาอุทธรณ์ 1 เดือน) โดยเปลี่ยนเป็นให้กำหนดนัดคุ้มครองสิทธิและเลือกวันนัดต่อๆ ไปแทน เมื่อศาลมีคำพิพากษาในอนาคต จึงค่อยมาระบุวันพิพากษาเพื่อเริ่มนับระยะเวลาอุทธรณ์ 1 เดือน
+                  </span>
+                </div>
+              )}
 
               {/* Quick Preset Buttons for Primary Appointment */}
               <div>
@@ -2258,7 +2275,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      ประเภทนัด *
+                      ประเภทนัด {isTemporarilyDischarged ? '(ไม่บังคับ)' : '*'}
                     </label>
                     <select
                       value={appointmentType}
@@ -2275,11 +2292,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      วันที่นัดของศาล *
+                      วันที่นัดของศาล {isTemporarilyDischarged ? '(ไม่บังคับ - จำหน่ายคดีชั่วคราว)' : '*'}
                     </label>
                     <input
                       type="date"
-                      required
+                      required={!isTemporarilyDischarged && appointmentType !== 'none'}
                       value={appointmentDate}
                       onChange={(e) => setAppointmentDate(e.target.value)}
                       className="w-full text-xs border border-indigo-300 rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-medium"
@@ -2295,11 +2312,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 {appointmentType === 'other' && (
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      ระบุชื่อนัดอื่นๆ *
+                      ระบุชื่อนัดอื่นๆ {isTemporarilyDischarged ? '(ไม่บังคับ)' : '*'}
                     </label>
                     <input
                       type="text"
-                      required
+                      required={!isTemporarilyDischarged && appointmentType === 'other'}
                       placeholder="เช่น นัดฟังคำสั่งคำร้อง, นัดชี้สองสถาน"
                       value={appointmentTypeName}
                       onChange={(e) => setAppointmentTypeName(e.target.value)}
@@ -2476,7 +2493,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                             <span className="text-[10px] text-slate-500 block mb-0.5">วันที่นัด:</span>
                             <input
                               type="date"
-                              required
+                              required={!isTemporarilyDischarged}
                               value={appt.date}
                               onChange={(e) =>
                                 handleUpdateSubsequentAppointment(appt.id, 'date', e.target.value)
@@ -2575,7 +2592,7 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                     </label>
                     <input
                       type="date"
-                      required={isRequisitionCase}
+                      required={!isTemporarilyDischarged && isRequisitionCase}
                       value={requisitionDate || appointmentDate}
                       onChange={(e) => {
                         const val = e.target.value;

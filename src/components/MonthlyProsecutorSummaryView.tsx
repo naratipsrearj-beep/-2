@@ -32,7 +32,7 @@ import {
   BarChart3,
   CalendarCheck
 } from 'lucide-react';
-import { AppealCase, CourtAppointmentType } from '../types/appeal';
+import { AppealCase, CourtAppointmentType, MonthlyDutyRoster } from '../types/appeal';
 import { formatThaiDate, getTodayString, calculateAppealDeadline } from '../utils/dateUtils';
 import {
   getAvailableFilingMonths,
@@ -52,21 +52,35 @@ import { MonthlyProsecutorHearingScheduleView } from './MonthlyProsecutorHearing
 
 interface MonthlyProsecutorSummaryViewProps {
   cases: AppealCase[];
+  dutyRosters?: MonthlyDutyRoster[];
   initialYearMonth?: string;
   initialSubTab?: 'filing_summary' | 'hearing_schedule';
+  canEdit?: boolean;
+  canComplete?: boolean;
   onSelectCase?: (caseItem: AppealCase) => void;
   onUpdateCase?: (updatedCase: AppealCase) => Promise<void> | void;
   onQuickChangePleaStatus?: (caseItem: AppealCase, newStatus: 'confessed' | 'denied' | 'pending') => Promise<void> | void;
+  onOpenAppointmentModal?: (caseItem: AppealCase) => void;
+  onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
+  onMarkComplete?: (caseItem: AppealCase) => void;
+  onAddNewCaseForDate?: (dateStr: string) => void;
   onToast?: (message: string) => void;
 }
 
 export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryViewProps> = ({
   cases,
+  dutyRosters = [],
   initialYearMonth,
   initialSubTab = 'filing_summary',
+  canEdit = false,
+  canComplete = false,
   onSelectCase,
   onUpdateCase,
   onQuickChangePleaStatus,
+  onOpenAppointmentModal,
+  onOpenSubmitToDuty,
+  onMarkComplete,
+  onAddNewCaseForDate,
   onToast,
 }) => {
   const [subTab, setSubTab] = useState<'filing_summary' | 'hearing_schedule'>(initialSubTab);
@@ -427,8 +441,15 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
       {subTab === 'hearing_schedule' ? (
         <MonthlyProsecutorHearingScheduleView
           cases={cases}
+          dutyRosters={dutyRosters}
           initialYearMonth={selectedMonth}
+          canEdit={canEdit}
+          canComplete={canComplete}
           onSelectCase={onSelectCase}
+          onOpenAppointmentModal={onOpenAppointmentModal}
+          onOpenSubmitToDuty={onOpenSubmitToDuty}
+          onMarkComplete={onMarkComplete}
+          onAddNewCaseForDate={onAddNewCaseForDate}
           onToast={onToast}
         />
       ) : (
