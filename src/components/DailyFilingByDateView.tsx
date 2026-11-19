@@ -51,7 +51,8 @@ import {
   getTodayString,
   isKunchartCase,
   isKunchartCompletedPendingNoAppealAlert,
-  getSeveredFilingAlertInfo
+  getSeveredFilingAlertInfo,
+  hasCaseFilingAfterJudgmentAnomaly
 } from '../utils/dateUtils';
 import { CopyCaseDropdown } from './CopyCaseDropdown';
 import {
@@ -2452,6 +2453,24 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                               <span>รับสารภาพ (ยังไม่กรอกคำพิพากษา)</span>
                             </span>
                           ) : null}
+
+                          {(() => {
+                            const dateAnomaly = hasCaseFilingAfterJudgmentAnomaly(caseItem);
+                            if (!dateAnomaly.isAnomalous) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => canEdit && onEditCase && onEditCase(caseItem)}
+                                className={`text-xs font-bold text-cyan-950 bg-cyan-100 border-2 border-cyan-600 px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                                  canEdit && onEditCase ? 'hover:bg-cyan-200 cursor-pointer' : ''
+                                }`}
+                                title={`พบข้อมูลผิดปกติ: วันที่ฟ้อง (${formatThaiDate(caseItem.filingDate)}) เกิดหลังวันพิพากษา (${formatThaiDate(caseItem.judgmentDate)}) — พิพากษาก่อนฟ้องไม่ได้`}
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 text-cyan-700 shrink-0" />
+                                <span>ผิดปกติ: วันฟ้องหลังวันพิพากษา ({dateAnomaly.daysDifference} วัน)</span>
+                              </button>
+                            );
+                          })()}
 
                           {/* สถิติผลการดำเนินคดี Badge */}
                           {procCat === 'temporarily_discharged' && (

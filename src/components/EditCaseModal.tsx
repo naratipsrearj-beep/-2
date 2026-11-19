@@ -26,10 +26,11 @@ import {
   Loader2,
   Users,
   Send,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, CaseAppointment, MonthlyDutyRoster, CaseCompletionReason } from '../types/appeal';
-import { calculateAppealDeadline, calculateSeveredDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { calculateAppealDeadline, calculateSeveredDeadline, checkFilingAfterJudgmentAnomaly, formatThaiDate, getTodayString } from '../utils/dateUtils';
 import { isJudgmentRecorded, isCaseUnspecifiedStage, getUnspecifiedStageAlertInfo } from '../utils/appointmentUtils';
 import { appointmentTypeOptions } from './CourtAppointmentModal';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
@@ -175,6 +176,24 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
     }
     return calculateAppealDeadline(judgmentDate);
   }, [judgmentDate]);
+
+  // ตรวจสอบความผิดปกติ: วันที่ฟ้องเกิดขึ้นหลังวันพิพากษา (จะพิพากษาก่อนฟ้องไม่ได้)
+  const filingDateInputRef = React.useRef<HTMLInputElement>(null);
+  const [showDateAnomalyConfirm, setShowDateAnomalyConfirm] = useState(false);
+
+  const effectiveJudgmentDateForCheck =
+    !isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate))
+      ? judgmentDate
+      : '';
+
+  const filingAfterJudgmentAnomaly = React.useMemo(
+    () => checkFilingAfterJudgmentAnomaly(filingDate, effectiveJudgmentDateForCheck),
+    [filingDate, effectiveJudgmentDateForCheck]
+  );
+
+  useEffect(() => {
+    setShowDateAnomalyConfirm(false);
+  }, [filingDate, judgmentDate, hasJudgment, defendantPlea, isUnspecifiedStage, isOpen]);
 
   useEffect(() => {
     if (caseItem && isOpen) {
@@ -387,6 +406,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
       }
     }
 
+    if (filingAfterJudgmentAnomaly.isAnomalous && !showDateAnomalyConfirm) {
+      setShowDateAnomalyConfirm(true);
+      return;
+    }
+
     const effectiveHasJudgment = !isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate && judgmentDate.trim()));
     const calculatedDeadline = judgmentDate ? calculateAppealDeadline(judgmentDate) : null;
     const finalAppealDeadline = effectiveHasJudgment && judgmentDate && judgmentDate.trim()
@@ -583,6 +607,33 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+          {filingAfterJudgmentAnomaly.isAnomalous && (
+            <div className="bg-cyan-50 border-2 border-cyan-600 rounded-xl p-3.5 flex items-start justify-between gap-3 text-xs text-cyan-950 shadow-2xs animate-in fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-cyan-700 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-cyan-900 text-sm font-['Prompt']">
+                    แจ้งเตือนข้อมูลผิดปกติ: วันที่ฟ้องเกิดขึ้นหลังวันพิพากษา ({filingAfterJudgmentAnomaly.daysDifference} วัน)
+                  </div>
+                  <p className="text-cyan-900 leading-relaxed">
+                    วันที่ยื่นฟ้อง (<strong>{formatThaiDate(filingDate)}</strong>) อยู่หลังวันที่อ่านคำพิพากษา (<strong>{formatThaiDate(judgmentDate)}</strong>) — เพราะจะพิพากษาก่อนฟ้องไม่ได้ กรุณาตรวจสอบและแก้ไขให้ถูกต้อง
+                  </p>
+                </div>
+              </div>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    filingDateInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    filingDateInputRef.current?.focus();
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-[11px] shrink-0 transition cursor-pointer whitespace-nowrap"
+                >
+                  ไปแก้ไขวันที่
+                </button>
+              )}
+            </div>
+          )}
           <fieldset disabled={readOnly} className="space-y-5">
           {/* Key Option: Case Stage / Judgment Toggle */}
           {/* สถานะสำนวนในการพิจารณาของศาล - ปรับ UI ให้สั้นลง สบายตา ไม่กินพื้นที่ (ตามที่ผู้ใช้ร้องขอ) */}
@@ -1155,15 +1206,33 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 วันที่ยื่นฟ้อง (สำหรับแยกสำนวนรายวัน) *
               </label>
               <input
+                ref={filingDateInputRef}
                 type="date"
                 required
                 value={filingDate}
                 onChange={(e) => setFilingDate(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
+                className={`w-full text-xs border rounded-xl px-3 py-2 focus:bg-white focus:outline-hidden focus:ring-2 font-medium ${
+                  filingAfterJudgmentAnomaly.isAnomalous
+                    ? 'border-2 border-cyan-600 bg-cyan-50 text-cyan-950 ring-2 ring-cyan-300 focus:ring-cyan-600'
+                    : 'border-slate-300 bg-slate-50 focus:ring-amber-500'
+                }`}
               />
               <span className="text-[10px] text-slate-500">
                 {formatThaiDate(filingDate, { short: false })}
               </span>
+              {filingAfterJudgmentAnomaly.isAnomalous && (
+                <div className="flex items-start gap-2 text-xs text-cyan-950 bg-cyan-50 border-2 border-cyan-600 rounded-xl p-2.5 mt-1.5 shadow-2xs animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-cyan-700 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-cyan-900 block">
+                      มีข้อมูลผิดปกติ: วันที่ฟ้องอยู่หลังวันพิพากษา
+                    </span>
+                    <span className="text-[11px] text-cyan-900">
+                      จะพิพากษาก่อนฟ้องไม่ได้ (พิพากษา {formatThaiDate(judgmentDate, { short: true })})
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1810,12 +1879,24 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                     type="date"
                     value={judgmentDate}
                     onChange={(e) => setJudgmentDate(e.target.value)}
-                    className="w-full text-xs border border-amber-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
+                    className={`w-full text-xs border rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 font-medium ${
+                      filingAfterJudgmentAnomaly.isAnomalous
+                        ? 'border-2 border-cyan-600 bg-cyan-50 text-cyan-950 ring-2 ring-cyan-300 focus:ring-cyan-600'
+                        : 'border-amber-300 bg-white focus:ring-amber-500'
+                    }`}
                   />
                   {judgmentDate && (
                     <span className="text-[10px] text-amber-800 block mt-1">
                       {formatThaiDate(judgmentDate, { short: false })}
                     </span>
+                  )}
+                  {filingAfterJudgmentAnomaly.isAnomalous && (
+                    <div className="flex items-start gap-1.5 text-[11px] text-cyan-950 bg-cyan-50 border-2 border-cyan-600 rounded-lg p-2 mt-1.5 shadow-2xs animate-in fade-in">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-cyan-700 mt-0.5" />
+                      <span>
+                        <strong className="text-cyan-900">ผิดปกติ:</strong> วันพิพากษาเกิดก่อนวันฟ้อง ({formatThaiDate(filingDate, { short: true })}) — พิพากษาก่อนฟ้องไม่ได้
+                      </span>
+                    </div>
                   )}
                 </div>
 
@@ -2713,6 +2794,41 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
             </div>
           </div>
           </fieldset>
+
+          {!readOnly && showDateAnomalyConfirm && filingAfterJudgmentAnomaly.isAnomalous && (
+            <div className="bg-cyan-50 border-2 border-cyan-600 rounded-xl p-4 space-y-3 animate-in fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-cyan-700 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-xs text-cyan-950">
+                  <div className="font-bold text-sm text-cyan-900 font-['Prompt']">
+                    ไม่สามารถบันทึกทันทีได้: ตรวจพบข้อมูลวันที่ผิดปกติ (พิพากษาก่อนฟ้อง)
+                  </div>
+                  <p className="leading-relaxed">
+                    วันที่ยื่นฟ้อง (<strong>{formatThaiDate(filingDate)}</strong>) เกิดขึ้นหลังวันที่อ่านคำพิพากษา (<strong>{formatThaiDate(judgmentDate)}</strong>) ห่างกัน <strong className="tabular-nums">{filingAfterJudgmentAnomaly.daysDifference}</strong> วัน เพราะจะพิพากษาก่อนฟ้องไม่ได้
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDateAnomalyConfirm(false);
+                    filingDateInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    filingDateInputRef.current?.focus();
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-cyan-700 hover:bg-cyan-800 rounded-lg transition cursor-pointer"
+                >
+                  กลับไปแก้ไขวันที่ให้ถูกต้อง
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-2 text-xs font-semibold text-cyan-900 bg-white hover:bg-cyan-100 border border-cyan-400 rounded-lg transition cursor-pointer"
+                >
+                  ยืนยันบันทึกทั้งที่วันที่ผิดปกติ
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Modal Footer Buttons */}
           {readOnly ? (

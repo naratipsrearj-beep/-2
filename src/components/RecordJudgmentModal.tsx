@@ -21,10 +21,11 @@ import {
   ShieldCheck,
   Sparkles,
   Loader2,
-  Printer
+  Printer,
+  AlertTriangle
 } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
-import { calculateAppealDeadline, formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { calculateAppealDeadline, checkFilingAfterJudgmentAnomaly, formatThaiDate, getTodayString } from '../utils/dateUtils';
 import { isJudgmentRecorded, isCaseTemporarilyDischarged } from '../utils/appointmentUtils';
 import { compressImageFile } from '../utils/imageUtils';
 
@@ -108,6 +109,8 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   const [isProcessingImage, setIsProcessingImage] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const judgmentDateInputRef = useRef<HTMLInputElement>(null);
+  const [showDateAnomalyConfirm, setShowDateAnomalyConfirm] = useState(false);
 
   // Auto-calculated 1-month appeal deadline whenever judgmentDate changes
   const deadlineInfo = React.useMemo(() => {
@@ -116,6 +119,16 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
     }
     return calculateAppealDeadline(judgmentDate);
   }, [judgmentDate]);
+
+  // Check if case's filingDate occurs after entered judgmentDate (พิพากษาก่อนฟ้องไม่ได้)
+  const filingAfterJudgmentAnomaly = React.useMemo(
+    () => checkFilingAfterJudgmentAnomaly(caseItem?.filingDate, judgmentDate),
+    [caseItem?.filingDate, judgmentDate]
+  );
+
+  useEffect(() => {
+    setShowDateAnomalyConfirm(false);
+  }, [judgmentDate, caseItem, isOpen]);
 
   useEffect(() => {
     if (caseItem) {
@@ -289,6 +302,11 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
 
     if (!effectiveDeadline) {
       setErrorMsg('ไม่สามารถคำนวณวันครบกำหนดอุทธรณ์ได้ กรุณาตรวจสอบวันที่');
+      return;
+    }
+
+    if (filingAfterJudgmentAnomaly.isAnomalous && !showDateAnomalyConfirm) {
+      setShowDateAnomalyConfirm(true);
       return;
     }
 
@@ -573,6 +591,11 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
               <div className="flex justify-between font-medium items-center flex-wrap gap-2">
                 <span className="text-slate-600">โจทก์: {caseItem.plaintiff}</span>
                 <span className="text-slate-600">จำเลย: {caseItem.defendant}</span>
+                {caseItem.filingDate && (
+                  <span className="text-xs font-semibold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200 tabular-nums">
+                    ฟ้องวันที่ {formatThaiDate(caseItem.filingDate)}
+                  </span>
+                )}
                 {(redCaseNo.trim() || caseItem.redCaseNo) ? (
                   <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
                     🔴 คดีแดง {redCaseNo.trim() || caseItem.redCaseNo}
@@ -710,16 +733,34 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                     </button>
                   </div>
                   <input
+                    ref={judgmentDateInputRef}
                     type="date"
                     required
                     value={judgmentDate}
                     onChange={(e) => setJudgmentDate(e.target.value)}
-                    className="w-full text-xs border border-amber-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
+                    className={`w-full text-xs border rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 font-medium ${
+                      filingAfterJudgmentAnomaly.isAnomalous
+                        ? 'border-2 border-cyan-600 bg-cyan-50 text-cyan-950 ring-2 ring-cyan-300 focus:ring-cyan-600'
+                        : 'border-amber-300 bg-white focus:ring-amber-500'
+                    }`}
                   />
                   {judgmentDate && (
                     <span className="text-[10px] text-amber-900 font-semibold block mt-1">
                       {formatThaiDate(judgmentDate, { short: false })}
                     </span>
+                  )}
+                  {filingAfterJudgmentAnomaly.isAnomalous && (
+                    <div className="flex items-start gap-2 text-xs text-cyan-950 bg-cyan-50 border-2 border-cyan-600 rounded-xl p-2.5 mt-1.5 shadow-2xs animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-cyan-700 mt-0.5" />
+                      <div>
+                        <span className="font-bold text-cyan-900 block">
+                          แจ้งเตือนข้อมูลผิดปกติ: วันที่ฟ้อง ({formatThaiDate(caseItem.filingDate, { short: true })}) เกิดหลังวันพิพากษา ({filingAfterJudgmentAnomaly.daysDifference} วัน)
+                        </span>
+                        <span className="text-[11px] text-cyan-900">
+                          เพราะจะพิพากษาก่อนฟ้องไม่ได้ กรุณาแก้ไขวันพิพากษา หรือแก้ไขวันที่ฟ้องในหน้าแก้ไขสำนวน
+                        </span>
+                      </div>
+                    </div>
                   )}
                 </div>
 
@@ -941,6 +982,42 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                 className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer"
               />
             </div>
+
+            {/* Anomaly Confirmation Guard when filingDate > judgmentDate */}
+            {showDateAnomalyConfirm && filingAfterJudgmentAnomaly.isAnomalous && (
+              <div className="bg-cyan-50 border-2 border-cyan-600 rounded-xl p-4 space-y-3 animate-in fade-in">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-cyan-700 shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-xs text-cyan-950">
+                    <div className="font-bold text-sm text-cyan-900 font-['Prompt']">
+                      ไม่สามารถบันทึกทันทีได้: ตรวจพบข้อมูลวันที่ผิดปกติ (พิพากษาก่อนฟ้อง)
+                    </div>
+                    <p className="leading-relaxed">
+                      วันที่ยื่นฟ้อง (<strong>{formatThaiDate(caseItem.filingDate)}</strong>) เกิดขึ้นหลังวันที่อ่านคำพิพากษา (<strong>{formatThaiDate(judgmentDate)}</strong>) ห่างกัน <strong className="tabular-nums">{filingAfterJudgmentAnomaly.daysDifference}</strong> วัน เพราะจะพิพากษาก่อนฟ้องไม่ได้
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDateAnomalyConfirm(false);
+                      judgmentDateInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      judgmentDateInputRef.current?.focus();
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-white bg-cyan-700 hover:bg-cyan-800 rounded-lg transition cursor-pointer"
+                  >
+                    กลับไปแก้ไขวันที่พิพากษา
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-2 text-xs font-semibold text-cyan-900 bg-white hover:bg-cyan-100 border border-cyan-400 rounded-lg transition cursor-pointer"
+                  >
+                    ยืนยันบันทึกทั้งที่วันที่ผิดปกติ
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Actions */}
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2.5 flex-shrink-0">

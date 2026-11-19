@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User } from 'firebase/auth';
 import {
   Scale,
@@ -123,6 +123,8 @@ import { getAppointmentLabel, isCaseConfessed } from './utils/appointmentUtils';
 import { downloadApplicationJsonBackup } from './utils/backupUtils';
 import { BackupViewerModal } from './components/BackupViewerModal';
 import { MonthlyProsecutorHearingScheduleView } from './components/MonthlyProsecutorHearingScheduleView';
+import { Appeal10DayPendingDutyLedgerView } from './components/Appeal10DayPendingDutyLedgerView';
+import { extractPendingDuty10DaySummary } from './utils/appeal10DaySummaryUtils';
 import { SubmitToDutyModal } from './components/SubmitToDutyModal';
 import { ActivityLogModal } from './components/ActivityLogModal';
 import { CaseRevisionHistoryModal } from './components/CaseRevisionHistoryModal';
@@ -196,11 +198,13 @@ export default function App() {
   const [dutyRosterEditTargetId, setDutyRosterEditTargetId] = useState<string | undefined>();
   const [addCaseInitialResponsiblePerson, setAddCaseInitialResponsiblePerson] = useState<string | undefined>();
 
-  // Navigation tabs: 'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor' | 'prosecutor_hearings'
-  const [activeTab, setActiveTab] = useState<'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor' | 'prosecutor_hearings'>('all');
+  // Navigation tabs: 'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor' | 'prosecutor_hearings' | 'appeal_10day_pending_duty'
+  const [activeTab, setActiveTab] = useState<'all' | 'filing_date' | 'duty_roster' | 'monthly_prosecutor' | 'prosecutor_hearings' | 'appeal_10day_pending_duty'>('all');
   const [monthlySummaryInitialMonth, setMonthlySummaryInitialMonth] = useState<string | undefined>();
   const [statsFilter, setStatsFilter] = useState<string>('all');
   const [globalVoiceQuery, setGlobalVoiceQuery] = useState<string>('');
+
+  const pendingDuty10DaySummary = useMemo(() => extractPendingDuty10DaySummary(cases), [cases]);
 
   // Modals state
   const [isAddCaseOpen, setIsAddCaseOpen] = useState(false);
@@ -3243,90 +3247,217 @@ export default function App() {
         />
 
         {/* Tab Navigation */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b border-slate-200 pb-3 mb-5 gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="bg-white border border-slate-200 rounded-2xl p-2 mb-5 shadow-2xs flex flex-col 2xl:flex-row items-stretch 2xl:items-center justify-between gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-1.5 flex-1">
+            {/* Tab 1: สำนวนคุมอุทธรณ์ทั้งหมด */}
             <button
+              type="button"
               onClick={() => setActiveTab('all')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+              className={`px-3 py-2.5 rounded-xl text-left transition flex items-center gap-2.5 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-900 ${
                 activeTab === 'all'
                   ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  : 'bg-slate-50/70 hover:bg-slate-100 text-slate-900 border border-slate-200/80 hover:border-slate-300'
               }`}
             >
-              <Scale className="w-4 h-4" />
-              <span>สำนวนคุมอุทธรณ์ทั้งหมด</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === 'all' ? 'bg-slate-800 text-amber-300' : 'bg-slate-100 text-slate-600'}`}>
-                {cases.length}
+              <span
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  activeTab === 'all'
+                    ? 'bg-white/15 text-amber-300'
+                    : 'bg-slate-200/80 text-slate-800'
+                }`}
+              >
+                <Scale className="w-5 h-5" />
               </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-['Prompt'] leading-tight whitespace-nowrap truncate">
+                  สำนวนคุมอุทธรณ์ทั้งหมด
+                </div>
+                <div
+                  className={`text-xs font-medium mt-0.5 tabular-nums whitespace-nowrap truncate ${
+                    activeTab === 'all' ? 'text-amber-200' : 'text-slate-600'
+                  }`}
+                >
+                  ทั้งหมด {cases.length} สำนวน
+                </div>
+              </div>
             </button>
 
-            {/* Tab 2: วันที่ฟ้อง (เลือกวันที่ต้องการ แล้วปรากฎจำนวนคดีที่ฟ้องในวันนั้น) */}
+            {/* Tab 2: วันที่ฟ้อง */}
             <button
+              type="button"
               onClick={() => setActiveTab('filing_date')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+              className={`px-3 py-2.5 rounded-xl text-left transition flex items-center gap-2.5 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-600 ${
                 activeTab === 'filing_date'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  ? 'bg-indigo-700 text-white shadow-xs'
+                  : 'bg-slate-50/70 hover:bg-indigo-50/70 text-slate-900 border border-slate-200/80 hover:border-indigo-300'
               }`}
             >
-              <Calendar className="w-4 h-4" />
-              <span>วันที่ฟ้อง</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === 'filing_date' ? 'bg-indigo-800 text-white' : 'bg-indigo-50 text-indigo-700'}`}>
-                เลือกวันที่
+              <span
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  activeTab === 'filing_date'
+                    ? 'bg-white/15 text-white'
+                    : 'bg-indigo-100 text-indigo-700'
+                }`}
+              >
+                <Calendar className="w-5 h-5" />
               </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-['Prompt'] leading-tight whitespace-nowrap truncate">
+                  วันที่ฟ้อง
+                </div>
+                <div
+                  className={`text-xs font-medium mt-0.5 whitespace-nowrap truncate ${
+                    activeTab === 'filing_date' ? 'text-indigo-100' : 'text-slate-600'
+                  }`}
+                >
+                  เลือกดูและจัดการรายวัน
+                </div>
+              </div>
             </button>
 
             {/* Tab 3: ตารางเวรชี้ประจำเดือน */}
             <button
+              type="button"
               onClick={() => setActiveTab('duty_roster')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+              className={`px-3 py-2.5 rounded-xl text-left transition flex items-center gap-2.5 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-600 ${
                 activeTab === 'duty_roster'
                   ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  : 'bg-slate-50/70 hover:bg-amber-50/70 text-slate-900 border border-slate-200/80 hover:border-amber-300'
               }`}
             >
-              <UserCheck className="w-4 h-4" />
-              <span>ตารางเวรชี้ประจำเดือน</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === 'duty_roster' ? 'bg-amber-700 text-white' : 'bg-amber-50 text-amber-700'}`}>
-                {dutyRosters.length} รอบเดือน
+              <span
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  activeTab === 'duty_roster'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                <UserCheck className="w-5 h-5" />
               </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-['Prompt'] leading-tight whitespace-nowrap truncate">
+                  ตารางเวรชี้ประจำเดือน
+                </div>
+                <div
+                  className={`text-xs font-medium mt-0.5 tabular-nums whitespace-nowrap truncate ${
+                    activeTab === 'duty_roster' ? 'text-amber-50' : 'text-slate-600'
+                  }`}
+                >
+                  {dutyRosters.length} รอบเดือน
+                </div>
+              </div>
             </button>
 
             {/* Tab 4: สรุปสิ้นเดือน (แยกรายอัยการ) */}
             <button
+              type="button"
               onClick={() => setActiveTab('monthly_prosecutor')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+              className={`px-3 py-2.5 rounded-xl text-left transition flex items-center gap-2.5 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-700 ${
                 activeTab === 'monthly_prosecutor'
                   ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  : 'bg-slate-50/70 hover:bg-emerald-50/70 text-slate-900 border border-slate-200/80 hover:border-emerald-300'
               }`}
             >
-              <BarChart3 className="w-4 h-4 text-emerald-300" />
-              <span>สรุปสิ้นเดือน (แยกรายอัยการ)</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'monthly_prosecutor' ? 'bg-emerald-900 text-amber-300' : 'bg-emerald-50 text-emerald-800'}`}>
-                รับสารภาพ/ปฏิเสธ
+              <span
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  activeTab === 'monthly_prosecutor'
+                    ? 'bg-white/15 text-emerald-100'
+                    : 'bg-emerald-100 text-emerald-700'
+                }`}
+              >
+                <BarChart3 className="w-5 h-5" />
               </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-['Prompt'] leading-tight whitespace-nowrap truncate">
+                  สรุปสิ้นเดือน (รายอัยการ)
+                </div>
+                <div
+                  className={`text-xs font-medium mt-0.5 whitespace-nowrap truncate ${
+                    activeTab === 'monthly_prosecutor' ? 'text-emerald-100' : 'text-slate-600'
+                  }`}
+                >
+                  รับสารภาพ · ปฏิเสธ
+                </div>
+              </div>
             </button>
 
-            {/* Tab 5: สรุปวันนัดศาลรายเดือน (คุ้มครองสิทธิ • สืบเสาะ • นัดสืบประกอบรับสารภาพ) */}
+            {/* Tab 5: ปฏิทินนัดอัยการรายเดือน */}
             <button
+              type="button"
               onClick={() => setActiveTab('prosecutor_hearings')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+              className={`px-3 py-2.5 rounded-xl text-left transition flex items-center gap-2.5 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-700 ${
                 activeTab === 'prosecutor_hearings'
                   ? 'bg-blue-800 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  : 'bg-slate-50/70 hover:bg-blue-50/70 text-slate-900 border border-slate-200/80 hover:border-blue-300'
               }`}
             >
-              <Calendar className="w-4 h-4 text-amber-300" />
-              <span>ปฏิทินนัดอัยการรายเดือน</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'prosecutor_hearings' ? 'bg-blue-950 text-amber-300' : 'bg-blue-50 text-blue-800'}`}>
-                คุ้มครองสิทธิ/สืบเสาะ/นัดต่างๆ
+              <span
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  activeTab === 'prosecutor_hearings'
+                    ? 'bg-white/15 text-amber-300'
+                    : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                <Calendar className="w-5 h-5" />
               </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-['Prompt'] leading-tight whitespace-nowrap truncate">
+                  ปฏิทินนัดอัยการรายเดือน
+                </div>
+                <div
+                  className={`text-xs font-medium mt-0.5 whitespace-nowrap truncate ${
+                    activeTab === 'prosecutor_hearings' ? 'text-blue-100' : 'text-slate-600'
+                  }`}
+                >
+                  คุ้มครองสิทธิ · สืบเสาะ · นัดต่างๆ
+                </div>
+              </div>
+            </button>
+
+            {/* Tab 6: บัญชีสรุปอุทธรณ์ ≤ 10 วัน (ยังไม่เสนอเวรชี้) */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('appeal_10day_pending_duty')}
+              className={`px-3 py-2.5 rounded-xl text-left transition flex items-center gap-2.5 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-rose-700 ${
+                activeTab === 'appeal_10day_pending_duty'
+                  ? 'bg-rose-700 text-white shadow-xs'
+                  : pendingDuty10DaySummary.totalCount > 0
+                  ? 'bg-rose-50/90 hover:bg-rose-100/80 text-rose-950 border border-rose-200 hover:border-rose-400'
+                  : 'bg-slate-50/70 hover:bg-rose-50/60 text-slate-900 border border-slate-200/80 hover:border-rose-300'
+              }`}
+            >
+              <span
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  activeTab === 'appeal_10day_pending_duty'
+                    ? 'bg-white/15 text-amber-200'
+                    : pendingDuty10DaySummary.totalCount > 0
+                    ? 'bg-rose-100 text-rose-700'
+                    : 'bg-slate-200/80 text-slate-700'
+                }`}
+              >
+                <ShieldAlert className="w-5 h-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-['Prompt'] leading-tight whitespace-nowrap truncate">
+                  บัญชีสรุปอุทธรณ์ ≤ 10 วัน
+                </div>
+                <div
+                  className={`text-xs font-semibold mt-0.5 tabular-nums whitespace-nowrap truncate ${
+                    activeTab === 'appeal_10day_pending_duty'
+                      ? 'text-rose-100'
+                      : pendingDuty10DaySummary.totalCount > 0
+                      ? 'text-rose-700'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  ยังไม่เสนอเวรชี้ ({pendingDuty10DaySummary.totalCount})
+                </div>
+              </div>
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            {canEdit && (
+          {canEdit && (
+            <div className="flex items-stretch shrink-0 2xl:pl-2 2xl:border-l 2xl:border-slate-200">
               <button
                 type="button"
                 onClick={() => {
@@ -3334,13 +3465,13 @@ export default function App() {
                   setAddCaseInitialResponsiblePerson(undefined);
                   setIsAddCaseOpen(true);
                 }}
-                className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95"
+                className="w-full 2xl:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-bold px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition shadow-xs cursor-pointer active:scale-[0.98] whitespace-nowrap shrink-0"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4 stroke-[2.5]" />
                 <span>เพิ่มสำนวนคุมอุทธรณ์ 1 เดือน</span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Tab 1: All Appeal Cases Table View */}
@@ -3493,6 +3624,23 @@ export default function App() {
               setAddCaseInitialFilingDate(dateStr);
               setIsAddCaseOpen(true);
             }}
+            onToast={showToast}
+          />
+        )}
+
+        {/* Tab 6: บัญชีสรุปสำนวนใกล้ครบอุทธรณ์ ≤ 10 วัน ที่ยังไม่กดเสนอเวรชี้ */}
+        {activeTab === 'appeal_10day_pending_duty' && (
+          <Appeal10DayPendingDutyLedgerView
+            cases={cases}
+            canEdit={canEdit}
+            canComplete={canComplete}
+            onOpenSubmitToDuty={handleToggleSubmitToDuty}
+            onEditCase={(caseItem) => {
+              setSelectedCaseForEdit(caseItem);
+              setIsEditCaseOpen(true);
+            }}
+            onExtendDeadline={(caseItem) => setSelectedCaseForExtend(caseItem)}
+            onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
             onToast={showToast}
           />
         )}

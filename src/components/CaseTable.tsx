@@ -36,7 +36,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { AppealCase, CaseAppointment } from '../types/appeal';
-import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
+import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo, hasCaseFilingAfterJudgmentAnomaly } from '../utils/dateUtils';
 import { useVoiceSearch, VoiceSearchResult } from '../hooks/useVoiceSearch';
 import {
   getAppointmentLabel,
@@ -349,6 +349,9 @@ export const CaseTable: React.FC<CaseTableProps> = ({
       if (statusFilter === 'completed') {
         return c.isCompleted;
       }
+      if (statusFilter === 'date_anomaly') {
+        return hasCaseFilingAfterJudgmentAnomaly(c).isAnomalous;
+      }
       return true;
     })
     .filter((c) => {
@@ -631,6 +634,25 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                 {cases.filter((c) => isCaseTemporarilyDischarged(c)).length}
               </span>
             </button>
+            {(() => {
+              const dateAnomalyCount = cases.filter((c) => hasCaseFilingAfterJudgmentAnomaly(c).isAnomalous).length;
+              if (dateAnomalyCount === 0 && statusFilter !== 'date_anomaly') return null;
+
+              return (
+                <button
+                  onClick={() => setStatusFilter('date_anomaly')}
+                  className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                    statusFilter === 'date_anomaly'
+                      ? 'bg-cyan-700 text-white font-bold shadow-xs'
+                      : 'bg-cyan-50 text-cyan-900 hover:bg-cyan-100 font-semibold border-2 border-cyan-500'
+                  }`}
+                  title="สำนวนที่วันที่ฟ้องเกิดขึ้นหลังวันพิพากษา (จะพิพากษาก่อนฟ้องไม่ได้)"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="tabular-nums">ผิดปกติ: ฟ้องหลังพิพากษา ({dateAnomalyCount})</span>
+                </button>
+              );
+            })()}
             <button
               onClick={() => setStatusFilter('completed')}
               className={`px-3 py-1.5 rounded-lg transition ${
@@ -872,10 +894,30 @@ export const CaseTable: React.FC<CaseTableProps> = ({
 
                     {/* Filing Date */}
                     <td className="py-2 px-1.5 whitespace-nowrap text-center">
-                      <div className="font-medium text-slate-800 text-[11px]">
-                        {formatThaiDate(caseItem.filingDate, { short: true })}
-                      </div>
-                      <span className="text-[10px] text-slate-400 block">วันยื่นฟ้อง</span>
+                      {(() => {
+                        const dateAnomaly = hasCaseFilingAfterJudgmentAnomaly(caseItem);
+                        return (
+                          <>
+                            <div className={`font-medium text-[11px] tabular-nums ${dateAnomaly.isAnomalous ? 'text-cyan-900 font-bold' : 'text-slate-800'}`}>
+                              {formatThaiDate(caseItem.filingDate, { short: true })}
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">วันยื่นฟ้อง</span>
+                            {dateAnomaly.isAnomalous && (
+                              <button
+                                type="button"
+                                onClick={() => canEdit && onEditCase && onEditCase(caseItem)}
+                                className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-cyan-950 bg-cyan-100 border-2 border-cyan-600 px-1.5 py-0.5 rounded-md ${
+                                  canEdit && onEditCase ? 'hover:bg-cyan-200 cursor-pointer' : ''
+                                }`}
+                                title={`พบข้อมูลผิดปกติ: วันที่ฟ้อง (${formatThaiDate(caseItem.filingDate)}) เกิดหลังวันพิพากษา (${formatThaiDate(caseItem.judgmentDate)}) ห่างกัน ${dateAnomaly.daysDifference} วัน — พิพากษาก่อนฟ้องไม่ได้`}
+                              >
+                                <AlertTriangle className="w-3 h-3 text-cyan-700 shrink-0" />
+                                <span>ฟ้องหลังพิพากษา</span>
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
 
                     {/* Case Numbers */}

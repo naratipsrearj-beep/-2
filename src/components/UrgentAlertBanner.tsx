@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale, Users, Check } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
-import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo } from '../utils/dateUtils';
+import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo, hasCaseFilingAfterJudgmentAnomaly } from '../utils/dateUtils';
 import {
   getRequisitionStatus,
   isPendingRequisitionCase,
@@ -104,7 +104,22 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
     .filter(({ alertInfo, reqStatus }) => alertInfo.isAlertDue || reqStatus.isUrgent || reqStatus.isPast)
     .sort((a, b) => b.alertInfo.daysElapsed - a.alertInfo.daysElapsed);
 
+  // สำนวนที่มีข้อมูลวันที่ผิดปกติ: วันที่ฟ้องเกิดขึ้นหลังวันพิพากษา (จะพิพากษาก่อนฟ้องไม่ได้)
+  const filingAfterJudgmentAnomalyCases = cases
+    .map((c) => ({
+      caseItem: c,
+      anomaly: hasCaseFilingAfterJudgmentAnomaly(c),
+    }))
+    .filter(({ anomaly }) => anomaly.isAnomalous)
+    .sort((a, b) => {
+      if (Boolean(a.caseItem.isCompleted) !== Boolean(b.caseItem.isCompleted)) {
+        return a.caseItem.isCompleted ? 1 : -1;
+      }
+      return b.anomaly.daysDifference - a.anomaly.daysDifference;
+    });
+
   if (
+    filingAfterJudgmentAnomalyCases.length === 0 &&
     urgentCases.length === 0 &&
     pendingRequisitionCasesWithAlert.length === 0 &&
     pendingUnspecifiedAlertCases.length === 0 &&
@@ -143,6 +158,90 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
 
   return (
     <div className="space-y-4 mb-6">
+      {/* -1. แจ้งเตือนข้อมูลวันที่ผิดปกติ: วันที่ฟ้องเกิดหลังวันพิพากษา (จะพิพากษาก่อนฟ้องไม่ได้) */}
+      {filingAfterJudgmentAnomalyCases.length > 0 && (
+        <div className="bg-cyan-950 text-white rounded-2xl p-4 sm:p-5 shadow-md border-2 border-cyan-400">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-cyan-700/80 gap-2">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-400 text-slate-950 flex items-center justify-center shrink-0 shadow-xs">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base sm:text-lg text-white font-['Prompt'] tabular-nums">
+                  แจ้งเตือนข้อมูลวันที่ผิดปกติ: พบ {filingAfterJudgmentAnomalyCases.length} สำนวนที่วันที่ฟ้องเกิดหลังวันพิพากษา
+                </h3>
+                <p className="text-xs text-cyan-100 mt-0.5 leading-relaxed">
+                  ข้อมูลไม่สอดคล้องตามลำดับกระบวนพิจารณา เพราะจะพิพากษาก่อนฟ้องไม่ได้ กรุณาตรวจสอบและแก้ไขวันที่ยื่นฟ้องหรือวันพิพากษาให้ถูกต้อง
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3.5">
+            {filingAfterJudgmentAnomalyCases.map(({ caseItem, anomaly }) => (
+              <div
+                key={caseItem.id}
+                className="rounded-xl p-3.5 border border-cyan-400/60 bg-cyan-900/55 text-white flex flex-col justify-between gap-3"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-cyan-200 text-sm font-['Prompt'] truncate">
+                        ดำ {caseItem.blackCaseNo}
+                        {caseItem.redCaseNo ? ` / แดง ${caseItem.redCaseNo}` : ''}
+                      </div>
+                      <div className="text-[11px] text-cyan-100 truncate">
+                        จำเลย: {caseItem.defendant || '-'}
+                        {caseItem.responsiblePerson ? ` · อัยการ: ${caseItem.responsiblePerson}` : ''}
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-amber-300 tabular-nums shrink-0">
+                      คลาดเคลื่อน {anomaly.daysDifference} วัน
+                    </span>
+                  </div>
+
+                  <div className="bg-cyan-950/80 border border-cyan-600/60 rounded-lg p-2.5 text-xs space-y-1 tabular-nums">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-cyan-200">วันที่ยื่นฟ้อง (บันทึกไว้):</span>
+                      <span className="font-bold text-cyan-300">{formatThaiDate(caseItem.filingDate)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-cyan-200">วันอ่านคำพิพากษา:</span>
+                      <span className="font-bold text-white">{formatThaiDate(caseItem.judgmentDate)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {(onEditCase || onRecordJudgment) && (
+                  <div className="flex items-center gap-2 pt-1">
+                    {onEditCase && (
+                      <button
+                        type="button"
+                        onClick={() => onEditCase(caseItem)}
+                        className="flex-1 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-slate-950" />
+                        <span>แก้ไขวันฟ้อง/สำนวน</span>
+                      </button>
+                    )}
+                    {onRecordJudgment && (
+                      <button
+                        type="button"
+                        onClick={() => onRecordJudgment(caseItem)}
+                        className="flex-1 bg-white hover:bg-cyan-50 text-cyan-950 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Scale className="w-3.5 h-3.5 text-cyan-800" />
+                        <span>แก้วันพิพากษา</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 0. แจ้งเตือนกรณีต้องแยกฟ้องจำเลยที่ปฏิเสธภายใน 7 วัน (ป.วิ.อ. ม.176) */}
       {pendingSeveredAlertCases.length > 0 && (
         <div className="bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-xl border-2 border-purple-500/50 transition-all animate-in fade-in">

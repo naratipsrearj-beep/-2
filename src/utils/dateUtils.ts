@@ -583,3 +583,54 @@ export function formatThaiMonth(
   }
 }
 
+export interface FilingAfterJudgmentAnomaly {
+  isAnomalous: boolean;
+  filingDateStr?: string;
+  judgmentDateStr?: string;
+  daysDifference: number;
+}
+
+/**
+ * ตรวจสอบความผิดปกติของวันที่: หาก "วันที่ฟ้อง" เกิดขึ้น "หลังวันพิพากษา"
+ * ในทางกฎหมายจะไม่สามารถมีคำพิพากษาก่อนวันที่ยื่นฟ้องคดีได้
+ */
+export function checkFilingAfterJudgmentAnomaly(
+  filingDate?: string | null,
+  judgmentDate?: string | null
+): FilingAfterJudgmentAnomaly {
+  const fRaw = (filingDate || '').trim();
+  const jRaw = (judgmentDate || '').trim();
+  if (!fRaw || !jRaw) {
+    return { isAnomalous: false, daysDifference: 0 };
+  }
+
+  const fDate = parseDateStringRobust(fRaw);
+  const jDate = parseDateStringRobust(jRaw);
+  if (!fDate || !jDate || !isValid(fDate) || !isValid(jDate)) {
+    return { isAnomalous: false, daysDifference: 0 };
+  }
+
+  const diffDays = differenceInCalendarDays(fDate, jDate);
+  if (diffDays > 0) {
+    return {
+      isAnomalous: true,
+      filingDateStr: fRaw,
+      judgmentDateStr: jRaw,
+      daysDifference: diffDays,
+    };
+  }
+
+  return { isAnomalous: false, daysDifference: 0 };
+}
+
+/**
+ * ตรวจสอบความผิดปกติ "วันที่ฟ้องอยู่หลังวันพิพากษา" สำหรับข้อมูลสำนวนคดี 1 รายการ
+ */
+export function hasCaseFilingAfterJudgmentAnomaly(caseItem: AppealCase): FilingAfterJudgmentAnomaly {
+  if (!caseItem || caseItem.hasJudgment === false) {
+    return { isAnomalous: false, daysDifference: 0 };
+  }
+  return checkFilingAfterJudgmentAnomaly(caseItem.filingDate, caseItem.judgmentDate);
+}
+
+
