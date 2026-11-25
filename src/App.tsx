@@ -129,6 +129,7 @@ import { SubmitToDutyModal } from './components/SubmitToDutyModal';
 import { ActivityLogModal } from './components/ActivityLogModal';
 import { CaseRevisionHistoryModal } from './components/CaseRevisionHistoryModal';
 import { MonthlyPdfExportModal } from './components/MonthlyPdfExportModal';
+import { CaseDetailModal } from './components/CaseDetailModal';
 import {
   getSavedRevisions,
   saveRevisions,
@@ -226,8 +227,14 @@ export default function App() {
   const [selectedCaseForJudgmentDoc, setSelectedCaseForJudgmentDoc] = useState<AppealCase | null>(null);
   const [selectedCaseForEmailAlert, setSelectedCaseForEmailAlert] = useState<AppealCase | null>(null);
   const [selectedCaseForAppointment, setSelectedCaseForAppointment] = useState<AppealCase | null>(null);
+  const [selectedCaseForDetail, setSelectedCaseForDetail] = useState<AppealCase | null>(null);
   const [selectedCaseForEdit, setSelectedCaseForEdit] = useState<AppealCase | null>(null);
   const [isEditCaseOpen, setIsEditCaseOpen] = useState(false);
+
+  const activeCaseForDetail = useMemo(() => {
+    if (!selectedCaseForDetail) return null;
+    return cases.find((c) => c.id === selectedCaseForDetail.id) || selectedCaseForDetail;
+  }, [cases, selectedCaseForDetail]);
   const [selectedCaseForRecordJudgment, setSelectedCaseForRecordJudgment] = useState<AppealCase | null>(null);
   const [isRecordJudgmentOpen, setIsRecordJudgmentOpen] = useState(false);
   const [recheckTarget, setRecheckTarget] = useState<{
@@ -2898,6 +2905,7 @@ export default function App() {
       !user ||
       isAddCaseOpen ||
       isEditCaseOpen ||
+      !!selectedCaseForDetail ||
       isRecordJudgmentOpen ||
       selectedCaseForComplete ||
       selectedCaseForSubmitDuty ||
@@ -3168,6 +3176,7 @@ export default function App() {
         {/* Urgent Impending Deadline Alert Banner */}
         <UrgentAlertBanner
           cases={cases}
+          onViewCaseDetail={(caseItem) => setSelectedCaseForDetail(caseItem)}
           onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
           onExtendDeadline={(caseItem) => setSelectedCaseForExtend(caseItem)}
           onConfirmNoAppeal={handleConfirmNoAppeal}
@@ -3737,6 +3746,27 @@ export default function App() {
         caseItem={selectedCaseForAppointment}
         onClose={() => setSelectedCaseForAppointment(null)}
         onSaveAppointment={handleSaveAppointment}
+      />
+
+      {/* Case Detail Modal (ดูรายละเอียดสำนวนคดีจากหน้าแจ้งเตือนต่างๆ) */}
+      <CaseDetailModal
+        isOpen={!!activeCaseForDetail}
+        caseItem={activeCaseForDetail}
+        onClose={() => setSelectedCaseForDetail(null)}
+        canEdit={canEdit}
+        canComplete={canComplete}
+        onEditCase={(caseItem) => {
+          setSelectedCaseForEdit(caseItem);
+          setIsEditCaseOpen(true);
+        }}
+        onMarkComplete={(caseItem) => setSelectedCaseForComplete(caseItem)}
+        onExtendDeadline={(caseItem) => setSelectedCaseForExtend(caseItem)}
+        onRecordJudgment={(caseItem) => {
+          setSelectedCaseForRecordJudgment(caseItem);
+          setIsRecordJudgmentOpen(true);
+        }}
+        onOpenRecheck={handleOpenCaseRecheck}
+        onOpenRevisions={handleOpenRevisions}
       />
 
       {/* Edit Case Modal (สำหรับแก้ไขเพื่อเพิ่มเติมข้อมูลหรือแก้ไขข้อมูลที่กรอกไปแล้ว) */}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale, Users, Check } from 'lucide-react';
+import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale, Users, Check, Eye } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo, hasCaseFilingAfterJudgmentAnomaly } from '../utils/dateUtils';
 import {
@@ -13,6 +13,7 @@ import {
 
 interface UrgentAlertBannerProps {
   cases: AppealCase[];
+  onViewCaseDetail?: (caseItem: AppealCase) => void;
   onMarkComplete?: (caseItem: AppealCase) => void;
   onExtendDeadline?: (caseItem: AppealCase) => void;
   onConfirmNoAppeal?: (caseId: string) => void;
@@ -29,6 +30,7 @@ interface UrgentAlertBannerProps {
 
 export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
   cases,
+  onViewCaseDetail,
   onMarkComplete,
   onExtendDeadline,
   onConfirmNoAppeal,
@@ -194,6 +196,21 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                         จำเลย: {caseItem.defendant || '-'}
                         {caseItem.responsiblePerson ? ` · อัยการ: ${caseItem.responsiblePerson}` : ''}
                       </div>
+                      <div className="flex items-center gap-2 text-[11px] text-cyan-100 tabular-nums flex-wrap mt-0.5">
+                        <span>
+                          <span className="font-semibold text-cyan-300">ส.1:</span>{' '}
+                          <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-white' : 'text-cyan-300/70'}>
+                            {caseItem.receivedNumberS1?.trim() || '-'}
+                          </span>
+                        </span>
+                        <span className="text-cyan-600" aria-hidden="true">·</span>
+                        <span>
+                          <span className="font-semibold text-emerald-300">ส.4:</span>{' '}
+                          <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-white' : 'text-cyan-300/70'}>
+                            {caseItem.filingNumberS4?.trim() || '-'}
+                          </span>
+                        </span>
+                      </div>
                     </div>
                     <span className="text-xs font-bold text-amber-300 tabular-nums shrink-0">
                       คลาดเคลื่อน {anomaly.daysDifference} วัน
@@ -212,13 +229,24 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                   </div>
                 </div>
 
-                {(onEditCase || onRecordJudgment) && (
-                  <div className="flex items-center gap-2 pt-1">
+                {(onViewCaseDetail || onEditCase || onRecordJudgment) && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {onViewCaseDetail && (
+                      <button
+                        type="button"
+                        onClick={() => onViewCaseDetail(caseItem)}
+                        className="bg-cyan-800 hover:bg-cyan-700 text-white border border-cyan-400/60 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                        title="ดูรายละเอียดสำนวนทั้งหมด"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-cyan-200" />
+                        <span>ดูรายละเอียด</span>
+                      </button>
+                    )}
                     {onEditCase && (
                       <button
                         type="button"
                         onClick={() => onEditCase(caseItem)}
-                        className="flex-1 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="flex-1 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
                         <Edit3 className="w-3.5 h-3.5 text-slate-950" />
                         <span>แก้ไขวันฟ้อง/สำนวน</span>
@@ -228,7 +256,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       <button
                         type="button"
                         onClick={() => onRecordJudgment(caseItem)}
-                        className="flex-1 bg-white hover:bg-cyan-50 text-cyan-950 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="flex-1 bg-white hover:bg-cyan-50 text-cyan-950 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
                         <Scale className="w-3.5 h-3.5 text-cyan-800" />
                         <span>แก้วันพิพากษา</span>
@@ -287,16 +315,6 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                             แดง {caseItem.redCaseNo}
                           </span>
                         )}
-                        {caseItem.receivedNumberS1 && (
-                          <span className="text-[10px] text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-400/30">
-                            ส.1: {caseItem.receivedNumberS1}
-                          </span>
-                        )}
-                        {caseItem.filingNumberS4 && (
-                          <span className="text-[10px] text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30">
-                            ส.4: {caseItem.filingNumberS4}
-                          </span>
-                        )}
                       </div>
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
                         isOverdue
@@ -310,6 +328,21 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                     </div>
 
                     <div className="text-xs space-y-1.5 text-slate-300 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/60 mb-3">
+                      <div className="flex items-center gap-2 text-[11px] text-slate-300 tabular-nums flex-wrap pb-1 border-b border-slate-700/40">
+                        <span>
+                          <span className="font-semibold text-blue-300">ส.1:</span>{' '}
+                          <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-white' : 'text-slate-500'}>
+                            {caseItem.receivedNumberS1?.trim() || '-'}
+                          </span>
+                        </span>
+                        <span className="text-slate-600" aria-hidden="true">·</span>
+                        <span>
+                          <span className="font-semibold text-emerald-300">ส.4:</span>{' '}
+                          <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-white' : 'text-slate-500'}>
+                            {caseItem.filingNumberS4?.trim() || '-'}
+                          </span>
+                        </span>
+                      </div>
                       {caseItem.confessedDefendants && (
                         <div className="flex items-start gap-1">
                           <span className="text-yellow-400 font-semibold shrink-0">🟡 รับสารภาพ:</span>
@@ -331,11 +364,22 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1.5 pt-2 border-t border-slate-700/60 flex-wrap">
+                    {onViewCaseDetail && (
+                      <button
+                        type="button"
+                        onClick={() => onViewCaseDetail(caseItem)}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+                        title="ดูรายละเอียดสำนวนทั้งหมด"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>ดูรายละเอียด</span>
+                      </button>
+                    )}
                     {onMarkSeveredCompleted && (
                       <button
                         type="button"
                         onClick={() => onMarkSeveredCompleted(caseItem)}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
                         title="บันทึกว่ายื่นแยกฟ้องเสร็จเรียบร้อยแล้ว"
                       >
                         <CheckCircle className="w-3.5 h-3.5" />
@@ -346,7 +390,7 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       <button
                         type="button"
                         onClick={() => onCreateSeveredCase(caseItem)}
-                        className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                        className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
                         title="เปิดฟอร์มสร้างสำนวนแยกฟ้องที่เชื่อมโยงกับคดีนี้ทันที"
                       >
                         <span>➕ สร้างสำนวนแยกฟ้อง</span>
@@ -414,11 +458,6 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                             แดง {caseItem.redCaseNo}
                           </span>
                         )}
-                        {caseItem.receivedNumberS1 && (
-                          <span className="text-[10px] text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-400/30">
-                            ส.1: {caseItem.receivedNumberS1}
-                          </span>
-                        )}
                       </div>
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
                         isOver30Days
@@ -430,6 +469,21 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                     </div>
 
                     <div className="text-xs space-y-1.5 text-stone-300 bg-stone-950/70 p-2.5 rounded-lg border border-amber-900/40 mb-3">
+                      <div className="flex items-center gap-2 text-[11px] text-stone-300 tabular-nums flex-wrap pb-1 border-b border-stone-800">
+                        <span>
+                          <span className="font-semibold text-blue-300">ส.1:</span>{' '}
+                          <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-white' : 'text-stone-500'}>
+                            {caseItem.receivedNumberS1?.trim() || '-'}
+                          </span>
+                        </span>
+                        <span className="text-stone-600" aria-hidden="true">·</span>
+                        <span>
+                          <span className="font-semibold text-emerald-300">ส.4:</span>{' '}
+                          <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-white' : 'text-stone-500'}>
+                            {caseItem.filingNumberS4?.trim() || '-'}
+                          </span>
+                        </span>
+                      </div>
                       <div className="flex items-start gap-1">
                         <span className="text-amber-400 font-semibold shrink-0">สถานะ:</span>
                         <span className="text-amber-200 font-medium">{alertInfo.reason}</span>
@@ -448,11 +502,22 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 pt-2 border-t border-stone-800">
+                    {onViewCaseDetail && (
+                      <button
+                        type="button"
+                        onClick={() => onViewCaseDetail(caseItem)}
+                        className="bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-500/40 text-xs font-bold py-1.5 px-2.5 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                        title="ดูรายละเอียดสำนวนทั้งหมด"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>ดูรายละเอียด</span>
+                      </button>
+                    )}
                     {onRecordJudgment && (
                       <button
                         type="button"
                         onClick={() => onRecordJudgment(caseItem)}
-                        className="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                        className="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold py-1.5 px-2.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
                         title="คลิกเพื่อบันทึกวันพิพากษาและเริ่มคุมระยะเวลาอุทธรณ์"
                       >
                         <Scale className="w-3.5 h-3.5" />
@@ -549,6 +614,21 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       <div className="text-slate-600 truncate text-[11px]">
                         <span className="font-medium text-slate-700">จำเลย:</span> {caseItem.defendant}
                       </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-600 tabular-nums flex-wrap">
+                        <span>
+                          <span className="font-semibold text-blue-800">ส.1:</span>{' '}
+                          <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.receivedNumberS1?.trim() || '-'}
+                          </span>
+                        </span>
+                        <span className="text-slate-300" aria-hidden="true">·</span>
+                        <span>
+                          <span className="font-semibold text-emerald-800">ส.4:</span>{' '}
+                          <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.filingNumberS4?.trim() || '-'}
+                          </span>
+                        </span>
+                      </div>
                       <div className="bg-purple-50/90 border border-purple-200 rounded-lg p-2 text-[11px] text-purple-950 space-y-0.5">
                         <div className="flex justify-between">
                           <span className="text-purple-700 font-medium">วันครบอุทธรณ์:</span>
@@ -581,24 +661,35 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                     </button>
 
                     <div className="flex items-center gap-1.5 pt-0.5">
+                      {onViewCaseDetail && (
+                        <button
+                          type="button"
+                          onClick={() => onViewCaseDetail(caseItem)}
+                          className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-semibold text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-indigo-200 cursor-pointer whitespace-nowrap"
+                          title="ดูรายละเอียดสำนวนทั้งหมด"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>ดูรายละเอียด</span>
+                        </button>
+                      )}
                       {onEditCase && (
                         <button
                           type="button"
                           onClick={() => onEditCase(caseItem)}
-                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer whitespace-nowrap"
                         >
                           <Edit3 className="w-3 h-3" />
-                          <span>ดู/แก้ไข</span>
+                          <span>แก้ไข</span>
                         </button>
                       )}
                       {onExtendDeadline && (
                         <button
                           type="button"
                           onClick={() => onExtendDeadline(caseItem)}
-                          className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-amber-200 cursor-pointer"
+                          className="bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-amber-200 cursor-pointer whitespace-nowrap"
                         >
                           <Calendar className="w-3 h-3 text-amber-700" />
-                          <span>ขอขยายเวลา</span>
+                          <span>ขยายเวลา</span>
                         </button>
                       )}
                     </div>
@@ -683,6 +774,21 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       <div className="text-slate-600 truncate text-[11px]">
                         <span className="font-medium text-slate-700">จำเลย:</span> {caseItem.defendant}
                       </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-600 tabular-nums flex-wrap">
+                        <span>
+                          <span className="font-semibold text-blue-800">ส.1:</span>{' '}
+                          <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.receivedNumberS1?.trim() || '-'}
+                          </span>
+                        </span>
+                        <span className="text-slate-300" aria-hidden="true">·</span>
+                        <span>
+                          <span className="font-semibold text-emerald-800">ส.4:</span>{' '}
+                          <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.filingNumberS4?.trim() || '-'}
+                          </span>
+                        </span>
+                      </div>
                       {caseItem.filingDate && (
                         <div className="text-slate-500 text-[11px]">
                           📅 วันที่ยื่นฟ้อง: {formatThaiDate(caseItem.filingDate)}
@@ -735,17 +841,30 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                         <span>🟢 เบิกฟ้อง</span>
                       </button>
                     </div>
-                    {onEditCase && (
-                      <div className="pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => onEditCase(caseItem)}
-                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
-                          title="เปิดแบบฟอร์มเพื่อแก้ไขรายละเอียดสำนวน"
-                        >
-                          <Edit3 className="w-3 h-3" />
-                          <span>เปิดแก้ไขเพื่อระบุรายละเอียดเพิ่มเติม</span>
-                        </button>
+                    {(onViewCaseDetail || onEditCase) && (
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        {onViewCaseDetail && (
+                          <button
+                            type="button"
+                            onClick={() => onViewCaseDetail(caseItem)}
+                            className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-semibold text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-indigo-200 cursor-pointer whitespace-nowrap"
+                            title="ดูรายละเอียดสำนวนทั้งหมด"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>ดูรายละเอียด</span>
+                          </button>
+                        )}
+                        {onEditCase && (
+                          <button
+                            type="button"
+                            onClick={() => onEditCase(caseItem)}
+                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer whitespace-nowrap"
+                            title="เปิดแบบฟอร์มเพื่อแก้ไขรายละเอียดสำนวน"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>แก้ไขสำนวน</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -841,6 +960,21 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       <div className="text-slate-600 truncate text-[11px]">
                         <span className="font-medium text-slate-700">จำเลย:</span> {caseItem.defendant}
                       </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-600 tabular-nums flex-wrap">
+                        <span>
+                          <span className="font-semibold text-blue-800">ส.1:</span>{' '}
+                          <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.receivedNumberS1?.trim() || '-'}
+                          </span>
+                        </span>
+                        <span className="text-slate-300" aria-hidden="true">·</span>
+                        <span>
+                          <span className="font-semibold text-emerald-800">ส.4:</span>{' '}
+                          <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.filingNumberS4?.trim() || '-'}
+                          </span>
+                        </span>
+                      </div>
                       {caseItem.requisitionNotes && (
                         <div className="text-orange-900 bg-orange-50 border border-orange-200/80 rounded px-2 py-1 text-[11px]">
                           <strong>หมายเหตุเบิกฟ้อง:</strong> {caseItem.requisitionNotes}
@@ -892,22 +1026,33 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       </button>
                     </div>
                     <div className="flex items-center gap-1.5 pt-0.5">
+                      {onViewCaseDetail && (
+                        <button
+                          type="button"
+                          onClick={() => onViewCaseDetail(caseItem)}
+                          className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-semibold text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-indigo-200 cursor-pointer whitespace-nowrap"
+                          title="ดูรายละเอียดสำนวนทั้งหมด"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>ดูรายละเอียด</span>
+                        </button>
+                      )}
                       {onEditCase && (
                         <button
                           type="button"
                           onClick={() => onEditCase(caseItem)}
-                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer whitespace-nowrap"
                           title="เปิดแบบฟอร์มเพื่อแก้ไขรายละเอียดสำนวน"
                         >
                           <Edit3 className="w-3 h-3" />
-                          <span>แก้ไขสำนวน</span>
+                          <span>แก้ไข</span>
                         </button>
                       )}
                       {onMarkComplete && (
                         <button
                           type="button"
                           onClick={() => onMarkComplete(caseItem)}
-                          className="flex-1 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer"
+                          className="flex-1 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-[11px] py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer whitespace-nowrap"
                           title="กดเสร็จสิ้นเมื่อดำเนินการเบิกฟ้องเรียบร้อย"
                         >
                           <CheckCircle className="w-3 h-3 text-emerald-600" />
@@ -1042,6 +1187,21 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                       <div className="text-slate-600 truncate text-[11px]">
                         <span className="font-medium text-slate-700">จำเลย:</span> {caseItem.defendant}
                       </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-600 tabular-nums flex-wrap">
+                        <span>
+                          <span className="font-semibold text-blue-800">ส.1:</span>{' '}
+                          <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.receivedNumberS1?.trim() || '-'}
+                          </span>
+                        </span>
+                        <span className="text-slate-300" aria-hidden="true">·</span>
+                        <span>
+                          <span className="font-semibold text-emerald-800">ส.4:</span>{' '}
+                          <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                            {caseItem.filingNumberS4?.trim() || '-'}
+                          </span>
+                        </span>
+                      </div>
                     </div>
 
                     {/* Deadline Info */}
@@ -1063,55 +1223,75 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5">
-                    {onMarkComplete && (
-                      <button
-                        onClick={() => onMarkComplete(caseItem)}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
-                        title="เมื่อกดแล้ว สำนวนนี้จะไม่แจ้งเตือนอีกต่อไป"
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        <span>กดเสร็จสิ้นสำนวน</span>
-                      </button>
-                    )}
+                  <div className="pt-2.5 border-t border-slate-100 space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      {onViewCaseDetail && (
+                        <button
+                          type="button"
+                          onClick={() => onViewCaseDetail(caseItem)}
+                          className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold text-xs py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                          title="เปิดดูรายละเอียดสำนวนทั้งหมด"
+                        >
+                          <Eye className="w-3.5 h-3.5 shrink-0" />
+                          <span>ดูรายละเอียด</span>
+                        </button>
+                      )}
 
-                    {onExtendDeadline && (
-                      <button
-                        onClick={() => onExtendDeadline(caseItem)}
-                        className={`text-xs py-1.5 px-2.5 rounded-lg font-medium transition cursor-pointer ${
-                          caseItem.extendedDeadline
-                            ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold'
-                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                        title={
-                          caseItem.extendedDeadline
-                            ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
-                            : 'ขอขยายระยะเวลาอุทธรณ์'
-                        }
-                      >
-                        {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยายเวลา'}
-                      </button>
-                    )}
+                      {onMarkComplete && (
+                        <button
+                          type="button"
+                          onClick={() => onMarkComplete(caseItem)}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer whitespace-nowrap"
+                          title="เมื่อกดแล้ว สำนวนนี้จะไม่แจ้งเตือนอีกต่อไป"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>กดเสร็จสิ้นสำนวน</span>
+                        </button>
+                      )}
+                    </div>
 
-                    {onSyncCalendar && (
-                      <button
-                        onClick={() => onSyncCalendar(caseItem)}
-                        className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition"
-                        title="เพิ่มแจ้งเตือนลง Google Calendar"
-                      >
-                        <Calendar className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {onExtendDeadline && (
+                        <button
+                          type="button"
+                          onClick={() => onExtendDeadline(caseItem)}
+                          className={`flex-1 text-xs py-1.5 px-2.5 rounded-lg font-medium transition cursor-pointer whitespace-nowrap ${
+                            caseItem.extendedDeadline
+                              ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                          title={
+                            caseItem.extendedDeadline
+                              ? 'แก้ไขวันขยายเวลาที่กรอกไว้ หรือขอขยายเวลาเพิ่ม'
+                              : 'ขอขยายระยะเวลาอุทธรณ์'
+                          }
+                        >
+                          {caseItem.extendedDeadline ? 'แก้ไขขยายเวลา' : 'ขยายเวลา'}
+                        </button>
+                      )}
 
-                    {onSendEmailAlert && (
-                      <button
-                        onClick={() => onSendEmailAlert(caseItem)}
-                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition"
-                        title="ส่งอีเมลแจ้งเตือนคดีนี้ไปยัง Gmail ทันที"
-                      >
-                        <Mail className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                      {onSyncCalendar && (
+                        <button
+                          type="button"
+                          onClick={() => onSyncCalendar(caseItem)}
+                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition cursor-pointer shrink-0"
+                          title="เพิ่มแจ้งเตือนลง Google Calendar"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {onSendEmailAlert && (
+                        <button
+                          type="button"
+                          onClick={() => onSendEmailAlert(caseItem)}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition cursor-pointer shrink-0"
+                          title="ส่งอีเมลแจ้งเตือนคดีนี้ไปยัง Gmail ทันที"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
