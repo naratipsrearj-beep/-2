@@ -128,6 +128,7 @@ import { extractPendingDuty10DaySummary } from './utils/appeal10DaySummaryUtils'
 import { SubmitToDutyModal } from './components/SubmitToDutyModal';
 import { ActivityLogModal } from './components/ActivityLogModal';
 import { CaseRevisionHistoryModal } from './components/CaseRevisionHistoryModal';
+import { MonthlyPdfExportModal } from './components/MonthlyPdfExportModal';
 import {
   getSavedRevisions,
   saveRevisions,
@@ -208,6 +209,11 @@ export default function App() {
 
   // Modals state
   const [isAddCaseOpen, setIsAddCaseOpen] = useState(false);
+  const [monthlyPdfExportState, setMonthlyPdfExportState] = useState<{
+    isOpen: boolean;
+    yearMonth?: string;
+    prosecutorName?: string;
+  }>({ isOpen: false });
   const [addCaseInitialFilingDate, setAddCaseInitialFilingDate] = useState<string | undefined>();
   const [selectedCaseForComplete, setSelectedCaseForComplete] = useState<AppealCase | null>(null);
   const [selectedCaseForSubmitDuty, setSelectedCaseForSubmitDuty] = useState<AppealCase | null>(null);
@@ -736,30 +742,17 @@ export default function App() {
 
   // Real-time Firestore Subscriptions (active for all users, live sync across all devices)
   useEffect(() => {
-    // Immediate seed if Firestore is empty on first boot
-    seedInitialFirestoreDataIfEmpty(
-      getSavedCases(),
-      getSavedDutyRosters(),
-      getSavedFollowUps(),
-      getSavedActivityLogs()
-    ).catch((e) => console.warn('First-boot seed error:', e));
+    // Ensure settings document exists on first boot (never seeds sample cases or overwrites existing data)
+    seedInitialFirestoreDataIfEmpty().catch((e) =>
+      console.warn('Settings initialization check error:', e)
+    );
 
     // 1. Real-time subscribe to all cases (all clients sync instantly)
     const unsubCases = subscribeToCases(
       (remoteCases) => {
         setConnectionStatus('connected');
-        if (remoteCases.length > 0) {
-          setCases(remoteCases);
-          saveCases(remoteCases);
-        } else {
-          // If remote is empty, seed local cases to Firestore so all clients get them
-          const localCases = getSavedCases();
-          if (localCases.length > 0) {
-            saveCasesBatchToFirestore(localCases).catch((e) =>
-              console.warn('Auto-seed cases to Firestore failed:', e)
-            );
-          }
-        }
+        setCases(remoteCases);
+        saveCases(remoteCases);
       },
       (err) => {
         console.warn('Real-time cases sync error:', err);
@@ -770,21 +763,10 @@ export default function App() {
     // 2. Real-time subscribe to monthly duty rosters
     const unsubRosters = subscribeToDutyRosters(
       (remoteRosters) => {
-        if (remoteRosters.length > 0) {
-          setDutyRosters(remoteRosters);
-          saveDutyRosters(remoteRosters);
-          if (!activeDutyRosterId && remoteRosters[0]) {
-            setActiveDutyRosterId(remoteRosters[0].id);
-          }
-        } else {
-          const localRosters = getSavedDutyRosters();
-          if (localRosters.length > 0) {
-            for (const r of localRosters) {
-              saveDutyRosterToFirestore(r).catch((e) =>
-                console.warn('Auto-seed duty roster to Firestore failed:', e)
-              );
-            }
-          }
+        setDutyRosters(remoteRosters);
+        saveDutyRosters(remoteRosters);
+        if (!activeDutyRosterId && remoteRosters[0]) {
+          setActiveDutyRosterId(remoteRosters[0].id);
         }
       },
       (err) => {
@@ -796,19 +778,8 @@ export default function App() {
     // 3. Real-time subscribe to daily follow-ups
     const unsubFollowUps = subscribeToFollowUps(
       (remoteFollowUps) => {
-        if (remoteFollowUps.length > 0) {
-          setFollowUps(remoteFollowUps);
-          saveFollowUps(remoteFollowUps);
-        } else {
-          const localFollowUps = getSavedFollowUps();
-          if (localFollowUps.length > 0) {
-            for (const f of localFollowUps) {
-              saveFollowUpToFirestore(f).catch((e) =>
-                console.warn('Auto-seed follow-up to Firestore failed:', e)
-              );
-            }
-          }
-        }
+        setFollowUps(remoteFollowUps);
+        saveFollowUps(remoteFollowUps);
       },
       (err) => {
         console.warn('Real-time followups sync error:', err);
@@ -838,18 +809,9 @@ export default function App() {
     // 6. Real-time subscribe to activity logs (ประวัติการทำงาน)
     const unsubLogs = subscribeToActivityLogs(
       (remoteLogs) => {
-        if (remoteLogs && remoteLogs.length > 0) {
+        if (remoteLogs) {
           setActivityLogs(remoteLogs);
           saveActivityLogs(remoteLogs);
-        } else {
-          const localLogs = getSavedActivityLogs();
-          if (localLogs.length > 0) {
-            for (const log of localLogs) {
-              saveActivityLogToFirestore(log).catch((e) =>
-                console.warn('Auto-seed activity log to Firestore failed:', e)
-              );
-            }
-          }
         }
       },
       (err) => console.warn('Real-time activity logs sync error:', err)
@@ -2954,6 +2916,7 @@ export default function App() {
       isRequestEditModalOpen ||
       isSheetModalOpen ||
       isRulesGuideOpen ||
+      monthlyPdfExportState.isOpen ||
       confirmDialog.isOpen
   );
 
@@ -3507,6 +3470,12 @@ export default function App() {
             onToggleTemporaryDischarge={handleToggleTemporaryDischarge}
             onOpenActivityLog={userRole === 'admin' ? handleOpenActivityLog : undefined}
             onOpenCaseRevisions={canEdit ? handleOpenRevisions : undefined}
+            onOpenMonthlyPdfExport={(opts) =>
+              setMonthlyPdfExportState({
+                isOpen: true,
+                prosecutorName: opts?.prosecutorName,
+              })
+            }
             onToast={showToast}
           />
         )}
@@ -3601,6 +3570,13 @@ export default function App() {
               setAddCaseInitialFilingDate(dateStr);
               setIsAddCaseOpen(true);
             }}
+            onOpenMonthlyPdfExport={(opts) =>
+              setMonthlyPdfExportState({
+                isOpen: true,
+                yearMonth: opts?.yearMonth,
+                prosecutorName: opts?.prosecutorName,
+              })
+            }
             onToast={showToast}
           />
         )}
@@ -3940,6 +3916,15 @@ export default function App() {
         onClose={() => setIsRulesGuideOpen(false)}
         projectId={FIREBASE_PROJECT_ID}
         onRetryConnection={checkConnection}
+      />
+
+      <MonthlyPdfExportModal
+        isOpen={monthlyPdfExportState.isOpen}
+        onClose={() => setMonthlyPdfExportState({ isOpen: false })}
+        cases={cases}
+        initialYearMonth={monthlyPdfExportState.yearMonth}
+        initialProsecutor={monthlyPdfExportState.prosecutorName}
+        onToast={showToast}
       />
     </div>
   );

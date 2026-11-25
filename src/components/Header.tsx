@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History, RotateCcw, Type, Undo2, Redo2 } from 'lucide-react';
+import { FileSpreadsheet, Scale, ExternalLink, RefreshCw, LogIn, LogOut, CheckCircle2, ShieldAlert, UserCheck, Shield, Users, Lock, Sparkles, KeyRound, Download, Eye, History, RotateCcw, Type, Undo2, Redo2, Bell, BellRing, BellOff } from 'lucide-react';
 import { SheetConfig } from '../types/appeal';
 import { AppAuthUser } from '../services/auth';
 
@@ -37,6 +37,10 @@ interface HeaderProps {
   connectionStatus?: 'connected' | 'error' | 'connecting';
   firebaseProjectId?: string;
   onOpenRulesGuide?: () => void;
+  onOpenBrowserNotifications?: () => void;
+  browserNotificationActive?: boolean;
+  browserNotificationEligibleCount?: number;
+  browserNotificationPermission?: 'granted' | 'denied' | 'default' | 'unsupported';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -71,6 +75,10 @@ export const Header: React.FC<HeaderProps> = ({
   connectionStatus = 'connected',
   firebaseProjectId = 'naratipsrearj',
   onOpenRulesGuide,
+  onOpenBrowserNotifications,
+  browserNotificationActive = false,
+  browserNotificationEligibleCount = 0,
+  browserNotificationPermission = 'default',
 }) => {
   // วันที่ปัจจุบันแบบไทย
   const todayDateThai = new Intl.DateTimeFormat('th-TH', {
@@ -193,6 +201,51 @@ export const Header: React.FC<HeaderProps> = ({
                 ใหญ่+
               </button>
             </div>
+
+            {/* Browser Desktop Notifications Button */}
+            {onOpenBrowserNotifications && (
+              <button
+                type="button"
+                onClick={onOpenBrowserNotifications}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer whitespace-nowrap ${
+                  browserNotificationActive
+                    ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
+                    : browserNotificationPermission === 'denied'
+                    ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border-rose-400/50'
+                    : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border-amber-400/40'
+                }`}
+                title={
+                  browserNotificationActive
+                    ? `เปิดรับการแจ้งเตือนเดสก์ท็อปแล้ว (ใกล้ครบอุทธรณ์ 3 วัน / 1 วัน)${browserNotificationEligibleCount > 0 ? ` • มี ${browserNotificationEligibleCount} คดีเข้าเกณฑ์วันนี้` : ''}`
+                    : browserNotificationPermission === 'denied'
+                    ? 'เบราว์เซอร์ปิดกั้นการแจ้งเตือนเดสก์ท็อป — คลิกเพื่อดูวิธีเปิดใช้งาน'
+                    : 'ตั้งค่าและเปิดการแจ้งเตือนเดสก์ท็อป (Browser Notification) สำหรับคดีใกล้ครบอุทธรณ์ 3 วัน / 1 วัน'
+                }
+              >
+                {browserNotificationActive ? (
+                  <BellRing className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                ) : browserNotificationPermission === 'denied' ? (
+                  <BellOff className="w-3.5 h-3.5 text-rose-300 shrink-0" />
+                ) : (
+                  <Bell className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                )}
+                <span className="hidden sm:inline">
+                  {browserNotificationActive ? 'แจ้งเตือนเปิดอยู่' : 'แจ้งเตือนเดสก์ท็อป'}
+                </span>
+                <span className="sm:hidden">แจ้งเตือน</span>
+                {browserNotificationEligibleCount > 0 && (
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums leading-none ${
+                      browserNotificationActive
+                        ? 'bg-rose-500 text-white'
+                        : 'bg-amber-400 text-slate-950'
+                    }`}
+                  >
+                    {browserNotificationEligibleCount > 99 ? '99+' : browserNotificationEligibleCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Today Duty Officer Pill */}
             {todayDutyOfficer && (

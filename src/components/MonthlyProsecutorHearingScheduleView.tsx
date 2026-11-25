@@ -41,6 +41,7 @@ import {
   getCalendarCategoryDisplay,
 } from '../utils/monthlyProsecutorAppointmentUtils';
 import { MonthlyProsecutorCalendarView } from './MonthlyProsecutorCalendarView';
+import { CaseNoteHighlight } from './CaseNoteHighlight';
 
 interface MonthlyProsecutorHearingScheduleViewProps {
   cases: AppealCase[];
@@ -1236,8 +1237,8 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
 
                                       {/* Notes if any */}
                                       {a.notes && (
-                                        <div className="text-[11px] text-slate-600 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200 inline-block">
-                                          <strong>หมายเหตุ:</strong> {a.notes}
+                                        <div className="pt-0.5">
+                                          <CaseNoteHighlight notes={a.notes} compact />
                                         </div>
                                       )}
                                     </div>
@@ -1401,8 +1402,8 @@ export const MonthlyProsecutorHearingScheduleView: React.FC<MonthlyProsecutorHea
                           </div>
 
                           {a.notes && (
-                            <div className="text-[11px] text-slate-500">
-                              <strong>หมายเหตุ:</strong> {a.notes}
+                            <div className="pt-0.5">
+                              <CaseNoteHighlight notes={a.notes} compact />
                             </div>
                           )}
                         </div>

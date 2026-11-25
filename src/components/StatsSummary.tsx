@@ -6,6 +6,9 @@ import { getAppealUrgency, getTodayString, isKunchartCompletedPendingNoAppealAle
 interface StatsSummaryProps {
   cases: AppealCase[];
   followUps?: DailyJudgmentFollowUp[];
+  selectedYearScope?: number | 'all';
+  carryOverPendingCount?: number;
+  nextAnnualSequenceLabel?: string;
   onSelectFilter?: (filterType: string) => void;
   activeFilter?: string;
 }
@@ -13,6 +16,9 @@ interface StatsSummaryProps {
 export const StatsSummary: React.FC<StatsSummaryProps> = ({
   cases,
   followUps = [],
+  selectedYearScope = 'all',
+  carryOverPendingCount = 0,
+  nextAnnualSequenceLabel,
   onSelectFilter,
   activeFilter,
 }) => {
@@ -33,10 +39,22 @@ export const StatsSummary: React.FC<StatsSummaryProps> = ({
   const todayStr = getTodayString();
   const todayFiledCount = cases.filter((c) => c.filingDate === todayStr).length;
 
+  const isYearScoped = typeof selectedYearScope === 'number';
+  const card1Title = isYearScoped
+    ? `สำนวนประจำปี พ.ศ. ${selectedYearScope}`
+    : 'สำนวนคุมอุทธรณ์ทั้งหมด (ทุกปี)';
+  const card1Desc = isYearScoped
+    ? carryOverPendingCount > 0
+      ? `เริ่มนับใหม่ปี พ.ศ. · ค้างปีก่อน ${carryOverPendingCount} สำนวน`
+      : nextAnnualSequenceLabel
+        ? `เริ่มนับใหม่ประจำปี · ถัดไป ${nextAnnualSequenceLabel}`
+        : `นับเฉพาะสำนวนที่ฟ้องในปี พ.ศ. ${selectedYearScope}`
+    : 'สำนวนสะสมทั้งหมดในระบบทุกปี พ.ศ.';
+
   const cards = [
     {
       id: 'all',
-      title: 'สำนวนคุมอุทธรณ์ทั้งหมด',
+      title: card1Title,
       count: totalCases,
       unit: 'สำนวน',
       icon: Scale,
@@ -44,7 +62,7 @@ export const StatsSummary: React.FC<StatsSummaryProps> = ({
       borderColor: activeFilter === 'all' ? 'border-indigo-600 ring-2 ring-indigo-500/20' : 'border-slate-200',
       iconColor: 'text-indigo-600 bg-indigo-50',
       badgeColor: 'text-indigo-700 bg-indigo-50',
-      desc: 'สำนวนทั้งหมดในระบบ',
+      desc: card1Desc,
     },
     {
       id: 'urgent',
@@ -113,9 +131,9 @@ export const StatsSummary: React.FC<StatsSummaryProps> = ({
               </div>
             </div>
             <div>
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-baseline gap-1.5 tabular-nums">
                 <span className="text-2xl sm:text-3xl font-bold font-['Prompt'] text-slate-900">
-                  {card.count}
+                  {card.count.toLocaleString('th-TH')}
                 </span>
                 <span className="text-xs text-slate-500">{card.unit}</span>
               </div>

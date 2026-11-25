@@ -77,6 +77,7 @@ import { DailyCasesToSheetsModal } from './DailyCasesToSheetsModal';
 import { formatCasesBatchForOfficeTsv, copyTextToClipboard } from '../utils/copyCaseUtils';
 import { createDailyDutySummaryDoc } from '../services/docsService';
 import { getAccessToken } from '../services/auth';
+import { CaseNoteHighlight } from './CaseNoteHighlight';
 
 export type DailyProcedureFilter = 
   | 'all' 
@@ -2837,8 +2838,8 @@ export const DailyFilingByDateView: React.FC<DailyFilingByDateViewProps> = ({
                         )}
 
                         {caseItem.notes && (
-                          <div className="text-[11px] text-slate-500 italic">
-                            หมายเหตุ: {caseItem.notes}
+                          <div className="pt-0.5">
+                            <CaseNoteHighlight notes={caseItem.notes} />
                           </div>
                         )}
 

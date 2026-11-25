@@ -30,7 +30,8 @@ import {
   Clock,
   Shield,
   BarChart3,
-  CalendarCheck
+  CalendarCheck,
+  FileDown
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, MonthlyDutyRoster } from '../types/appeal';
 import { formatThaiDate, getTodayString, calculateAppealDeadline } from '../utils/dateUtils';
@@ -64,6 +65,7 @@ interface MonthlyProsecutorSummaryViewProps {
   onOpenSubmitToDuty?: (caseItem: AppealCase) => void;
   onMarkComplete?: (caseItem: AppealCase) => void;
   onAddNewCaseForDate?: (dateStr: string) => void;
+  onOpenMonthlyPdfExport?: (options?: { yearMonth?: string; prosecutorName?: string }) => void;
   onToast?: (message: string) => void;
 }
 
@@ -81,6 +83,7 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
   onOpenSubmitToDuty,
   onMarkComplete,
   onAddNewCaseForDate,
+  onOpenMonthlyPdfExport,
   onToast,
 }) => {
   const [subTab, setSubTab] = useState<'filing_summary' | 'hearing_schedule'>(initialSubTab);
@@ -522,12 +525,24 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
               </button>
             </div>
 
-            {/* Action Buttons: Copy to Excel & Print */}
+            {/* Action Buttons: Export PDF, Copy to Excel & Print */}
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              {onOpenMonthlyPdfExport && (
+                <button
+                  type="button"
+                  onClick={() => onOpenMonthlyPdfExport({ yearMonth: selectedMonth })}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-2xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition flex items-center justify-center gap-2 shadow-md shadow-rose-950/30 cursor-pointer whitespace-nowrap shrink-0"
+                  title="ส่งออกรายงานสรุปผลงานอัยการประจำเดือนเป็นไฟล์ PDF ตารางขนาด A4"
+                >
+                  <FileDown className="w-4 h-4 text-rose-100" />
+                  <span>ส่งออกรายงาน PDF</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleCopyForExcelForm}
-                className={`flex-1 sm:flex-none px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer ${
+                className={`flex-1 sm:flex-none px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap shrink-0 ${
                   copiedType === 'excel_form'
                     ? 'bg-emerald-600 text-white ring-2 ring-emerald-400'
                     : 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white shadow-emerald-900/30'
@@ -535,17 +550,17 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
                 title="คัดลอกตารางสรุปรายอัยการสำหรับนำไปวางในแบบฟอร์ม Excel (Ctrl+V) ไม่เป็นตาราง/ไม่มีหัวตาราง"
               >
                 {copiedType === 'excel_form' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4 text-emerald-200" />}
-                <span>{copiedType === 'excel_form' ? 'คัดลอกแล้ว!' : '📋 วางลงฟอร์ม Excel'}</span>
+                <span>{copiedType === 'excel_form' ? 'คัดลอกแล้ว!' : 'วางลงฟอร์ม Excel'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setIsPrintModalOpen(true)}
-                className="px-3.5 py-2.5 rounded-2xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                className="px-3.5 py-2.5 rounded-2xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap shrink-0"
                 title="พิมพ์หรือดูแบบบันทึกข้อความสรุปสิ้นเดือนเสนออัยการจังหวัด"
               >
                 <Printer className="w-4 h-4 text-indigo-300" />
-                <span className="hidden sm:inline">พิมพ์รายงาน</span>
+                <span className="hidden sm:inline">บันทึกข้อความ</span>
               </button>
 
               <button
@@ -802,6 +817,18 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {onOpenMonthlyPdfExport && (
+              <button
+                type="button"
+                onClick={() => onOpenMonthlyPdfExport({ yearMonth: selectedMonth })}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-700 hover:bg-rose-800 text-white transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap"
+                title="สร้างและดาวน์โหลดรายงานผลงานอัยการประจำเดือนเป็นไฟล์ PDF"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                <span>ส่งออก PDF</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleCopyForExcelForm}
@@ -1003,8 +1030,27 @@ export const MonthlyProsecutorSummaryView: React.FC<MonthlyProsecutorSummaryView
                                   <span className="text-indigo-700 underline font-black">{p.prosecutorName}</span>
                                   <span className="text-slate-500 font-normal">({p.cases.length} คดี ในเดือน {summary.monthLabel})</span>
                                 </div>
-                                <div className="text-[11px] text-slate-500">
-                                  คลิกเลขคดีเพื่อดูสำนวนเต็ม หรือกดปุ่มด้านขวาเพื่อปรับปรุงคำให้การ
+                                <div className="flex items-center gap-2.5 flex-wrap">
+                                  <div className="text-[11px] text-slate-500">
+                                    คลิกเลขคดีเพื่อดูสำนวนเต็ม หรือกดปุ่มด้านขวาเพื่อปรับปรุงคำให้การ
+                                  </div>
+                                  {onOpenMonthlyPdfExport && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenMonthlyPdfExport({
+                                          yearMonth: selectedMonth,
+                                          prosecutorName: p.prosecutorName,
+                                        });
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap"
+                                      title={`ส่งออกรายงาน PDF เฉพาะสำนวนของ ${p.prosecutorName} ในเดือน ${summary.monthLabel}`}
+                                    >
+                                      <FileDown className="w-3.5 h-3.5" />
+                                      <span>ส่งออก PDF ของท่านนี้</span>
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 

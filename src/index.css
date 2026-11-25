@@ -58,3 +58,33 @@ button, input, select, textarea {
   font-family: inherit;
   letter-spacing: 0.01em;
 }
+
+/* Luminous highlight glow for case notes (หมายเหตุแต่ละสำนวน) */
+@keyframes caseNoteGlowPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(139, 92, 246, 0.55),
+      0 0 10px rgba(139, 92, 246, 0.32),
+      0 0 20px rgba(217, 70, 239, 0.16);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px rgba(124, 58, 237, 0.85),
+      0 0 14px rgba(139, 92, 246, 0.58),
+      0 0 26px rgba(217, 70, 239, 0.34);
+  }
+}
+
+.case-note-glow {
+  animation: caseNoteGlowPulse 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .case-note-glow {
+    animation: none;
+    box-shadow:
+      0 0 0 1.5px rgba(124, 58, 237, 0.75),
+      0 0 12px rgba(139, 92, 246, 0.42);
+  }
+}
+

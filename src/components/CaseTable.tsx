@@ -33,7 +33,8 @@ import {
   Check,
   Users,
   UserCheck,
-  ChevronDown
+  ChevronDown,
+  FileDown
 } from 'lucide-react';
 import { AppealCase, CaseAppointment } from '../types/appeal';
 import { formatThaiDate, getDaysRemaining, getAppealUrgency, isKunchartCase, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo, hasCaseFilingAfterJudgmentAnomaly } from '../utils/dateUtils';
@@ -59,6 +60,7 @@ import { formatJudgmentForClipboard, copyTextToClipboard } from '../utils/copyCa
 import { getCaseCardStyle } from './DailyFilingByDateView';
 import { LinkedCasesModal } from './LinkedCasesModal';
 import { buildLinkedCasesMap, caseMatchesWithLinkedSearch, baseCaseMatcher } from '../utils/linkedCaseUtils';
+import { CaseNoteHighlight } from './CaseNoteHighlight';
 
 export interface CaseStatusBadgeProps {
   caseItem: AppealCase;
@@ -189,6 +191,7 @@ interface CaseTableProps {
   onToggleTemporaryDischarge?: (caseItem: AppealCase, isDischarged: boolean, recapturedDate?: string) => void;
   onOpenActivityLog?: (blackCaseNo?: string) => void;
   onOpenCaseRevisions?: (caseId: string, blackCaseNo: string) => void;
+  onOpenMonthlyPdfExport?: (options?: { prosecutorName?: string }) => void;
   onToast?: (message: string) => void;
   initialFilter?: string;
   externalSearchTerm?: string;
@@ -219,6 +222,7 @@ export const CaseTable: React.FC<CaseTableProps> = ({
   onToggleTemporaryDischarge,
   onOpenActivityLog,
   onOpenCaseRevisions,
+  onOpenMonthlyPdfExport,
   onToast,
   initialFilter = 'all',
   externalSearchTerm = '',
@@ -729,11 +733,27 @@ export const CaseTable: React.FC<CaseTableProps> = ({
             </button>
           </div>
 
+          {onOpenMonthlyPdfExport && (
+            <button
+              type="button"
+              onClick={() =>
+                onOpenMonthlyPdfExport({
+                  prosecutorName: selectedProsecutor !== 'all' ? selectedProsecutor : undefined,
+                })
+              }
+              className="bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs flex-shrink-0 cursor-pointer active:scale-95 whitespace-nowrap"
+              title="ส่งออกรายงานสรุปผลงานอัยการประจำเดือนเป็นไฟล์ PDF ขนาด A4"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>ส่งออก PDF ประจำเดือน</span>
+            </button>
+          )}
+
           {canEdit && (
             <button
               type="button"
               onClick={onAddNewCase}
-              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs flex-shrink-0 cursor-pointer active:scale-95"
+              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-xs flex-shrink-0 cursor-pointer active:scale-95 whitespace-nowrap"
               title="เพิ่มสำนวนคุมอุทธรณ์ 1 เดือน"
             >
               <Plus className="w-4 h-4" />
@@ -1173,6 +1193,13 @@ export const CaseTable: React.FC<CaseTableProps> = ({
                           </div>
                         );
                       })()}
+
+                      {/* หมายเหตุสำนวน (เรืองแสงเด่นชัด) */}
+                      {caseItem.notes && (
+                        <div className="mt-1.5">
+                          <CaseNoteHighlight notes={caseItem.notes} compact />
+                        </div>
+                      )}
                     </td>
 
                     {/* Judgment Date */}

@@ -26,6 +26,7 @@ import {
   buildProsecutorDirectory,
   getCalendarCategoryDisplay,
 } from '../utils/monthlyProsecutorAppointmentUtils';
+import { CaseNoteHighlight } from './CaseNoteHighlight';
 
 interface MonthlyProsecutorCalendarViewProps {
   cases: AppealCase[];
@@ -797,13 +798,12 @@ export const MonthlyProsecutorCalendarView: React.FC<MonthlyProsecutorCalendarVi
                               </span>
                             </>
                           )}
-                          {a.notes && (
-                            <>
-                              <span aria-hidden="true" className="text-slate-300">·</span>
-                              <span className="text-slate-700">หมายเหตุ: {a.notes}</span>
-                            </>
-                          )}
                         </div>
+                        {a.notes && (
+                          <div className="mt-2">
+                            <CaseNoteHighlight notes={a.notes} compact />
+                          </div>
+                        )}
                       </div>
 
                       {/* Action Buttons */}

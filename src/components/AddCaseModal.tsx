@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { AppealCase, CourtAppointmentType, CaseAppointment, MonthlyDutyRoster } from '../types/appeal';
 import { calculateAppealDeadline, calculateSeveredDeadline, checkFilingAfterJudgmentAnomaly, formatThaiDate, getTodayString } from '../utils/dateUtils';
+import { getNextAnnualSequencePreview } from '../utils/annualCaseControlUtils';
 import { appointmentTypeOptions } from './CourtAppointmentModal';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate, getAllOfficersGroupedByMonth } from '../services/dutyService';
@@ -186,6 +187,11 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   );
 
   const isJudgmentBeforeFiling = filingAfterJudgmentAnomaly.isAnomalous;
+
+  const annualSequencePreview = useMemo(
+    () => getNextAnnualSequencePreview(existingCases, filingDate, 'calendar_be'),
+    [existingCases, filingDate]
+  );
 
   useEffect(() => {
     setShowDateAnomalyConfirm(false);
@@ -1169,6 +1175,33 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   </span>
                 )}
               </div>
+
+              {annualSequencePreview && !isFilingDateInFuture && (
+                <div
+                  className={`mt-1.5 rounded-lg px-2.5 py-1.5 text-[11px] border tabular-nums flex items-center justify-between gap-2 ${
+                    annualSequencePreview.isNewYearStart
+                      ? 'bg-teal-50 border-teal-300 text-teal-950 font-semibold'
+                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span>
+                    {annualSequencePreview.isNewYearStart ? (
+                      <>
+                        ขึ้นปี พ.ศ. {annualSequencePreview.yearBE} ใหม่ — เริ่มนับลำดับคุมสำนวนที่{' '}
+                        <strong className="font-mono text-teal-800">{annualSequencePreview.formattedNo}</strong> อัตโนมัติ
+                      </>
+                    ) : (
+                      <>
+                        คุมจำนวนรายปี พ.ศ. {annualSequencePreview.yearBE} · สำนวนนี้เป็นลำดับที่{' '}
+                        <strong className="font-mono text-slate-950">{annualSequencePreview.formattedNo}</strong>
+                      </>
+                    )}
+                  </span>
+                  <span className="text-[10px] text-slate-500 shrink-0">
+                    (มีแล้ว {annualSequencePreview.existingCountInYear.toLocaleString('th-TH')})
+                  </span>
+                </div>
+              )}
 
               {isFilingDateInFuture && (
                 <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-100/90 border border-red-300 rounded-lg p-2 mt-1.5 animate-in fade-in">

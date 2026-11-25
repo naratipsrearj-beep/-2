@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { AppealCase, MonthlyDutyRoster, DailyJudgmentFollowUp, ActivityLog } from '../types/appeal';
+import { isSampleCaseId } from './storageService';
 
 // Initialize Firebase App & Firestore singleton
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -30,7 +31,7 @@ export const DEFAULT_ADMIN_PIN = '951753';
 export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
 
 /**
- * Test real-time connection status to Firestore
+ * Test real-time connection status to Firestore (single lightweight doc read to preserve quota)
  */
 export async function testConnectionStatus(): Promise<{
   success: boolean;
@@ -39,7 +40,7 @@ export async function testConnectionStatus(): Promise<{
   projectId: string;
 }> {
   try {
-    await getDocs(collection(db, 'cases'));
+    await getDocFromServer(doc(db, 'settings', 'permissions'));
     return { success: true, projectId: firebaseConfig.projectId };
   } catch (err: any) {
     console.warn('testConnectionStatus error:', err);
@@ -190,13 +191,25 @@ export function subscribeToCases(
     casesCol,
     (snapshot) => {
       const casesList: AppealCase[] = [];
+      const sampleIdsToRemove: string[] = [];
       snapshot.forEach((d) => {
+        if (isSampleCaseId(d.id)) {
+          sampleIdsToRemove.push(d.id);
+          return;
+        }
         const data = d.data();
         casesList.push({
           id: d.id,
           ...data,
         } as AppealCase);
       });
+      if (sampleIdsToRemove.length > 0) {
+        sampleIdsToRemove.forEach((sampleId) => {
+          deleteDoc(doc(db, 'cases', sampleId)).catch((e) =>
+            console.warn('Auto-cleanup sample case error:', sampleId, e)
+          );
+        });
+      }
       // Sort descending by filingDate or createdAt
       casesList.sort((a, b) => {
         const dateA = a.filingDate || a.createdAt || '';
@@ -257,8 +270,10 @@ export function subscribeToProjectSettings(
         onData({
           adminEmail: data.adminEmail || ADMIN_EMAIL,
           allowedEditors: data.allowedEditors || [],
+          allowedAppealOfficers: data.allowedAppealOfficers || [],
           adminPin: data.adminPin || DEFAULT_ADMIN_PIN,
           updatedAt: data.updatedAt,
+          updatedBy: data.updatedBy,
         });
       } else {
         onData(DEFAULT_SETTINGS);
@@ -484,22 +499,28 @@ function prepareCaseDataForFirestore(caseItem: AppealCase): Record<string, any> 
  * Save or update case in Firestore
  */
 export async function saveCaseToFirestore(caseItem: AppealCase): Promise<void> {
+  if (isSampleCaseId(caseItem.id)) return;
   const docRef = doc(db, 'cases', caseItem.id);
   const cleanData = prepareCaseDataForFirestore(caseItem);
   await setDoc(docRef, cleanData, { merge: true });
 }
 
 /**
- * Batch save cases (for initial sync or bulk updates)
+ * Batch save cases in safe 400-doc chunks (Firestore limit is 500 ops/batch)
  */
 export async function saveCasesBatchToFirestore(cases: AppealCase[]): Promise<void> {
-  const batch = writeBatch(db);
-  cases.forEach((c) => {
-    const docRef = doc(db, 'cases', c.id);
-    const cleanData = prepareCaseDataForFirestore(c);
-    batch.set(docRef, cleanData, { merge: true });
-  });
-  await batch.commit();
+  const realCases = cases.filter((c) => c && !isSampleCaseId(c.id));
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < realCases.length; i += CHUNK_SIZE) {
+    const chunk = realCases.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    chunk.forEach((c) => {
+      const docRef = doc(db, 'cases', c.id);
+      const cleanData = prepareCaseDataForFirestore(c);
+      batch.set(docRef, cleanData, { merge: true });
+    });
+    await batch.commit();
+  }
 }
 
 /**
@@ -510,8 +531,9 @@ export async function uploadAllLocalDataToFirestore(
   dutyRosters: MonthlyDutyRoster[],
   followUps: DailyJudgmentFollowUp[]
 ): Promise<{ casesCount: number; rostersCount: number; followUpsCount: number }> {
-  if (cases.length > 0) {
-    await saveCasesBatchToFirestore(cases);
+  const realCases = cases.filter((c) => c && !isSampleCaseId(c.id));
+  if (realCases.length > 0) {
+    await saveCasesBatchToFirestore(realCases);
   }
   for (const r of dutyRosters) {
     await saveDutyRosterToFirestore(r);
@@ -520,7 +542,7 @@ export async function uploadAllLocalDataToFirestore(
     await saveFollowUpToFirestore(f);
   }
   return {
-    casesCount: cases.length,
+    casesCount: realCases.length,
     rostersCount: dutyRosters.length,
     followUpsCount: followUps.length,
   };
@@ -826,68 +848,28 @@ export async function removeAllowedAppealOfficer(
 }
 
 /**
- * Seed initial sample data to Firestore if collection is empty
+ * Ensure settings/permissions document exists without ever auto-seeding sample cases or overwriting existing settings
  */
 export async function seedInitialFirestoreDataIfEmpty(
-  initialCases: AppealCase[],
-  initialRosters: MonthlyDutyRoster[],
-  initialFollowUps?: DailyJudgmentFollowUp[],
-  initialActivityLogs?: ActivityLog[]
+  _initialCases?: AppealCase[],
+  _initialRosters?: MonthlyDutyRoster[],
+  _initialFollowUps?: DailyJudgmentFollowUp[],
+  _initialActivityLogs?: ActivityLog[]
 ): Promise<boolean> {
   try {
-    const casesSnap = await getDocs(collection(db, 'cases'));
-    let didSeed = false;
-
-    if (casesSnap.empty && initialCases.length > 0) {
-      await saveCasesBatchToFirestore(initialCases);
-      console.log('Seeded initial cases to Firestore');
-      didSeed = true;
-    }
-
-    const rostersSnap = await getDocs(collection(db, 'duty_rosters'));
-    if (rostersSnap.empty && initialRosters.length > 0) {
-      for (const r of initialRosters) {
-        await saveDutyRosterToFirestore(r);
-      }
-      console.log('Seeded initial duty rosters to Firestore');
-      didSeed = true;
-    }
-
-    if (initialFollowUps && initialFollowUps.length > 0) {
-      const followUpsSnap = await getDocs(collection(db, 'follow_ups'));
-      if (followUpsSnap.empty) {
-        for (const f of initialFollowUps) {
-          await saveFollowUpToFirestore(f);
-        }
-        console.log('Seeded initial follow-ups to Firestore');
-        didSeed = true;
-      }
-    }
-
-    if (initialActivityLogs && initialActivityLogs.length > 0) {
-      const logsSnap = await getDocs(collection(db, 'activity_logs'));
-      if (logsSnap.empty) {
-        for (const log of initialActivityLogs) {
-          await saveActivityLogToFirestore(log);
-        }
-        console.log('Seeded initial activity logs to Firestore');
-        didSeed = true;
-      }
-    }
-
     const settingsDocRef = doc(db, 'settings', 'permissions');
-    await setDoc(
-      settingsDocRef,
-      {
+    const existingSettings = await getDoc(settingsDocRef);
+    if (!existingSettings.exists()) {
+      await setDoc(settingsDocRef, {
         ...DEFAULT_SETTINGS,
         isInitialized: true,
         initializedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-    return didSeed;
+      });
+      return true;
+    }
+    return false;
   } catch (err) {
-    console.warn('Error during Firestore seed:', err);
+    console.warn('Error checking Firestore settings initialization:', err);
     return false;
   }
 }
