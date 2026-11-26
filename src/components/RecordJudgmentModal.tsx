@@ -28,6 +28,7 @@ import { AppealCase } from '../types/appeal';
 import { calculateAppealDeadline, checkFilingAfterJudgmentAnomaly, formatThaiDate, getTodayString } from '../utils/dateUtils';
 import { isJudgmentRecorded, isCaseTemporarilyDischarged } from '../utils/appointmentUtils';
 import { compressImageFile } from '../utils/imageUtils';
+import { findCandidateDuplicates } from '../utils/duplicateCaseUtils';
 
 interface RecordJudgmentModalProps {
   isOpen: boolean;
@@ -52,6 +53,7 @@ interface RecordJudgmentModalProps {
   onClearJudgment?: (caseId: string) => void;
   onOpenFullRecheckModal?: (caseItem: AppealCase) => void;
   onOpenCourtPetition?: (caseItem: AppealCase, deadline?: string, count?: number) => void;
+  existingCases?: AppealCase[];
 }
 
 const QUICK_OUTCOME_SUGGESTIONS = [
@@ -84,6 +86,7 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   onClearJudgment,
   onOpenFullRecheckModal,
   onOpenCourtPetition,
+  existingCases = [],
 }) => {
   const [judgmentDate, setJudgmentDate] = useState<string>(getTodayString());
   const [redCaseNo, setRedCaseNo] = useState<string>('');
@@ -110,7 +113,14 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const judgmentDateInputRef = useRef<HTMLInputElement>(null);
+  const redCaseNoInputRef = useRef<HTMLInputElement>(null);
   const [showDateAnomalyConfirm, setShowDateAnomalyConfirm] = useState(false);
+  const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
+
+  const redDuplicateMatch = React.useMemo(() => {
+    const matches = findCandidateDuplicates({ redCaseNo }, existingCases, caseItem?.id);
+    return matches.find((m) => m.field === 'redCaseNo') || null;
+  }, [redCaseNo, existingCases, caseItem?.id]);
 
   // Auto-calculated 1-month appeal deadline whenever judgmentDate changes
   const deadlineInfo = React.useMemo(() => {
@@ -129,6 +139,10 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
   useEffect(() => {
     setShowDateAnomalyConfirm(false);
   }, [judgmentDate, caseItem, isOpen]);
+
+  useEffect(() => {
+    setShowDuplicateConfirm(false);
+  }, [redCaseNo, caseItem, isOpen]);
 
   useEffect(() => {
     if (caseItem) {
@@ -307,6 +321,11 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
 
     if (filingAfterJudgmentAnomaly.isAnomalous && !showDateAnomalyConfirm) {
       setShowDateAnomalyConfirm(true);
+      return;
+    }
+
+    if (redDuplicateMatch && !showDuplicateConfirm) {
+      setShowDuplicateConfirm(true);
       return;
     }
 
@@ -817,11 +836,16 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
               </label>
               <div className="relative">
                 <input
+                  ref={redCaseNoInputRef}
                   type="text"
                   placeholder="เช่น อ.891/2569 หรือ แดง 124/2569"
                   value={redCaseNo}
                   onChange={(e) => setRedCaseNo(e.target.value)}
-                  className="w-full text-xs px-3 py-2 pr-24 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-bold text-rose-800"
+                  className={`w-full text-xs px-3 py-2 pr-24 border rounded-xl focus:outline-hidden focus:ring-2 font-bold ${
+                    redDuplicateMatch
+                      ? 'border-2 border-indigo-500 bg-indigo-50/40 text-indigo-950 focus:ring-indigo-500'
+                      : 'border-slate-300 focus:ring-amber-500 text-rose-800'
+                  }`}
                 />
                 {redCaseNo && (
                   <button
@@ -835,6 +859,21 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                   </button>
                 )}
               </div>
+              {redDuplicateMatch && (
+                <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-300 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <AlertTriangle className="w-3.5 h-3.5 text-indigo-700 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>พบหมายเลขคดีแดงซ้ำ ({redDuplicateMatch.matchedCases.length} สำนวน):</strong>{' '}
+                    {redDuplicateMatch.matchedCases
+                      .slice(0, 2)
+                      .map((m) => `ดำ ${m.blackCaseNo} / แดง ${m.redCaseNo} (จำเลย: ${m.defendant || '-'})`)
+                      .join(', ')}
+                    {redDuplicateMatch.matchedCases.length > 2
+                      ? ` และอีก ${redDuplicateMatch.matchedCases.length - 2} สำนวน`
+                      : ''}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* ช่องกรอกคำพิพากษาเป็นช่องเดียว (ตามที่ผู้ใช้ร้องขอ) */}
@@ -1014,6 +1053,49 @@ export const RecordJudgmentModal: React.FC<RecordJudgmentModalProps> = ({
                     className="px-3 py-2 text-xs font-semibold text-cyan-900 bg-white hover:bg-cyan-100 border border-cyan-400 rounded-lg transition cursor-pointer"
                   >
                     ยืนยันบันทึกทั้งที่วันที่ผิดปกติ
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Duplicate Red Case No Confirmation Guard */}
+            {showDuplicateConfirm && redDuplicateMatch && (
+              <div className="bg-indigo-50 border-2 border-indigo-500 rounded-xl p-4 space-y-3 animate-in fade-in">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-indigo-700 shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-xs text-indigo-950">
+                    <div className="font-bold text-sm text-indigo-900 font-['Prompt']">
+                      แจ้งเตือนตรวจสอบหมายเลขคดีแดงซ้ำ
+                    </div>
+                    <p className="leading-relaxed">
+                      หมายเลขคดีแดง <strong>{redDuplicateMatch.inputValue}</strong> ซ้ำกับสำนวน{' '}
+                      {redDuplicateMatch.matchedCases
+                        .slice(0, 3)
+                        .map((m) => `ดำ ${m.blackCaseNo} (จำเลย: ${m.defendant || '-'})`)
+                        .join(', ')}
+                      {redDuplicateMatch.matchedCases.length > 3
+                        ? ` และอีก ${redDuplicateMatch.matchedCases.length - 3} สำนวน`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDuplicateConfirm(false);
+                      redCaseNoInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      redCaseNoInputRef.current?.focus();
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg transition cursor-pointer"
+                  >
+                    กลับไปตรวจสอบหมายเลขคดีแดง
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-2 text-xs font-semibold text-indigo-900 bg-white hover:bg-indigo-100 border border-indigo-400 rounded-lg transition cursor-pointer"
+                  >
+                    ยืนยันบันทึก (ตรวจสอบแล้ว)
                   </button>
                 </div>
               </div>

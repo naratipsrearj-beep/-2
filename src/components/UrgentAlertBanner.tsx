@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale, Users, Check, Eye } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { AlertTriangle, Clock, CheckCircle, Calendar, ArrowRight, ShieldAlert, Sparkles, Mail, Send, Truck, Edit3, Shield, Scale, Users, Check, Eye, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { AppealCase } from '../types/appeal';
 import { getDaysRemaining, getAppealUrgency, formatThaiDate, isKunchartCompletedPendingNoAppealAlert, getSeveredFilingAlertInfo, hasCaseFilingAfterJudgmentAnomaly } from '../utils/dateUtils';
 import {
@@ -10,6 +10,7 @@ import {
   getUnspecifiedStageAlertInfo,
   isCaseUnspecifiedStage,
 } from '../utils/appointmentUtils';
+import { findDuplicateCases, DuplicateFieldType, DUPLICATE_FIELD_ORDER, DUPLICATE_FIELD_META } from '../utils/duplicateCaseUtils';
 
 interface UrgentAlertBannerProps {
   cases: AppealCase[];
@@ -120,8 +121,27 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
       return b.anomaly.daysDifference - a.anomaly.daysDifference;
     });
 
+  // ตรวจสอบเลขสำนวนซ้ำกัน (หมายเลขคดีดำ, หมายเลขคดีแดง, หมายเลข ส.1, หมายเลข ส.4)
+  const duplicateCheck = useMemo(() => findDuplicateCases(cases), [cases]);
+  const [duplicateFieldFilter, setDuplicateFieldFilter] = useState<'all' | DuplicateFieldType>('all');
+  const [showAllDuplicateGroups, setShowAllDuplicateGroups] = useState(false);
+
+  const visibleDuplicateGroups = useMemo(() => {
+    const list =
+      duplicateFieldFilter === 'all'
+        ? duplicateCheck.groups
+        : duplicateCheck.byField[duplicateFieldFilter];
+    return showAllDuplicateGroups ? list : list.slice(0, 6);
+  }, [duplicateCheck, duplicateFieldFilter, showAllDuplicateGroups]);
+
+  const totalFilteredDuplicateGroups =
+    duplicateFieldFilter === 'all'
+      ? duplicateCheck.groups.length
+      : duplicateCheck.byField[duplicateFieldFilter].length;
+
   if (
     filingAfterJudgmentAnomalyCases.length === 0 &&
+    duplicateCheck.groups.length === 0 &&
     urgentCases.length === 0 &&
     pendingRequisitionCasesWithAlert.length === 0 &&
     pendingUnspecifiedAlertCases.length === 0 &&
@@ -267,6 +287,193 @@ export const UrgentAlertBanner: React.FC<UrgentAlertBannerProps> = ({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* -0.5 แจ้งเตือนตรวจสอบหมายเลขสำนวนซ้ำกัน (หมายเลขคดีดำ, หมายเลขคดีแดง, ส.1, ส.4) */}
+      {duplicateCheck.groups.length > 0 && (
+        <div className="bg-indigo-50/95 border-2 border-indigo-400 rounded-2xl p-4 sm:p-5 shadow-sm transition-all">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between pb-3 border-b border-indigo-200 gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Copy className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base sm:text-lg text-indigo-950 font-['Prompt'] tabular-nums">
+                  แจ้งเตือนตรวจสอบเลขสำนวนซ้ำ: พบ {duplicateCheck.groups.length} รายการซ้ำ ({duplicateCheck.affectedCaseIds.size} สำนวนที่เกี่ยวข้อง)
+                </h3>
+                <p className="text-xs text-indigo-900/90 mt-0.5 leading-relaxed">
+                  ตรวจพบหมายเลขคดีดำ หมายเลขคดีแดง หมายเลข ส.1 หรือหมายเลข ส.4 ซ้ำกันระหว่างสำนวน กรุณาตรวจสอบว่าเป็นการบันทึกซ้ำหรือพิมพ์เลขคลาดเคลื่อน
+                </p>
+              </div>
+            </div>
+
+            {/* Interactive Filter Tabs */}
+            <div className="flex items-center gap-1 p-1 bg-white/90 border border-indigo-200 rounded-xl overflow-x-auto self-start lg:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicateFieldFilter('all');
+                  setShowAllDuplicateGroups(false);
+                }}
+                className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer tabular-nums ${
+                  duplicateFieldFilter === 'all'
+                    ? 'bg-indigo-700 text-white shadow-2xs'
+                    : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-900'
+                }`}
+              >
+                ทั้งหมด ({duplicateCheck.groups.length})
+              </button>
+              {DUPLICATE_FIELD_ORDER.map((fieldKey) => {
+                const count = duplicateCheck.byField[fieldKey].length;
+                if (count === 0) return null;
+                const meta = DUPLICATE_FIELD_META[fieldKey];
+                const isActive = duplicateFieldFilter === fieldKey;
+                return (
+                  <button
+                    key={fieldKey}
+                    type="button"
+                    onClick={() => {
+                      setDuplicateFieldFilter(fieldKey);
+                      setShowAllDuplicateGroups(false);
+                    }}
+                    className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer tabular-nums ${
+                      isActive
+                        ? 'bg-indigo-700 text-white shadow-2xs'
+                        : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-900'
+                    }`}
+                  >
+                    {meta.shortLabel} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-3.5">
+            {visibleDuplicateGroups.map((group) => {
+              const fieldAccentClass =
+                group.field === 'redCaseNo'
+                  ? 'text-rose-700'
+                  : group.field === 'receivedNumberS1'
+                  ? 'text-blue-700'
+                  : group.field === 'filingNumberS4'
+                  ? 'text-emerald-700'
+                  : 'text-indigo-800';
+
+              return (
+                <div
+                  key={group.key}
+                  className="rounded-xl border border-indigo-200 bg-white p-3.5 flex flex-col justify-between gap-2.5 shadow-2xs hover:border-indigo-400 transition"
+                >
+                  <div>
+                    {/* Group Header (Clean unboxed metadata) */}
+                    <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-slate-100">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 flex-wrap">
+                          <span className={fieldAccentClass}>{group.fieldLabel}ซ้ำ</span>
+                          {group.isAllLinkedSevered && (
+                            <>
+                              <span className="text-slate-300" aria-hidden="true">·</span>
+                              <span className="text-purple-700">เชื่อมโยงแยกฟ้อง</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="font-bold text-slate-900 text-sm font-['Prompt'] tabular-nums truncate mt-0.5" title={group.displayValue}>
+                          {group.shortLabel}: {group.displayValue}
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-indigo-800 tabular-nums shrink-0 whitespace-nowrap">
+                        ซ้ำ {group.cases.length} สำนวน
+                      </span>
+                    </div>
+
+                    {/* Matching Cases List */}
+                    <div className="divide-y divide-slate-100 mt-1">
+                      {group.cases.map((caseItem) => (
+                        <div key={caseItem.id} className="py-2 first:pt-1.5 last:pb-0 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-bold text-slate-900 font-['Prompt'] tabular-nums truncate">
+                              ดำ {caseItem.blackCaseNo || '-'}
+                              {caseItem.redCaseNo ? ` / แดง ${caseItem.redCaseNo}` : ''}
+                            </div>
+                            <span className="text-[11px] text-slate-500 tabular-nums shrink-0">
+                              {caseItem.filingDate ? formatThaiDate(caseItem.filingDate, { short: true }) : '-'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-600 tabular-nums flex-wrap">
+                            <span>
+                              <span className="font-semibold text-blue-800">ส.1:</span>{' '}
+                              <span className={caseItem.receivedNumberS1?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                                {caseItem.receivedNumberS1?.trim() || '-'}
+                              </span>
+                            </span>
+                            <span className="text-slate-300" aria-hidden="true">·</span>
+                            <span>
+                              <span className="font-semibold text-emerald-800">ส.4:</span>{' '}
+                              <span className={caseItem.filingNumberS4?.trim() ? 'font-semibold text-slate-900' : 'text-slate-400'}>
+                                {caseItem.filingNumberS4?.trim() || '-'}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 truncate">
+                            จำเลย: <span className="font-medium text-slate-800">{caseItem.defendant || '-'}</span>
+                            {caseItem.responsiblePerson ? ` · ${caseItem.responsiblePerson}` : ''}
+                          </div>
+                          {(onViewCaseDetail || onEditCase) && (
+                            <div className="flex items-center gap-1.5 pt-1">
+                              {onViewCaseDetail && (
+                                <button
+                                  type="button"
+                                  onClick={() => onViewCaseDetail(caseItem)}
+                                  className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-semibold text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-indigo-200 cursor-pointer whitespace-nowrap"
+                                >
+                                  <Eye className="w-3 h-3 shrink-0" />
+                                  <span>ดูรายละเอียด</span>
+                                </button>
+                              )}
+                              {onEditCase && (
+                                <button
+                                  type="button"
+                                  onClick={() => onEditCase(caseItem)}
+                                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-[11px] py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition border border-slate-200 cursor-pointer whitespace-nowrap"
+                                >
+                                  <Edit3 className="w-3 h-3 shrink-0" />
+                                  <span>แก้ไขเลขสำนวน</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {totalFilteredDuplicateGroups > 6 && (
+            <div className="mt-3 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowAllDuplicateGroups((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-indigo-900 bg-white hover:bg-indigo-100 border border-indigo-300 rounded-xl transition cursor-pointer whitespace-nowrap"
+              >
+                {showAllDuplicateGroups ? (
+                  <>
+                    <ChevronUp className="w-4 h-4" />
+                    <span>ย่อรายการ (แสดง 6 รายการแรก)</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4" />
+                    <span>แสดงรายการเลขซ้ำทั้งหมด ({totalFilteredDuplicateGroups} รายการ)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

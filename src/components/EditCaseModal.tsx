@@ -36,6 +36,7 @@ import { appointmentTypeOptions } from './CourtAppointmentModal';
 import { DutyOfficerPickerModal } from './DutyOfficerPickerModal';
 import { getDutyOfficersForDate, getAllOfficersGroupedByMonth } from '../services/dutyService';
 import { compressImageFile } from '../utils/imageUtils';
+import { findCandidateDuplicates } from '../utils/duplicateCaseUtils';
 
 interface EditCaseModalProps {
   isOpen: boolean;
@@ -179,7 +180,27 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
   // ตรวจสอบความผิดปกติ: วันที่ฟ้องเกิดขึ้นหลังวันพิพากษา (จะพิพากษาก่อนฟ้องไม่ได้)
   const filingDateInputRef = React.useRef<HTMLInputElement>(null);
+  const blackCaseNoInputRef = React.useRef<HTMLInputElement>(null);
   const [showDateAnomalyConfirm, setShowDateAnomalyConfirm] = useState(false);
+  const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
+
+  const duplicateMatches = React.useMemo(
+    () =>
+      findCandidateDuplicates(
+        { blackCaseNo, redCaseNo, receivedNumberS1, filingNumberS4 },
+        existingCases,
+        caseItem?.id
+      ),
+    [blackCaseNo, redCaseNo, receivedNumberS1, filingNumberS4, existingCases, caseItem?.id]
+  );
+
+  const duplicateMatchByField = React.useMemo(() => {
+    const map: Record<string, (typeof duplicateMatches)[number]> = {};
+    for (const m of duplicateMatches) {
+      map[m.field] = m;
+    }
+    return map;
+  }, [duplicateMatches]);
 
   const effectiveJudgmentDateForCheck =
     !isUnspecifiedStage && (hasJudgment || defendantPlea === 'confessed' || Boolean(judgmentDate))
@@ -194,6 +215,10 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
   useEffect(() => {
     setShowDateAnomalyConfirm(false);
   }, [filingDate, judgmentDate, hasJudgment, defendantPlea, isUnspecifiedStage, isOpen]);
+
+  useEffect(() => {
+    setShowDuplicateConfirm(false);
+  }, [blackCaseNo, redCaseNo, receivedNumberS1, filingNumberS4, isOpen]);
 
   useEffect(() => {
     if (caseItem && isOpen) {
@@ -408,6 +433,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
 
     if (filingAfterJudgmentAnomaly.isAnomalous && !showDateAnomalyConfirm) {
       setShowDateAnomalyConfirm(true);
+      return;
+    }
+
+    if (duplicateMatches.length > 0 && !showDuplicateConfirm) {
+      setShowDuplicateConfirm(true);
       return;
     }
 
@@ -1262,13 +1292,33 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 หมายเลขคดีดำ *
               </label>
               <input
+                ref={blackCaseNoInputRef}
                 type="text"
                 required
                 placeholder="เช่น อ.452/2569"
                 value={blackCaseNo}
                 onChange={(e) => setBlackCaseNo(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-bold"
+                className={`w-full text-xs border rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 font-bold ${
+                  duplicateMatchByField.blackCaseNo
+                    ? 'border-2 border-indigo-500 bg-indigo-50/40 text-indigo-950 focus:ring-indigo-500'
+                    : 'border-slate-300 focus:ring-amber-500'
+                }`}
               />
+              {duplicateMatchByField.blackCaseNo && (
+                <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-300 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <AlertTriangle className="w-3.5 h-3.5 text-indigo-700 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>พบเลขคดีดำซ้ำ ({duplicateMatchByField.blackCaseNo.matchedCases.length} สำนวน):</strong>{' '}
+                    {duplicateMatchByField.blackCaseNo.matchedCases
+                      .slice(0, 2)
+                      .map((m) => `ดำ ${m.blackCaseNo} (จำเลย: ${m.defendant || '-'})`)
+                      .join(', ')}
+                    {duplicateMatchByField.blackCaseNo.matchedCases.length > 2
+                      ? ` และอีก ${duplicateMatchByField.blackCaseNo.matchedCases.length - 2} สำนวน`
+                      : ''}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1292,9 +1342,11 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   value={redCaseNo}
                   onChange={(e) => setRedCaseNo(e.target.value)}
                   className={`w-full text-xs border rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 ${
-                    redCaseNo
-                      ? 'border-rose-300 bg-rose-50/20 text-rose-900 font-bold focus:ring-rose-400 pr-24'
-                      : 'border-slate-300 focus:ring-amber-500'
+                    duplicateMatchByField.redCaseNo
+                      ? 'border-2 border-indigo-500 bg-indigo-50/40 text-indigo-950 font-bold focus:ring-indigo-500 pr-24'
+                      : redCaseNo
+                        ? 'border-rose-300 bg-rose-50/20 text-rose-900 font-bold focus:ring-rose-400 pr-24'
+                        : 'border-slate-300 focus:ring-amber-500'
                   }`}
                 />
                 {redCaseNo && (
@@ -1309,6 +1361,21 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   </button>
                 )}
               </div>
+              {duplicateMatchByField.redCaseNo && (
+                <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-300 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <AlertTriangle className="w-3.5 h-3.5 text-indigo-700 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>พบเลขคดีแดงซ้ำ ({duplicateMatchByField.redCaseNo.matchedCases.length} สำนวน):</strong>{' '}
+                    {duplicateMatchByField.redCaseNo.matchedCases
+                      .slice(0, 2)
+                      .map((m) => `ดำ ${m.blackCaseNo} / แดง ${m.redCaseNo} (จำเลย: ${m.defendant || '-'})`)
+                      .join(', ')}
+                    {duplicateMatchByField.redCaseNo.matchedCases.length > 2
+                      ? ` และอีก ${duplicateMatchByField.redCaseNo.matchedCases.length - 2} สำนวน`
+                      : ''}
+                  </span>
+                </div>
+              )}
               <p className="text-[10px] text-slate-400 mt-1">
                 {redCaseNo
                   ? 'หากคดีนี้ยังไม่มีคำพิพากษาหรือกรอกเลขแดงผิด สามารถกดปุ่ม "ลบเลขแดง" เพื่อล้างค่าได้ทันที'
@@ -1332,8 +1399,27 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 placeholder="เช่น 124/2569 หรือ ส.1 124/2569"
                 value={receivedNumberS1}
                 onChange={(e) => setReceivedNumberS1(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
+                className={`w-full text-xs border rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 font-medium ${
+                  duplicateMatchByField.receivedNumberS1
+                    ? 'border-2 border-indigo-500 bg-indigo-50/40 text-indigo-950 focus:ring-indigo-500'
+                    : 'border-slate-300 focus:ring-amber-500'
+                }`}
               />
+              {duplicateMatchByField.receivedNumberS1 && (
+                <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-300 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <AlertTriangle className="w-3.5 h-3.5 text-indigo-700 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>พบเลข ส.1 ซ้ำ ({duplicateMatchByField.receivedNumberS1.matchedCases.length} สำนวน):</strong>{' '}
+                    {duplicateMatchByField.receivedNumberS1.matchedCases
+                      .slice(0, 2)
+                      .map((m) => `ดำ ${m.blackCaseNo} (จำเลย: ${m.defendant || '-'})`)
+                      .join(', ')}
+                    {duplicateMatchByField.receivedNumberS1.matchedCases.length > 2
+                      ? ` และอีก ${duplicateMatchByField.receivedNumberS1.matchedCases.length - 2} สำนวน`
+                      : ''}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1349,8 +1435,27 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                 placeholder="เช่น 45/2569 หรือ ส.4 45/2569"
                 value={filingNumberS4}
                 onChange={(e) => setFilingNumberS4(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-medium"
+                className={`w-full text-xs border rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:ring-2 font-medium ${
+                  duplicateMatchByField.filingNumberS4
+                    ? 'border-2 border-indigo-500 bg-indigo-50/40 text-indigo-950 focus:ring-indigo-500'
+                    : 'border-slate-300 focus:ring-amber-500'
+                }`}
               />
+              {duplicateMatchByField.filingNumberS4 && (
+                <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-300 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <AlertTriangle className="w-3.5 h-3.5 text-indigo-700 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>พบเลข ส.4 ซ้ำ ({duplicateMatchByField.filingNumberS4.matchedCases.length} สำนวน):</strong>{' '}
+                    {duplicateMatchByField.filingNumberS4.matchedCases
+                      .slice(0, 2)
+                      .map((m) => `ดำ ${m.blackCaseNo} (จำเลย: ${m.defendant || '-'})`)
+                      .join(', ')}
+                    {duplicateMatchByField.filingNumberS4.matchedCases.length > 2
+                      ? ` และอีก ${duplicateMatchByField.filingNumberS4.matchedCases.length - 2} สำนวน`
+                      : ''}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2825,6 +2930,50 @@ export const EditCaseModal: React.FC<EditCaseModalProps> = ({
                   className="px-3 py-2 text-xs font-semibold text-cyan-900 bg-white hover:bg-cyan-100 border border-cyan-400 rounded-lg transition cursor-pointer"
                 >
                   ยืนยันบันทึกทั้งที่วันที่ผิดปกติ
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!readOnly && showDuplicateConfirm && duplicateMatches.length > 0 && (
+            <div className="bg-indigo-50 border-2 border-indigo-500 rounded-xl p-4 space-y-3 animate-in fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-indigo-700 shrink-0 mt-0.5" />
+                <div className="space-y-1.5 text-xs text-indigo-950">
+                  <div className="font-bold text-sm text-indigo-900 font-['Prompt']">
+                    แจ้งเตือนตรวจสอบเลขสำนวนซ้ำ: พบหมายเลขที่ตรงกับสำนวนอื่นในระบบ
+                  </div>
+                  <div className="space-y-1">
+                    {duplicateMatches.map((match) => (
+                      <div key={match.field} className="leading-relaxed">
+                        <strong>{match.fieldLabel} ({match.inputValue})</strong> ซ้ำกับ:{' '}
+                        {match.matchedCases
+                          .slice(0, 3)
+                          .map((c) => `ดำ ${c.blackCaseNo}${c.redCaseNo ? ` / แดง ${c.redCaseNo}` : ''} (จำเลย: ${c.defendant || '-'})`)
+                          .join(', ')}
+                        {match.matchedCases.length > 3 ? ` และอีก ${match.matchedCases.length - 3} สำนวน` : ''}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDuplicateConfirm(false);
+                    blackCaseNoInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    blackCaseNoInputRef.current?.focus();
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg transition cursor-pointer"
+                >
+                  กลับไปตรวจสอบ/แก้ไขเลขสำนวน
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-2 text-xs font-semibold text-indigo-900 bg-white hover:bg-indigo-100 border border-indigo-400 rounded-lg transition cursor-pointer"
+                >
+                  ยืนยันบันทึก (ตรวจสอบแล้ว)
                 </button>
               </div>
             </div>

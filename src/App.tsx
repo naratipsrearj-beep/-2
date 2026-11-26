@@ -3794,6 +3794,7 @@ export default function App() {
       <RecordJudgmentModal
         isOpen={isRecordJudgmentOpen && !!selectedCaseForRecordJudgment}
         caseItem={selectedCaseForRecordJudgment}
+        existingCases={cases}
         onClose={() => {
           setIsRecordJudgmentOpen(false);
           setSelectedCaseForRecordJudgment(null);
